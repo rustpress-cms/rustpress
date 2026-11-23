@@ -47,7 +47,11 @@ impl Val {
 
     fn index(&self, key: &str) -> Val {
         match self {
-            Val::Arr(a) => a.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or(Val::Null),
+            Val::Arr(a) => a
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+                .unwrap_or(Val::Null),
             _ => Val::Null,
         }
     }
@@ -70,16 +74,29 @@ pub struct Site<'a> {
 
 /// `Templates::get_html( $template_name, $args, true )`: `''` when the template does not exist.
 pub fn get_html(site: &Site<'_>, name: &str, args: Vec<(String, Val)>) -> String {
-    let path = site.plugin_dir.join("templates").join(format!("{name}.php"));
-    let Ok(source) = std::fs::read_to_string(&path) else { return String::new() };
-    let mut run = Run { site, vars: args, out: String::new(), depth: 0 };
+    let path = site
+        .plugin_dir
+        .join("templates")
+        .join(format!("{name}.php"));
+    let Ok(source) = std::fs::read_to_string(&path) else {
+        return String::new();
+    };
+    let mut run = Run {
+        site,
+        vars: args,
+        out: String::new(),
+        depth: 0,
+    };
     run.source(&source);
     run.out
 }
 
 /// Whether `templates/{$name}.php` exists (`Templates::locate()`).
 pub fn exists(site: &Site<'_>, name: &str) -> bool {
-    site.plugin_dir.join("templates").join(format!("{name}.php")).is_file()
+    site.plugin_dir
+        .join("templates")
+        .join(format!("{name}.php"))
+        .is_file()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,7 +117,10 @@ enum Part {
     Var(String),
 }
 
-const PUNCTS: &[&str] = &["===", "!==", "=>", "&&", "||", "==", "!=", "(", ")", "[", "]", ",", ";", ":", "?", "!", ".", "=", "{", "}"];
+const PUNCTS: &[&str] = &[
+    "===", "!==", "=>", "&&", "||", "==", "!=", "(", ")", "[", "]", ",", ";", ":", "?", "!", ".",
+    "=", "{", "}",
+];
 
 fn tokenize(source: &str) -> Vec<Tok> {
     let b = source.as_bytes();
@@ -139,12 +159,15 @@ fn tokenize(source: &str) -> Vec<Tok> {
                     i += 1;
                 }
             } else if source[i..].starts_with("/*") {
-                i = source[i + 2..].find("*/").map_or(b.len(), |p| i + 2 + p + 2);
+                i = source[i + 2..]
+                    .find("*/")
+                    .map_or(b.len(), |p| i + 2 + p + 2);
             } else if c == b'\'' {
                 let mut s = String::new();
                 i += 1;
                 while i < b.len() && b[i] != b'\'' {
-                    if b[i] == b'\\' && i + 1 < b.len() && (b[i + 1] == b'\'' || b[i + 1] == b'\\') {
+                    if b[i] == b'\\' && i + 1 < b.len() && (b[i + 1] == b'\'' || b[i + 1] == b'\\')
+                    {
                         i += 1;
                     }
                     let len = utf8_len(b[i]);
@@ -175,7 +198,11 @@ fn tokenize(source: &str) -> Vec<Tok> {
                         }
                     }
                     let braced = source[i..].starts_with("{$");
-                    if braced || (b[i] == b'$' && b.get(i + 1).is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_')) {
+                    if braced
+                        || (b[i] == b'$'
+                            && b.get(i + 1)
+                                .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_'))
+                    {
                         let from = if braced { i + 2 } else { i + 1 };
                         let mut j = from;
                         while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
@@ -183,7 +210,11 @@ fn tokenize(source: &str) -> Vec<Tok> {
                         }
                         parts.push(Part::Lit(std::mem::take(&mut s)));
                         parts.push(Part::Var(source[from..j].to_owned()));
-                        i = if braced && b.get(j) == Some(&b'}') { j + 1 } else { j };
+                        i = if braced && b.get(j) == Some(&b'}') {
+                            j + 1
+                        } else {
+                            j
+                        };
                         continue;
                     }
                     let len = utf8_len(b[i]);
@@ -209,11 +240,14 @@ fn tokenize(source: &str) -> Vec<Tok> {
                 i = j;
             } else if c.is_ascii_alphabetic() || c == b'_' || c == b'\\' {
                 let mut j = i;
-                while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'\\') {
+                while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'\\')
+                {
                     j += 1;
                 }
                 let name = source[i..j].trim_start_matches('\\');
-                toks.push(Tok::Ident(name.rsplit('\\').next().unwrap_or(name).to_owned()));
+                toks.push(Tok::Ident(
+                    name.rsplit('\\').next().unwrap_or(name).to_owned(),
+                ));
                 i = j;
             } else if let Some(p) = PUNCTS.iter().find(|p| source[i..].starts_with(**p)) {
                 toks.push(Tok::Punct(p));
@@ -295,7 +329,13 @@ impl Parser {
     fn block(&mut self, until: &[&str]) -> Vec<Stmt> {
         let mut out = Vec::new();
         while self.pos < self.toks.len() {
-            if until.iter().any(|u| if *u == "}" { matches!(self.peek(), Some(Tok::Punct("}"))) } else { self.is_ident(u) }) {
+            if until.iter().any(|u| {
+                if *u == "}" {
+                    matches!(self.peek(), Some(Tok::Punct("}")))
+                } else {
+                    self.is_ident(u)
+                }
+            }) {
                 break;
             }
             if let Some(s) = self.statement() {
@@ -542,7 +582,10 @@ struct Exit;
 
 impl Run<'_, '_> {
     fn source(&mut self, source: &str) {
-        let mut parser = Parser { toks: tokenize(source), pos: 0 };
+        let mut parser = Parser {
+            toks: tokenize(source),
+            pos: 0,
+        };
         let program = parser.block(&[]);
         let _ = self.stmts(&program);
     }
@@ -611,7 +654,13 @@ impl Run<'_, '_> {
                 v
             }
             Expr::Const(name) => match name.as_str() {
-                "WPFORMS_PLUGIN_DIR" => Val::Str(format!("{}/", self.site.plugin_dir.to_string_lossy().trim_end_matches(['/', '\\']))),
+                "WPFORMS_PLUGIN_DIR" => Val::Str(format!(
+                    "{}/",
+                    self.site
+                        .plugin_dir
+                        .to_string_lossy()
+                        .trim_end_matches(['/', '\\'])
+                )),
                 "true" | "TRUE" => Val::Bool(true),
                 "false" | "FALSE" => Val::Bool(false),
                 _ => Val::Null,
@@ -653,7 +702,11 @@ impl Run<'_, '_> {
     }
 
     fn var(&self, name: &str) -> Val {
-        self.vars.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap_or(Val::Null)
+        self.vars
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+            .unwrap_or(Val::Null)
     }
 
     fn call(&mut self, name: &str, args: &[Expr]) -> Val {
@@ -689,11 +742,17 @@ impl Run<'_, '_> {
             "wp_specialchars_decode" => specialchars_decode(&arg(0)),
             "sanitize_hex_color" => sanitize_hex_color(&arg(0)),
             "wpforms_generate_contrasting_color" => {
-                let factor = |i: usize, d: i64| values.get(i).map_or(d, |v| super::php::leading_int(&v.to_str()));
+                let factor = |i: usize, d: i64| {
+                    values
+                        .get(i)
+                        .map_or(d, |v| super::php::leading_int(&v.to_str()))
+                };
                 generate_contrasting_color(&arg(0), factor(1, 30), factor(2, 30))
             }
             "wpforms_get_min_suffix" => ".min".into(),
-            "trim" => arg(0).trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}']).to_owned(),
+            "trim" => arg(0)
+                .trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])
+                .to_owned(),
             "sprintf" | "printf" => {
                 let format = arg(0);
                 let rest: Vec<String> = values.drain(..).skip(1).map(|v| v.to_str()).collect();
@@ -724,9 +783,15 @@ fn bloginfo(site: &Site<'_>, show: &str) -> String {
 fn kses_with(text: &str, allowed: &Val) -> String {
     use rustpress_core::kses::{Allowed, kses};
     static LINK: std::sync::OnceLock<Allowed> = std::sync::OnceLock::new();
-    let link = Val::Arr(vec![("a".into(), Val::Arr(vec![("href".into(), Val::Arr(Vec::new()))]))]);
+    let link = Val::Arr(vec![(
+        "a".into(),
+        Val::Arr(vec![("href".into(), Val::Arr(Vec::new()))]),
+    )]);
     if *allowed == link {
-        return kses(text, LINK.get_or_init(|| Allowed::tags(&[("a", &["href"])])));
+        return kses(
+            text,
+            LINK.get_or_init(|| Allowed::tags(&[("a", &["href"])])),
+        );
     }
     kses(text, &Allowed::none())
 }
@@ -737,7 +802,10 @@ pub fn specialchars_decode(text: &str) -> String {
         return text.to_owned();
     }
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"&(?:amp|lt|gt|#0*38|#0*60|#0*62|#[xX]0*26|#[xX]0*3[cC]|#[xX]0*3[eE]);").expect("valid regex"));
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"&(?:amp|lt|gt|#0*38|#0*60|#0*62|#[xX]0*26|#[xX]0*3[cC]|#[xX]0*3[eE]);")
+            .expect("valid regex")
+    });
     re.replace_all(text, |c: &regex::Captures<'_>| {
         let m = c[0].to_ascii_lowercase();
         match m.as_str() {
@@ -756,21 +824,36 @@ pub fn specialchars_decode(text: &str) -> String {
 /// `sanitize_hex_color()`.
 pub fn sanitize_hex_color(color: &str) -> String {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"^#([A-Fa-f0-9]{3}){1,2}$").expect("valid regex"));
-    if re.is_match(color) { color.to_owned() } else { String::new() }
+    let re =
+        RE.get_or_init(|| regex::Regex::new(r"^#([A-Fa-f0-9]{3}){1,2}$").expect("valid regex"));
+    if re.is_match(color) {
+        color.to_owned()
+    } else {
+        String::new()
+    }
 }
 
 /// `hexdec()`: the characters that are no hex digits are ignored.
 fn hexdec(s: &str) -> i64 {
-    s.chars().filter_map(|c| c.to_digit(16)).fold(0i64, |n, d| n.saturating_mul(16).saturating_add(d as i64))
+    s.chars()
+        .filter_map(|c| c.to_digit(16))
+        .fold(0i64, |n, d| n.saturating_mul(16).saturating_add(d as i64))
 }
 
 /// `wpforms_hex_to_rgb( $hex, false )`.
 fn hex_to_rgb(hex: &str) -> [i64; 3] {
     let hex = hex.trim_start_matches('#');
     let chars: Vec<char> = hex.chars().collect();
-    let full: Vec<char> = if chars.len() == 3 { chars.iter().flat_map(|c| [*c, *c]).collect() } else { chars };
-    let pair = |i: usize| full.get(i..i + 2).map(|p| hexdec(&p.iter().collect::<String>())).unwrap_or_else(|| full.get(i).map_or(0, |c| hexdec(&c.to_string())));
+    let full: Vec<char> = if chars.len() == 3 {
+        chars.iter().flat_map(|c| [*c, *c]).collect()
+    } else {
+        chars
+    };
+    let pair = |i: usize| {
+        full.get(i..i + 2)
+            .map(|p| hexdec(&p.iter().collect::<String>()))
+            .unwrap_or_else(|| full.get(i).map_or(0, |c| hexdec(&c.to_string())))
+    };
     [pair(0), pair(2), pair(4)]
 }
 
@@ -792,7 +875,11 @@ pub fn generate_contrasting_color(color: &str, light: i64, dark: i64) -> String 
     let rgb = hex_to_rgb(color);
     let mut out = String::from("#");
     for c in rgb {
-        let n = if brightness > 155.0 { c - round(c as f64 / 100.0 * dark as f64) } else { c + round((255 - c) as f64 / 100.0 * light as f64) };
+        let n = if brightness > 155.0 {
+            c - round(c as f64 / 100.0 * dark as f64)
+        } else {
+            c + round((255 - c) as f64 / 100.0 * light as f64)
+        };
         out.push_str(&dechex(n));
     }
     out
@@ -819,7 +906,9 @@ fn sprintf(format: &str, args: &[String]) -> String {
             next += 1;
             next - 1
         };
-        let Some(kind) = rest.chars().next() else { break };
+        let Some(kind) = rest.chars().next() else {
+            break;
+        };
         rest = &rest[kind.len_utf8()..];
         let value = args.get(index).cloned().unwrap_or_default();
         match kind {
@@ -838,10 +927,29 @@ mod tests {
     #[test]
     fn runs_the_template_code() {
         let tr = |s: &str| s.to_owned();
-        let site = Site { plugin_dir: Path::new("/nonexistent"), tr: &tr, blogname: "A &amp; B", charset: "UTF-8", language_attributes: "lang=\"en-US\"", rtl: false, home_url: "http://example.com" };
-        let mut run = Run { site: &site, vars: vec![("title".into(), Val::str("Hi")), ("img".into(), Val::Arr(vec![("url".into(), Val::str(""))]))], out: String::new(), depth: 0 };
+        let site = Site {
+            plugin_dir: Path::new("/nonexistent"),
+            tr: &tr,
+            blogname: "A &amp; B",
+            charset: "UTF-8",
+            language_attributes: "lang=\"en-US\"",
+            rtl: false,
+            home_url: "http://example.com",
+        };
+        let mut run = Run {
+            site: &site,
+            vars: vec![
+                ("title".into(), Val::str("Hi")),
+                ("img".into(), Val::Arr(vec![("url".into(), Val::str(""))])),
+            ],
+            out: String::new(),
+            depth: 0,
+        };
         run.source("<?php\nif ( ! defined( 'ABSPATH' ) ) {\n\texit;\n}\n$min = 'x';\n?>\n\n<html <?php language_attributes(); ?>>\n<t><?php echo esc_html( $title ); ?></t>\n<?php if ( ! empty( $img['url'] ) ) : ?>\nIMG\n<?php endif; ?>\n<b class=\"<?php echo is_rtl() ? 'rtl' : 'ltr'; ?>\"><?php echo \"a{$min}b\"; ?></b>\n<?php\necho apply_filters( 'f', sprintf( wp_kses( __( 'Sent from <a href=\"%1$s\">%2$s</a>' ), [ 'a' => [ 'href' => [] ] ] ), esc_url( home_url() ), wp_specialchars_decode( get_bloginfo( 'name' ) ) ) );\n?>\n</html>\n");
-        assert_eq!(run.out, "\n<html lang=\"en-US\">\n<t>Hi</t>\n<b class=\"ltr\">axb</b>\nSent from <a href=\"http://example.com\">A & B</a></html>\n");
+        assert_eq!(
+            run.out,
+            "\n<html lang=\"en-US\">\n<t>Hi</t>\n<b class=\"ltr\">axb</b>\nSent from <a href=\"http://example.com\">A & B</a></html>\n"
+        );
     }
 
     #[test]

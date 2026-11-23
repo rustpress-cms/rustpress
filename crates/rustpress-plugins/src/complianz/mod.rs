@@ -23,16 +23,19 @@ mod stats;
 use std::path::{Path, PathBuf};
 
 use futures::future::BoxFuture;
-use rustpress_core::native::{ActivePlugin, Assets, Head, HeadContext, NativePlugin, RestAnswer, RestRequest, ShortcodeContext};
+use rustpress_core::native::{
+    ActivePlugin, Assets, Head, HeadContext, NativePlugin, RestAnswer, RestRequest,
+    ShortcodeContext,
+};
 use rustpress_core::shortcodes::Atts;
 use rustpress_core::{QueryResult, Result, Site};
 use rustpress_db::Post;
 use rustpress_phpser::Value;
-use serde_json::{json, Map, Value as Json};
+use serde_json::{Map, Value as Json, json};
 
 use banner::Banner;
 use blocker::{Blocker, Placeholders};
-use options::{item, option, php_string, truthy, Options};
+use options::{Options, item, option, php_string, truthy};
 
 pub struct Complianz;
 
@@ -54,11 +57,19 @@ impl NativePlugin for Complianz {
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Active::load(site, Path::new(".")).await?) as Box<dyn ActivePlugin>) })
+        Box::pin(async move {
+            Ok(Box::new(Active::load(site, Path::new(".")).await?) as Box<dyn ActivePlugin>)
+        })
     }
 
-    fn load_at<'a>(&'a self, site: &'a Site, wp_root: &'a Path) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Active::load(site, wp_root).await?) as Box<dyn ActivePlugin>) })
+    fn load_at<'a>(
+        &'a self,
+        site: &'a Site,
+        wp_root: &'a Path,
+    ) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
+        Box::pin(async move {
+            Ok(Box::new(Active::load(site, wp_root).await?) as Box<dyn ActivePlugin>)
+        })
     }
 
     fn text_domain(&self) -> Option<&'static str> {
@@ -154,17 +165,37 @@ struct Active {
 }
 
 fn filemtime(path: &Path) -> String {
-    path.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs().to_string()).unwrap_or_default()
+    path.metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default()
 }
 
 fn now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// The query arguments of the request (`$_GET`), decoded.
 fn query_args(query: &QueryResult) -> Vec<(String, String)> {
-    let decode = |s: &str| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(s.replace('+', " ").as_bytes())).into_owned();
-    query.raw_query.split('&').filter(|p| !p.is_empty()).map(|p| p.split_once('=').map_or((decode(p), String::new()), |(k, v)| (decode(k), decode(v)))).collect()
+    let decode = |s: &str| {
+        String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(
+            s.replace('+', " ").as_bytes(),
+        ))
+        .into_owned()
+    };
+    query
+        .raw_query
+        .split('&')
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            p.split_once('=')
+                .map_or((decode(p), String::new()), |(k, v)| (decode(k), decode(v)))
+        })
+        .collect()
 }
 
 /// `global $post` while the page is printed: the post of a single view, else the first post of the main query.
@@ -183,28 +214,67 @@ impl Active {
                         rustpress_phpser::Key::Str(b) => Value::Str(b.clone()),
                     }),
                     value: item(v, "value").cloned().unwrap_or(Value::Bool(false)),
-                    expires: item(v, "expires").map(php_string).and_then(|e| e.parse().ok()).unwrap_or(0),
+                    expires: item(v, "expires")
+                        .map(php_string)
+                        .and_then(|e| e.parse().ok())
+                        .unwrap_or(0),
                 })
                 .collect(),
             _ => Vec::new(),
         };
-        let current = |name: &str| transients.iter().find(|t| t.name == name && t.expires >= now()).map(|t| t.value.clone()).filter(truthy);
+        let current = |name: &str| {
+            transients
+                .iter()
+                .find(|t| t.name == name && t.expires >= now())
+                .map(|t| t.value.clone())
+                .filter(truthy)
+        };
         let blocked_transient = current("cmplz_blocked_scripts");
-        let options = Options::load(site, blocked_transient.as_ref().is_some_and(|v| matches!(v, Value::Array(items) if !items.is_empty()))).await;
+        let options = Options::load(
+            site,
+            blocked_transient
+                .as_ref()
+                .is_some_and(|v| matches!(v, Value::Array(items) if !items.is_empty())),
+        )
+        .await;
         let plugin_dir = wp_root.join("wp-content/plugins").join(PLUGIN);
-        let plugin_url = format!("{}/", site.site_url(&format!("wp-content/plugins/{PLUGIN}")));
-        let theme_dir = wp_root.join("wp-content/themes").join(&site.settings.stylesheet);
+        let plugin_url = format!(
+            "{}/",
+            site.site_url(&format!("wp-content/plugins/{PLUGIN}"))
+        );
+        let theme_dir = wp_root
+            .join("wp-content/themes")
+            .join(&site.settings.stylesheet);
         let theme_url = site.site_url(&format!("wp-content/themes/{}", site.settings.stylesheet));
         let uploads = site.options.string("upload_url_path", "");
-        let uploads = if uploads.is_empty() { site.site_url("wp-content/uploads") } else { uploads.trim_end_matches('/').to_owned() };
+        let uploads = if uploads.is_empty() {
+            site.site_url("wp-content/uploads")
+        } else {
+            uploads.trim_end_matches('/').to_owned()
+        };
         let upload_url = format!("{uploads}/complianz/");
         let upload_dir = wp_root.join("wp-content/uploads/complianz");
-        let custom_scripts = option(site, "complianz_options_custom-scripts").await.unwrap_or(Value::Bool(false));
-        let cf7 = site.active_plugins().iter().any(|f| f == "contact-form-7/wp-contact-form-7.php");
-        let disabled = options::strings(&option(site, "cmplz_disabled_placeholders").await.unwrap_or(Value::Null));
+        let custom_scripts = option(site, "complianz_options_custom-scripts")
+            .await
+            .unwrap_or(Value::Bool(false));
+        let cf7 = site
+            .active_plugins()
+            .iter()
+            .any(|f| f == "contact-form-7/wp-contact-form-7.php");
+        let disabled = options::strings(
+            &option(site, "cmplz_disabled_placeholders")
+                .await
+                .unwrap_or(Value::Null),
+        );
         let placeholder_transients = transients
             .iter()
-            .filter(|t| t.expires >= now() && (t.name.starts_with("cmplz_youtube_") || t.name.starts_with("cmplz_vimeo_image_") || t.name.starts_with("cmplz_dailymotion_image_") || t.name.starts_with("cmplz_googlemaps_image_")))
+            .filter(|t| {
+                t.expires >= now()
+                    && (t.name.starts_with("cmplz_youtube_")
+                        || t.name.starts_with("cmplz_vimeo_image_")
+                        || t.name.starts_with("cmplz_dailymotion_image_")
+                        || t.name.starts_with("cmplz_googlemaps_image_"))
+            })
             .map(|t| (t.name.clone(), php_string(&t.value)))
             .collect();
         let placeholders = Placeholders {
@@ -221,46 +291,121 @@ impl Active {
             loaded: services::loaded(&options),
             transients: placeholder_transients,
         };
-        let blocker = Blocker::new(&options, &custom_scripts, blocked_transient.as_ref(), cf7, placeholders);
+        let blocker = Blocker::new(
+            &options,
+            &custom_scripts,
+            blocked_transient.as_ref(),
+            cf7,
+            placeholders,
+        );
 
         // `cmplz_get_default_banner_id()` and `cmplz_get_cookiebanner()`.
-        let has_table = option(site, "cmplz_cbdb_version").await.is_some_and(|v| truthy(&v));
-        let rows = if has_table { site.db.complianz_banners().await.unwrap_or_default() } else { Vec::new() };
+        let has_table = option(site, "cmplz_cbdb_version")
+            .await
+            .is_some_and(|v| truthy(&v));
+        let rows = if has_table {
+            site.db.complianz_banners().await.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let banner_id = match current("cmplz_default_banner_id") {
             Some(id) => php_string(&id),
             None => {
-                let default = rows.iter().find(|row| row.iter().any(|(c, v)| c == "default" && v.as_deref().is_some_and(|v| v != "0" && !v.is_empty())));
-                default.or(rows.first()).and_then(|row| row.iter().find(|(c, _)| c == "ID")).and_then(|(_, v)| v.clone()).unwrap_or_else(|| if has_table { String::new() } else { "0".into() })
+                let default = rows.iter().find(|row| {
+                    row.iter().any(|(c, v)| {
+                        c == "default" && v.as_deref().is_some_and(|v| v != "0" && !v.is_empty())
+                    })
+                });
+                default
+                    .or(rows.first())
+                    .and_then(|row| row.iter().find(|(c, _)| c == "ID"))
+                    .and_then(|(_, v)| v.clone())
+                    .unwrap_or_else(|| if has_table { String::new() } else { "0".into() })
             }
         };
-        let banner = rows.iter().find(|row| row.iter().any(|(c, v)| c == "ID" && v.as_deref() == Some(banner_id.as_str()))).map(|row| Banner::from_row(row, &options));
+        let banner = rows
+            .iter()
+            .find(|row| {
+                row.iter()
+                    .any(|(c, v)| c == "ID" && v.as_deref() == Some(banner_id.as_str()))
+            })
+            .map(|row| Banner::from_row(row, &options));
 
-        let cookie_table = option(site, "cmplz_cookietable_version").await.is_some_and(|v| truthy(&v));
-        let shares_cookies = if cookie_table { site.db.complianz_cookies_share_data().await.unwrap_or(false) } else { false };
-        let (cookies, services) = if cookie_table { (site.db.complianz_cookies().await.unwrap_or_default(), site.db.complianz_services().await.unwrap_or_default()) } else { (Vec::new(), Vec::new()) };
+        let cookie_table = option(site, "cmplz_cookietable_version")
+            .await
+            .is_some_and(|v| truthy(&v));
+        let shares_cookies = if cookie_table {
+            site.db
+                .complianz_cookies_share_data()
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let (cookies, services) = if cookie_table {
+            (
+                site.db.complianz_cookies().await.unwrap_or_default(),
+                site.db.complianz_services().await.unwrap_or_default(),
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let documents = document_pages(site, &transients).await?;
         let mut custom_pages = Vec::new();
         for kind in ["cookie-statement", "privacy-statement", "impressum"] {
             if !options.is(kind, "custom") {
                 continue;
             }
-            let id: u64 = option(site, &format!("cmplz_{kind}_custom_page")).await.map(|v| php_string(&v)).unwrap_or_default().trim().parse().unwrap_or(0);
-            let post = if id > 0 { site.db.post(id).await? } else { None };
+            let id: u64 = option(site, &format!("cmplz_{kind}_custom_page"))
+                .await
+                .map(|v| php_string(&v))
+                .unwrap_or_default()
+                .trim()
+                .parse()
+                .unwrap_or(0);
+            let post = if id > 0 {
+                site.db.post(id).await?
+            } else {
+                None
+            };
             let permalink = match &post {
                 Some(post) => Some(site.permalink(post).await?),
                 None => None,
             };
-            let title = post.as_ref().map(|p| rustpress_blocks::content::the_title_for(site, p)).unwrap_or_default();
+            let title = post
+                .as_ref()
+                .map(|p| rustpress_blocks::content::the_title_for(site, p))
+                .unwrap_or_default();
             let post_title = post.as_ref().map(|p| p.post_title.clone());
-            custom_pages.push(CustomPage { kind, id, permalink, title, post_title });
+            custom_pages.push(CustomPage {
+                kind,
+                id,
+                permalink,
+                title,
+                post_title,
+            });
         }
         let mut custom_urls = Vec::new();
         for kind in ["cookie-statement", "privacy-statement", "impressum"] {
-            custom_urls.push((kind, option(site, &format!("cmplz_{kind}_custom_page_url")).await.map(|v| php_string(&v)).unwrap_or_default()));
+            custom_urls.push((
+                kind,
+                option(site, &format!("cmplz_{kind}_custom_page_url"))
+                    .await
+                    .map(|v| php_string(&v))
+                    .unwrap_or_default(),
+            ));
         }
-        let wizard_completed = option(site, "cmplz_wizard_completed_once").await.is_some_and(|v| truthy(&v));
-        let excluded_posts = options::strings(&option(site, "cmplz_excluded_posts_array").await.unwrap_or(Value::Null));
-        let policy_id = option(site, "complianz_active_policy_id").await.map_or("1".to_owned(), |v| php_string(&v));
+        let wizard_completed = option(site, "cmplz_wizard_completed_once")
+            .await
+            .is_some_and(|v| truthy(&v));
+        let excluded_posts = options::strings(
+            &option(site, "cmplz_excluded_posts_array")
+                .await
+                .unwrap_or(Value::Null),
+        );
+        let policy_id = option(site, "complianz_active_policy_id")
+            .await
+            .map_or("1".to_owned(), |v| php_string(&v));
         let mut active = Self {
             wizard_completed,
             needs_warning: false,
@@ -275,15 +420,25 @@ impl Active {
             documents,
             custom_pages,
             custom_urls,
-            shortcode_meta: site.db.complianz_shortcode_posts().await.unwrap_or_default(),
+            shortcode_meta: site
+                .db
+                .complianz_shortcode_posts()
+                .await
+                .unwrap_or_default(),
             script_version: filemtime(&plugin_dir.join("cookiebanner/js/complianz.min.js")),
             general_version: filemtime(&plugin_dir.join("assets/css/cookieblocker.min.css")),
             document_version: String::new(),
             cookies,
             services,
-            publish_date: option(site, "cmplz_publish_date").await.unwrap_or(Value::Bool(false)),
-            documents_update_date: option(site, "cmplz_documents_update_date").await.unwrap_or(Value::Bool(false)),
-            last_cookie_sync: option(site, "cmplz_last_cookie_sync").await.unwrap_or(Value::Bool(false)),
+            publish_date: option(site, "cmplz_publish_date")
+                .await
+                .unwrap_or(Value::Bool(false)),
+            documents_update_date: option(site, "cmplz_documents_update_date")
+                .await
+                .unwrap_or(Value::Bool(false)),
+            last_cookie_sync: option(site, "cmplz_last_cookie_sync")
+                .await
+                .unwrap_or(Value::Bool(false)),
             plugin_dir,
             plugin_url,
             theme_dir,
@@ -291,13 +446,23 @@ impl Active {
             upload_url,
             options,
         };
-        active.document_version = filemtime(&active.plugin_dir.join(if active.options.truthy("use_document_css") { "assets/css/document.min.css" } else { "assets/css/document-grid.min.css" }));
+        active.document_version = filemtime(&active.plugin_dir.join(
+            if active.options.truthy("use_document_css") {
+                "assets/css/document.min.css"
+            } else {
+                "assets/css/document-grid.min.css"
+            },
+        ));
         active.needs_warning = active.site_needs_cookie_warning();
         Ok(active)
     }
 
     fn transient(&self, name: &str) -> Option<&Value> {
-        self.transients.iter().find(|t| t.name == name && t.expires >= now()).map(|t| &t.value).filter(|v| truthy(v))
+        self.transients
+            .iter()
+            .find(|t| t.name == name && t.expires >= now())
+            .map(|t| &t.value)
+            .filter(|v| truthy(v))
     }
 
     /// `statistics_privacy_friendly()`.
@@ -310,7 +475,11 @@ impl Active {
         }
         let google = statistics == "google-analytics";
         if google || statistics == "google-tag-manager" {
-            let info = self.options.get(if google { "compile_statistics_more_info" } else { "compile_statistics_more_info_tag_manager" });
+            let info = self.options.get(if google {
+                "compile_statistics_more_info"
+            } else {
+                "compile_statistics_more_info_tag_manager"
+            });
             let has = |v: &str| matches!(&info, Value::Array(items) if items.iter().any(|(_, x)| matches!(x, Value::Str(b) if b == v.as_bytes())));
             if !has("accepted") || !has("ip-addresses-blocked") || !has("no-sharing") {
                 return false;
@@ -322,11 +491,17 @@ impl Active {
     /// `consent_required_for_anonymous_stats()`; `array_search()` finds the first active region at index 0, which
     /// counts as not found.
     fn consent_required_for_anonymous_stats(&self) -> bool {
-        let active: Vec<&regions::Region> = regions::REGIONS.iter().filter(|r| self.options.regions().iter().any(|c| c == r.code)).collect();
+        let active: Vec<&regions::Region> = regions::REGIONS
+            .iter()
+            .filter(|r| self.options.regions().iter().any(|c| c == r.code))
+            .collect();
         if active.iter().any(|r| r.statistics_consent == "always") {
             return true;
         }
-        let when_not_anonymous = active.iter().position(|r| r.statistics_consent == "when_not_anonymous").is_some_and(|i| i > 0);
+        let when_not_anonymous = active
+            .iter()
+            .position(|r| r.statistics_consent == "when_not_anonymous")
+            .is_some_and(|i| i > 0);
         let statistics = self.options.string("compile_statistics");
         let google = statistics == "google-analytics" || statistics == "google-tag-manager";
         when_not_anonymous && google && self.options.is("consent_for_anonymous_stats", "yes")
@@ -341,7 +516,10 @@ impl Active {
             return match region.statistics_consent {
                 "no" => false,
                 "always" => true,
-                "when_not_anonymous" => self.options.is("eu_consent_regions", "yes") || !self.statistics_privacy_friendly(),
+                "when_not_anonymous" => {
+                    self.options.is("eu_consent_regions", "yes")
+                        || !self.statistics_privacy_friendly()
+                }
                 _ => false,
             };
         }
@@ -353,10 +531,16 @@ impl Active {
 
     /// `site_shares_data()`.
     fn site_shares_data(&self) -> bool {
-        if self.options.is("compile_statistics", "google-tag-manager") || self.options.uses_marketing_cookies() || self.blocker.has_scripts() {
+        if self.options.is("compile_statistics", "google-tag-manager")
+            || self.options.uses_marketing_cookies()
+            || self.blocker.has_scripts()
+        {
             return true;
         }
-        if self.options.is("uses_ad_cookies", "yes") || self.options.is("uses_social_media", "yes") || self.options.is("uses_thirdparty_services", "yes") {
+        if self.options.is("uses_ad_cookies", "yes")
+            || self.options.is("uses_social_media", "yes")
+            || self.options.is("uses_thirdparty_services", "yes")
+        {
             return true;
         }
         !self.statistics_privacy_friendly() || self.shares_cookies
@@ -364,26 +548,53 @@ impl Active {
 
     /// `site_needs_cookie_warning()` without a region, before the excluded pages.
     fn site_needs_cookie_warning(&self) -> bool {
-        self.options.has_region("us") || self.site_shares_data() || self.cookie_warning_required_stats(None)
+        self.options.has_region("us")
+            || self.site_shares_data()
+            || self.cookie_warning_required_stats(None)
     }
 
     /// `site_needs_cookie_warning()` for the request: no warning on a page of `cmplz_excluded_posts_array`.
     fn needs_warning_for(&self, query: &QueryResult) -> bool {
         let uri = sanitize_text_field(&request_uri(query));
-        self.needs_warning && !self.excluded_posts.iter().any(|slug| uri.contains(slug.as_str()))
+        self.needs_warning
+            && !self
+                .excluded_posts
+                .iter()
+                .any(|slug| uri.contains(slug.as_str()))
     }
 
     /// `cmplz_is_pagebuilder_preview()`.
     fn pagebuilder_preview(&self, query: &QueryResult) -> bool {
         const BUILDERS: &[&str] = &[
-            "fb-edit", "builder_id", "et_pb_preview", "et_fb", "elementor-preview", "elementor_library", "elementor-app", "vc_action", "vc_editable", "vcv-action", "zion_builder_active", "zionbuilder-preview", "tb-preview", "tb-id", "fl_builder", "tve", "bricks",
-            "ct_builder", "tatsu", "tatsu-header", "tatsu-footer",
+            "fb-edit",
+            "builder_id",
+            "et_pb_preview",
+            "et_fb",
+            "elementor-preview",
+            "elementor_library",
+            "elementor-app",
+            "vc_action",
+            "vc_editable",
+            "vcv-action",
+            "zion_builder_active",
+            "zionbuilder-preview",
+            "tb-preview",
+            "tb-id",
+            "fl_builder",
+            "tve",
+            "bricks",
+            "ct_builder",
+            "tatsu",
+            "tatsu-header",
+            "tatsu-footer",
         ];
         let args = query_args(query);
         let has = |name: &str| args.iter().any(|(k, _)| k == name);
         query.customize.is_some()
             || BUILDERS.iter().any(|b| has(b))
-            || args.iter().any(|(k, v)| (k == "action" && v == "ms_get_preview") || (k == "context" && v == "edit"))
+            || args.iter().any(|(k, v)| {
+                (k == "action" && v == "ms_get_preview") || (k == "context" && v == "edit")
+            })
             || request_uri(query).contains("cornerstone/edit")
     }
 
@@ -400,7 +611,10 @@ impl Active {
                 types.push(self.filter_consenttype(r.kind, &region));
             }
         }
-        if query_args(query).iter().any(|(k, _)| k == "cmplz_user_region") {
+        if query_args(query)
+            .iter()
+            .any(|(k, _)| k == "cmplz_user_region")
+        {
             types.push("optin".into());
             types.push("optout".into());
         }
@@ -417,7 +631,8 @@ impl Active {
     fn filter_consenttype(&self, kind: &str, region: &str) -> String {
         let shares = self.site_shares_data();
         let sensitive = self.options.is("sensitive_information_processed", "yes");
-        if region == "ca" && ((shares && sensitive) || self.options.is("ca_targets_quebec", "yes")) {
+        if region == "ca" && ((shares && sensitive) || self.options.is("ca_targets_quebec", "yes"))
+        {
             return "optin".into();
         }
         if region == "au" && shares && sensitive && self.options.uses_marketing_cookies() {
@@ -432,7 +647,11 @@ impl Active {
     /// `COMPLIANZ::$company->get_default_region()`.
     fn default_region(&self) -> String {
         let country = self.options.string("country_company");
-        let country = if regions::COUNTRIES.contains(&country.as_str()) { country } else { "US".into() };
+        let country = if regions::COUNTRIES.contains(&country.as_str()) {
+            country
+        } else {
+            "US".into()
+        };
         let company = regions::region_for_country(&country).unwrap_or("us");
         let regions = self.options.regions();
         if regions.len() == 1 {
@@ -477,7 +696,14 @@ impl Active {
     }
 
     fn stats(&self) -> stats::Context<'_> {
-        stats::Context { options: &self.options, category: self.statistics_category(), plugin_dir: &self.plugin_dir, theme_dir: &self.theme_dir, custom_scripts: &self.custom_scripts, cookie_prefix: "cmplz_" }
+        stats::Context {
+            options: &self.options,
+            category: self.statistics_category(),
+            plugin_dir: &self.plugin_dir,
+            theme_dir: &self.theme_dir,
+            custom_scripts: &self.custom_scripts,
+            cookie_prefix: "cmplz_",
+        }
     }
 
     /// `get_cookie_path()`.
@@ -487,20 +713,36 @@ impl Active {
         }
         let home = site.home_url("");
         let home = home.trim_end_matches('/');
-        let host = home.split("://").nth(1).unwrap_or(home).split(['/', ':']).next().unwrap_or("").to_owned();
-        let path = home.replace("http://", "").replace("https://", "").replace(&host, "");
+        let host = home
+            .split("://")
+            .nth(1)
+            .unwrap_or(home)
+            .split(['/', ':'])
+            .next()
+            .unwrap_or("")
+            .to_owned();
+        let path = home
+            .replace("http://", "")
+            .replace("https://", "")
+            .replace(&host, "");
         rustpress_core::urls::trailingslashit(&path)
     }
 
     /// `get_shortcode_page_id( $type, $region )`.
     fn document_page(&self, kind: &str, region: &str) -> Option<&(u64, String, String)> {
-        self.documents.iter().find(|d| d.kind == kind && d.region == region).and_then(|d| d.page.as_ref())
+        self.documents
+            .iter()
+            .find(|d| d.kind == kind && d.region == region)
+            .and_then(|d| d.page.as_ref())
     }
 
     /// `cmplz_page_is_of_type( $type )` for `global $post`.
     fn page_is_of_type(&self, kind: &str, post: Option<&Post>) -> bool {
         let Some(post) = post else { return false };
-        self.options.regions().iter().any(|region| self.document_page(kind, region).is_some_and(|(id, _, _)| *id == post.id))
+        self.options.regions().iter().any(|region| {
+            self.document_page(kind, region)
+                .is_some_and(|(id, _, _)| *id == post.id)
+        })
     }
 
     /// `get_page_links()` (or the transient `page_links_{banner}_{locale}`); `global_link` is
@@ -513,7 +755,9 @@ impl Active {
         let mut out: Vec<(String, Vec<(String, Json)>)> = Vec::new();
         for (region, kinds) in PAGES {
             for kind in *kinds {
-                let Some((title, url)) = self.page_link(kind, region, global_link) else { continue };
+                let Some((title, url)) = self.page_link(kind, region, global_link) else {
+                    continue;
+                };
                 if url == "#" {
                     continue;
                 }
@@ -533,7 +777,9 @@ impl Active {
                             Some((_, slot)) => *slot = entry.clone(),
                             None => list.push((kind.clone(), entry.clone())),
                         },
-                        None => out.push(((*region).to_owned(), vec![(kind.clone(), entry.clone())])),
+                        None => {
+                            out.push(((*region).to_owned(), vec![(kind.clone(), entry.clone())]))
+                        }
                     }
                 }
             }
@@ -541,24 +787,40 @@ impl Active {
         if out.is_empty() {
             return Json::Array(Vec::new());
         }
-        Json::Object(out.into_iter().map(|(r, list)| (r, Json::Object(list.into_iter().collect()))).collect())
+        Json::Object(
+            out.into_iter()
+                .map(|(r, list)| (r, Json::Object(list.into_iter().collect())))
+                .collect(),
+        )
     }
 
     /// `get_page_title()` and `get_page_url()` of a document.
-    fn page_link(&self, kind: &str, region: &str, global_link: Option<&str>) -> Option<(String, String)> {
+    fn page_link(
+        &self,
+        kind: &str,
+        region: &str,
+        global_link: Option<&str>,
+    ) -> Option<(String, String)> {
         if !self.options.has_region(region) {
             return Some((String::new(), "#".into()));
         }
         let setting = self.options.string(kind);
         let strip = |title: &str| {
             static PARENS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-            PARENS.get_or_init(|| regex::Regex::new(r"(\(.*\))").expect("valid regex")).replace_all(title, "").into_owned()
+            PARENS
+                .get_or_init(|| regex::Regex::new(r"(\(.*\))").expect("valid regex"))
+                .replace_all(title, "")
+                .into_owned()
         };
         match setting.as_str() {
             "none" => Some(("#".into(), "#".into())),
             "custom" => {
                 let page = self.custom_pages.iter().find(|p| p.kind == kind)?;
-                let title = if page.id == 0 { String::new() } else { page.title.clone() };
+                let title = if page.id == 0 {
+                    String::new()
+                } else {
+                    page.title.clone()
+                };
                 let url = match &page.permalink {
                     Some(link) if page.id != 0 => rustpress_core::formatting::esc_url_raw(link),
                     _ => "#".into(),
@@ -584,8 +846,16 @@ impl Active {
     /// `get_document_title( $type, $region )`.
     fn document_title(&self, kind: &str, region: &str) -> String {
         let title = match self.options.string(kind).as_str() {
-            "custom" => self.custom_pages.iter().find(|p| p.kind == kind).and_then(|p| p.post_title.clone()),
-            "generated" => self.documents.iter().find(|d| d.kind == kind && d.region == region).and_then(|d| d.post_title.clone()),
+            "custom" => self
+                .custom_pages
+                .iter()
+                .find(|p| p.kind == kind)
+                .and_then(|p| p.post_title.clone()),
+            "generated" => self
+                .documents
+                .iter()
+                .find(|d| d.kind == kind && d.region == region)
+                .and_then(|d| d.post_title.clone()),
             _ => None,
         };
         title.unwrap_or_else(|| kind.replace('-', " "))
@@ -601,7 +871,11 @@ impl Active {
             self.site_shares_data() || self.cookie_warning_required_stats(None)
         };
         let uri = sanitize_text_field(&request_uri(query));
-        needs && !self.excluded_posts.iter().any(|slug| uri.contains(slug.as_str()))
+        needs
+            && !self
+                .excluded_posts
+                .iter()
+                .any(|slug| uri.contains(slug.as_str()))
     }
 
     fn cookie_data(&self) -> documents::CookieData<'_> {
@@ -617,25 +891,42 @@ impl Active {
 
     /// `uses_non_functional_cookies()`.
     fn uses_non_functional_cookies(&self) -> bool {
-        self.options.is("compile_statistics", "google-tag-manager") || documents::uses_non_functional_cookies(&self.cookie_data(), self.statistics_privacy_friendly())
+        self.options.is("compile_statistics", "google-tag-manager")
+            || documents::uses_non_functional_cookies(
+                &self.cookie_data(),
+                self.statistics_privacy_friendly(),
+            )
     }
 
     /// The functions of the documents' `callback_condition`s.
     fn document_callback(&self, name: &str, query: &QueryResult) -> Option<bool> {
         Some(match name {
             "cmplz_uses_only_functional_cookies" => !self.uses_non_functional_cookies(),
-            "cmplz_cookie_warning_required_stats_eu" => self.cookie_warning_required_stats(Some("eu")),
-            "cmplz_cookie_warning_required_stats_uk" => self.cookie_warning_required_stats(Some("uk")),
-            "cmplz_cookie_warning_required_stats_za" => self.cookie_warning_required_stats(Some("za")),
+            "cmplz_cookie_warning_required_stats_eu" => {
+                self.cookie_warning_required_stats(Some("eu"))
+            }
+            "cmplz_cookie_warning_required_stats_uk" => {
+                self.cookie_warning_required_stats(Some("uk"))
+            }
+            "cmplz_cookie_warning_required_stats_za" => {
+                self.cookie_warning_required_stats(Some("za"))
+            }
             "cmplz_uses_marketing_cookies" => self.options.uses_marketing_cookies(),
             // Without a banner the defaults apply (`view-preferences`).
-            "cmplz_site_uses_cookie_warning_cats" => self.banner.as_ref().is_none_or(|b| !matches!(b.value("use_categories"), Value::Str(v) if v == b"no")),
+            "cmplz_site_uses_cookie_warning_cats" => self
+                .banner
+                .as_ref()
+                .is_none_or(|b| !matches!(b.value("use_categories"), Value::Str(v) if v == b"no")),
             "cmplz_eu_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("eu", query),
             "cmplz_uk_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("uk", query),
             "cmplz_za_site_needs_cookie_warning" => self.site_needs_cookie_warning_in("za", query),
             "cmplz_tcf_active" => false,
             "cmplz_cdb_reference_in_policy" => !self.options.is("use_cdb_api", "no"),
-            "cmplz_sells_personal_data" => item(&self.options.get("purpose_personaldata"), "selling-data-thirdparty").is_some_and(truthy),
+            "cmplz_sells_personal_data" => item(
+                &self.options.get("purpose_personaldata"),
+                "selling-data-thirdparty",
+            )
+            .is_some_and(truthy),
             "cmplz_site_shares_data" => self.site_shares_data(),
             "cmplz_uses_statistics" => !self.options.is("compile_statistics", "no"),
             _ => return None,
@@ -643,7 +934,15 @@ impl Active {
     }
 
     /// `get_document_html( $type, $region )`, `post` being `global $post`.
-    async fn document_html(&self, site: &Site, query: &QueryResult, services: &dyn rustpress_core::native::PageServices, post: Option<&Post>, kind: &str, region: &str) -> Result<String> {
+    async fn document_html(
+        &self,
+        site: &Site,
+        query: &QueryResult,
+        services: &dyn rustpress_core::native::PageServices,
+        post: Option<&Post>,
+        kind: &str,
+        region: &str,
+    ) -> Result<String> {
         let global_link = match post {
             Some(post) => Some(site.permalink(post).await?),
             None => None,
@@ -653,9 +952,22 @@ impl Active {
     }
 
     /// The part of [`Self::document_html`] before `do_shortcode()`.
-    fn document_html_sync(&self, site: &Site, query: &QueryResult, global_link: Option<&str>, kind: &str, region: &str) -> String {
+    fn document_html_sync(
+        &self,
+        site: &Site,
+        query: &QueryResult,
+        global_link: Option<&str>,
+        kind: &str,
+        region: &str,
+    ) -> String {
         let date_format = site.options.string("date_format", "F j, Y");
-        let localize = |value: &Value| documents::localize_date(php_string(value).trim().parse().unwrap_or(0), &date_format, &|t| self.options.tr_core(t));
+        let localize = |value: &Value| {
+            documents::localize_date(
+                php_string(value).trim().parse().unwrap_or(0),
+                &date_format,
+                &|t| self.options.tr_core(t),
+            )
+        };
         let defaults;
         let banner = match &self.banner {
             Some(banner) => banner,
@@ -666,7 +978,10 @@ impl Active {
         };
         let banner_text = |name: &str| banner.string(name);
         let callback = |name: &str| self.document_callback(name, query);
-        let page_url = |kind: &str, region: &str| self.page_link(kind, region, global_link).map_or_else(|| "#".to_owned(), |(_, url)| url);
+        let page_url = |kind: &str, region: &str| {
+            self.page_link(kind, region, global_link)
+                .map_or_else(|| "#".to_owned(), |(_, url)| url)
+        };
         let document_title = |kind: &str, region: &str| self.document_title(kind, region);
         let used_cookies = || documents::used_cookies(&self.cookie_data());
         let inputs = documents::Inputs {
@@ -682,7 +997,11 @@ impl Active {
             site_url: site.site_url(""),
             publish_date: localize(&self.publish_date),
             checked_date: localize(&self.documents_update_date),
-            sync_date: if truthy(&self.last_cookie_sync) { localize(&self.last_cookie_sync) } else { self.options.tr("(not synced yet)") },
+            sync_date: if truthy(&self.last_cookie_sync) {
+                localize(&self.last_cookie_sync)
+            } else {
+                self.options.tr("(not synced yet)")
+            },
         };
         documents::document_html(kind, region, &inputs)
     }
@@ -691,9 +1010,18 @@ impl Active {
     fn datarequest_form(&self) -> String {
         use rustpress_core::formatting::{esc_attr, esc_html};
         const TYPES: [(&str, &str); 6] = [
-            ("global_optout", "Global opt-out from selling and sharing my personal information and limiting the use or disclosure of sensitive personal information."),
-            ("cross_context", "Do not sell my personal information for cross-context behavioral advertising"),
-            ("limit_sensitive", "Limit the use of my sensitive personal information"),
+            (
+                "global_optout",
+                "Global opt-out from selling and sharing my personal information and limiting the use or disclosure of sensitive personal information.",
+            ),
+            (
+                "cross_context",
+                "Do not sell my personal information for cross-context behavioral advertising",
+            ),
+            (
+                "limit_sensitive",
+                "Limit the use of my sensitive personal information",
+            ),
             ("request_for_access", "Request for access"),
             ("right_to_be_forgotten", "Right to be Forgotten"),
             ("right_to_data_portability", "Right to Data Portability"),
@@ -719,7 +1047,11 @@ impl Active {
     }
 
     fn custom_url(&self, kind: &str) -> String {
-        self.custom_urls.iter().find(|(k, _)| *k == kind).map(|(_, v)| v.clone()).unwrap_or_default()
+        self.custom_urls
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
     }
 
     /// `blocked_content_text()`.
@@ -727,30 +1059,71 @@ impl Active {
         if self.options.is("consent_per_service", "yes") {
             let agree = self.options.string("agree_text_per_service");
             let text = self.options.string("blocked_content_text_per_service");
-            return format!("<div class=\"cmplz-blocked-content-notice-body\">{text}&nbsp;<div class=\"cmplz-links\"><a href=\"#\" class=\"cmplz-link cookie-statement\">{{title}}</a></div></div><button class=\"cmplz-accept-service\">{agree}</button>");
+            return format!(
+                "<div class=\"cmplz-blocked-content-notice-body\">{text}&nbsp;<div class=\"cmplz-links\"><a href=\"#\" class=\"cmplz-link cookie-statement\">{{title}}</a></div></div><button class=\"cmplz-accept-service\">{agree}</button>"
+            );
         }
         self.options.string("blocked_content_text")
     }
 
     /// `get_front_end_settings()` with what `enqueue_assets()` adds, as `wp_localize_script()` passes it on.
-    fn front_end_settings(&self, site: &Site, query: &QueryResult, global_link: Option<&str>) -> Map<String, Json> {
+    fn front_end_settings(
+        &self,
+        site: &Site,
+        query: &QueryResult,
+        global_link: Option<&str>,
+    ) -> Map<String, Json> {
         let banner = self.banner.as_ref();
         let value = |name: &str| banner.map_or(Value::Null, |b| b.value(name));
         let consent_types = self.used_consenttypes(query);
-        let css_exists = consent_types.iter().all(|t| self.upload_dir.join(format!("css/banner-{}-{t}.css", self.banner_id)).exists());
-        let css_file = if css_exists { format!("{}css/banner-{{banner_id}}-{{type}}.css", self.upload_url) } else { format!("{}cookiebanner/css/defaults/banner-{{type}}.css", self.plugin_url) };
+        let css_exists = consent_types.iter().all(|t| {
+            self.upload_dir
+                .join(format!("css/banner-{}-{t}.css", self.banner_id))
+                .exists()
+        });
+        let css_file = if css_exists {
+            format!("{}css/banner-{{banner_id}}-{{type}}.css", self.upload_url)
+        } else {
+            format!(
+                "{}cookiebanner/css/defaults/banner-{{type}}.css",
+                self.plugin_url
+            )
+        };
         let region = self.default_region();
         let args = query_args(query);
         let banner_version = banner.map_or("0".to_owned(), |b| b.banner_version.clone());
-        let dismiss_timeout = if truthy(&value("dismiss_on_timeout")) { Value::Int(1000 * php_string(&value("dismiss_timeout")).parse::<i64>().unwrap_or(0)) } else { Value::Bool(false) };
-        let disable = truthy(&value("disable_cookiebanner")) || query.flags.is_preview || self.pagebuilder_preview(query) || args.iter().any(|(k, _)| k == "cmplz_safe_mode");
+        let dismiss_timeout = if truthy(&value("dismiss_on_timeout")) {
+            Value::Int(
+                1000 * php_string(&value("dismiss_timeout"))
+                    .parse::<i64>()
+                    .unwrap_or(0),
+            )
+        } else {
+            Value::Bool(false)
+        };
+        let disable = truthy(&value("disable_cookiebanner"))
+            || query.flags.is_preview
+            || self.pagebuilder_preview(query)
+            || args.iter().any(|(k, _)| k == "cmplz_safe_mode");
         let cookie_domain = {
-            let domain = self.options.string("cookie_domain").replace("http://", "").replace("https://", "");
-            domain.strip_suffix('/').map(str::to_owned).unwrap_or(domain)
+            let domain = self
+                .options
+                .string("cookie_domain")
+                .replace("http://", "")
+                .replace("https://", "");
+            domain
+                .strip_suffix('/')
+                .map(str::to_owned)
+                .unwrap_or(domain)
         };
         let locale = self.options.locale().to_owned();
-        let tm = self.options.is("compile_statistics", "google-tag-manager") || self.options.is("compile_statistics", "matomo-tag-manager");
-        let aria = if self.options.is("consent_per_service", "yes") { self.options.tr("Click button to enable {service}") } else { self.options.string("blocked_content_text") };
+        let tm = self.options.is("compile_statistics", "google-tag-manager")
+            || self.options.is("compile_statistics", "matomo-tag-manager");
+        let aria = if self.options.is("consent_per_service", "yes") {
+            self.options.tr("Click button to enable {service}")
+        } else {
+            self.options.string("blocked_content_text")
+        };
         let scalars: Vec<(&str, Value)> = vec![
             ("prefix", s("cmplz_")),
             ("debug", Value::Bool(false)),
@@ -764,22 +1137,55 @@ impl Active {
             put(&mut out, k, v);
         }
         out.insert("set_cookies".into(), Json::Array(Vec::new()));
-        put(&mut out, "block_ajax_content", self.options.get("enable_cookieblocker_ajax"));
+        put(
+            &mut out,
+            "block_ajax_content",
+            self.options.get("enable_cookieblocker_ajax"),
+        );
         put(&mut out, "banner_version", s(&banner_version));
         put(&mut out, "version", s(VERSION));
-        put(&mut out, "store_consent", Value::Bool(self.options.truthy("a_b_testing") || self.options.is("records_of_consent", "yes")));
-        put(&mut out, "do_not_track_enabled", Value::Bool(!self.options.is("respect_dnt", "no")));
+        put(
+            &mut out,
+            "store_consent",
+            Value::Bool(
+                self.options.truthy("a_b_testing") || self.options.is("records_of_consent", "yes"),
+            ),
+        );
+        put(
+            &mut out,
+            "do_not_track_enabled",
+            Value::Bool(!self.options.is("respect_dnt", "no")),
+        );
         put(&mut out, "consenttype", s(&self.default_consenttype()));
         put(&mut out, "region", s(&region));
         put(&mut out, "geoip", Value::Bool(false));
         put(&mut out, "dismiss_timeout", dismiss_timeout);
         put(&mut out, "disable_cookiebanner", Value::Bool(disable));
-        put(&mut out, "soft_cookiewall", Value::Bool(truthy(&value("soft_cookiewall"))));
-        put(&mut out, "dismiss_on_scroll", Value::Bool(truthy(&value("dismiss_on_scroll"))));
+        put(
+            &mut out,
+            "soft_cookiewall",
+            Value::Bool(truthy(&value("soft_cookiewall"))),
+        );
+        put(
+            &mut out,
+            "dismiss_on_scroll",
+            Value::Bool(truthy(&value("dismiss_on_scroll"))),
+        );
         put(&mut out, "cookie_expiry", self.options.get("cookie_expiry"));
         put(&mut out, "url", s(&site.rest_url("complianz/v1/")));
-        put(&mut out, "locale", s(&format!("lang={}&locale={locale}", locale.get(..2).unwrap_or(&locale))));
-        put(&mut out, "set_cookies_on_root", self.options.get("set_cookies_on_root"));
+        put(
+            &mut out,
+            "locale",
+            s(&format!(
+                "lang={}&locale={locale}",
+                locale.get(..2).unwrap_or(&locale)
+            )),
+        );
+        put(
+            &mut out,
+            "set_cookies_on_root",
+            self.options.get("set_cookies_on_root"),
+        );
         put(&mut out, "cookie_domain", s(&cookie_domain));
         put(&mut out, "current_policy_id", s(&self.policy_id));
         put(&mut out, "cookie_path", s(&self.cookie_path(site)));
@@ -792,17 +1198,40 @@ impl Active {
         );
         put(&mut out, "tcf_active", Value::Bool(false));
         put(&mut out, "placeholdertext", s(&self.blocked_content_text()));
-        put(&mut out, "css_file", s(&format!("{css_file}?v={banner_version}")));
+        put(
+            &mut out,
+            "css_file",
+            s(&format!("{css_file}?v={banner_version}")),
+        );
         out.insert("page_links".into(), self.page_links(global_link));
         put(&mut out, "tm_categories", Value::Bool(tm));
-        put(&mut out, "forceEnableStats", Value::Bool(!self.cookie_warning_required_stats(Some(&region))));
+        put(
+            &mut out,
+            "forceEnableStats",
+            Value::Bool(!self.cookie_warning_required_stats(Some(&region))),
+        );
         put(&mut out, "preview", Value::Bool(false));
-        put(&mut out, "clean_cookies", Value::Bool(!options::loose_eq_int(&self.options.get("safe_mode"), 1) && self.options.is("consent_per_service", "yes")));
+        put(
+            &mut out,
+            "clean_cookies",
+            Value::Bool(
+                !options::loose_eq_int(&self.options.get("safe_mode"), 1)
+                    && self.options.is("consent_per_service", "yes"),
+            ),
+        );
         put(&mut out, "aria_label", s(&aria));
         let module = self.options.truthy("enable_iapi_navigation");
-        put(&mut out, "iapi_nav", s(if module { "module" } else { "fallback" }));
+        put(
+            &mut out,
+            "iapi_nav",
+            s(if module { "module" } else { "fallback" }),
+        );
         let singular = query.flags.is_singular();
-        put(&mut out, "is_cookiepolicy_page", Value::Bool(singular && self.page_is_of_type("cookie-statement", global_post(query))));
+        put(
+            &mut out,
+            "is_cookiepolicy_page",
+            Value::Bool(singular && self.page_is_of_type("cookie-statement", global_post(query))),
+        );
         out
     }
 
@@ -816,7 +1245,10 @@ impl Active {
         if content.contains("[cmplz-terms-conditions") || content.contains("[cmplz-consent-area") {
             return false;
         }
-        content.contains("<!-- wp:complianz/document") || has_shortcode(content, "cmplz-document") || has_shortcode(content, "cmplz-cookies") || content.contains("[cmplz-")
+        content.contains("<!-- wp:complianz/document")
+            || has_shortcode(content, "cmplz-document")
+            || has_shortcode(content, "cmplz-cookies")
+            || content.contains("[cmplz-")
     }
 
     /// The document type of `global $post` as `cookiebanner_html()` reads it from the content.
@@ -824,12 +1256,28 @@ impl Active {
         static GUTENBERG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         static CLASSIC: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         static LEGACY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let Some(post) = post.filter(|p| p.id > 0) else { return String::new() };
-        let gutenberg = GUTENBERG.get_or_init(|| regex::Regex::new(r#"(?i)<!-- wp:complianz/document \{.*?"selectedDocument":"([^"].*?)".*?\} /-->"#).expect("valid regex"));
-        let classic = CLASSIC.get_or_init(|| regex::Regex::new(r#"(?i)\[cmplz-document.*?type="(.*?)".*?region="(.*?)".*?\]"#).expect("valid regex"));
-        let legacy = LEGACY.get_or_init(|| regex::Regex::new(r#"(?i)\[cmplz-document.*?type="(.*?)".*?\]"#).expect("valid regex"));
+        let Some(post) = post.filter(|p| p.id > 0) else {
+            return String::new();
+        };
+        let gutenberg = GUTENBERG.get_or_init(|| {
+            regex::Regex::new(
+                r#"(?i)<!-- wp:complianz/document \{.*?"selectedDocument":"([^"].*?)".*?\} /-->"#,
+            )
+            .expect("valid regex")
+        });
+        let classic = CLASSIC.get_or_init(|| {
+            regex::Regex::new(r#"(?i)\[cmplz-document.*?type="(.*?)".*?region="(.*?)".*?\]"#)
+                .expect("valid regex")
+        });
+        let legacy = LEGACY.get_or_init(|| {
+            regex::Regex::new(r#"(?i)\[cmplz-document.*?type="(.*?)".*?\]"#).expect("valid regex")
+        });
         let without_region = |kind: &str| {
-            let region = PAGES.iter().map(|(r, _)| *r).find(|r| kind.ends_with(&format!("-{r}"))).unwrap_or("eu");
+            let region = PAGES
+                .iter()
+                .map(|(r, _)| *r)
+                .find(|r| kind.ends_with(&format!("-{r}")))
+                .unwrap_or("eu");
             kind.replace(&format!("-{region}"), "")
         };
         if let Some(c) = gutenberg.captures(&post.post_content) {
@@ -858,15 +1306,25 @@ impl Active {
                 manage.push_str(&m);
             }
         }
-        format!("\n<!-- Consent Management powered by Complianz | GDPR/CCPA Cookie Consent https://wordpress.org/plugins/complianz-gdpr -->\n<div id=\"cmplz-cookiebanner-container\">{banners}</div>\n\t\t\t\t\t<div id=\"cmplz-manage-consent\" data-nosnippet=\"true\">{manage}</div>")
+        format!(
+            "\n<!-- Consent Management powered by Complianz | GDPR/CCPA Cookie Consent https://wordpress.org/plugins/complianz-gdpr -->\n<div id=\"cmplz-cookiebanner-container\">{banners}</div>\n\t\t\t\t\t<div id=\"cmplz-manage-consent\" data-nosnippet=\"true\">{manage}</div>"
+        )
     }
 
     /// `cmplz_can_run_cookie_blocker()`.
     fn can_run_cookie_blocker(&self, query: &QueryResult) -> bool {
-        if !self.needs_warning_for(query) || !self.options.is("enable_cookie_blocker", "yes") || query.flags.is_feed {
+        if !self.needs_warning_for(query)
+            || !self.options.is("enable_cookie_blocker", "yes")
+            || query.flags.is_feed
+        {
             return false;
         }
-        if query.flags.is_preview || self.pagebuilder_preview(query) || query_args(query).iter().any(|(k, _)| k == "cmplz_safe_mode") {
+        if query.flags.is_preview
+            || self.pagebuilder_preview(query)
+            || query_args(query)
+                .iter()
+                .any(|(k, _)| k == "cmplz_safe_mode")
+        {
             return false;
         }
         !self.options.truthy("safe_mode")
@@ -885,7 +1343,12 @@ fn request_uri(query: &QueryResult) -> String {
 /// `has_shortcode( $content, $tag )`: the tag as a shortcode (`[tag]`, `[tag ...]`, `[tag/]`).
 fn has_shortcode(content: &str, tag: &str) -> bool {
     let open = format!("[{tag}");
-    content.match_indices(&open).any(|(i, _)| matches!(content[i + open.len()..].chars().next(), Some(']' | ' ' | '/' | '\t' | '\n' | '\r')))
+    content.match_indices(&open).any(|(i, _)| {
+        matches!(
+            content[i + open.len()..].chars().next(),
+            Some(']' | ' ' | '/' | '\t' | '\n' | '\r')
+        )
+    })
 }
 
 /// A value as `wp_localize_script()` passes it on: scalars as strings after `html_entity_decode()`.
@@ -899,7 +1362,10 @@ fn localized(value: &Value) -> Json {
 
 /// `html_entity_decode( $text, ENT_QUOTES, 'UTF-8' )`.
 fn html_entity_decode_quotes(text: &str) -> String {
-    rustpress_core::formatting::html_entity_decode(text).replace("&#039;", "'").replace("&#39;", "'").replace("&apos;", "'")
+    rustpress_core::formatting::html_entity_decode(text)
+        .replace("&#039;", "'")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
 }
 
 /// A PHP value as `wp_json_encode()` writes it (a list as an array, other arrays as objects).
@@ -913,7 +1379,15 @@ fn s(text: &str) -> Value {
 
 /// `wp_json_encode( $l10n, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )` of `WP_Scripts::localize()`.
 fn localize(name: &str, value: &Json) -> String {
-    let json = rustpress_blocks::php_json::encode_with(value, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+    let json = rustpress_blocks::php_json::encode_with(
+        value,
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    )
+    .replace('<', "\\u003C")
+    .replace('>', "\\u003E");
     format!("var {name} = {json};")
 }
 
@@ -925,7 +1399,10 @@ async fn document_pages(site: &Site, transients: &[Transient]) -> Result<Vec<Doc
     for (region, kinds) in PAGES {
         for kind in *kinds {
             let name = format!("cmplz_shortcode_{kind}-{region}");
-            let cached = transients.iter().find(|t| t.name == name && t.expires >= now()).map(|t| php_string(&t.value));
+            let cached = transients
+                .iter()
+                .find(|t| t.name == name && t.expires >= now())
+                .map(|t| php_string(&t.value));
             let id = match cached.as_deref() {
                 Some("none") => None,
                 Some(id) if !id.is_empty() && id != "0" => id.parse::<u64>().ok(),
@@ -938,31 +1415,63 @@ async fn document_pages(site: &Site, transients: &[Transient]) -> Result<Vec<Doc
             };
             let (page, post_title) = match id {
                 Some(id) => match site.db.post(id).await? {
-                    Some(post) => (Some((id, site.permalink(&post).await?, rustpress_blocks::content::the_title_for(site, &post))), Some(post.post_title.clone())),
+                    Some(post) => (
+                        Some((
+                            id,
+                            site.permalink(&post).await?,
+                            rustpress_blocks::content::the_title_for(site, &post),
+                        )),
+                        Some(post.post_title.clone()),
+                    ),
                     None => (None, None),
                 },
                 None => (None, None),
             };
-            out.push(DocumentPage { kind, region, page, post_title });
+            out.push(DocumentPage {
+                kind,
+                region,
+                page,
+                post_title,
+            });
         }
     }
     Ok(out)
 }
 
 /// The search of `get_shortcode_page_id()` among the pages that hold a document.
-fn find_document_page(pages: &[(u64, String, Option<String>)], kind: &str, region: &str) -> Option<u64> {
-    let type_region = if region == "eu" { kind.to_owned() } else { format!("{kind}-{region}") };
-    let html = |(_, content, meta): &(u64, String, Option<String>)| meta.clone().filter(|m| !m.is_empty() && m != "0").unwrap_or_else(|| content.clone());
+fn find_document_page(
+    pages: &[(u64, String, Option<String>)],
+    kind: &str,
+    region: &str,
+) -> Option<u64> {
+    let type_region = if region == "eu" {
+        kind.to_owned()
+    } else {
+        format!("{kind}-{region}")
+    };
+    let html = |(_, content, meta): &(u64, String, Option<String>)| {
+        meta.clone()
+            .filter(|m| !m.is_empty() && m != "0")
+            .unwrap_or_else(|| content.clone())
+    };
     static SELECTED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let selected = SELECTED.get_or_init(|| regex::Regex::new(r#"(?i)"selectedDocument":"(.*?)""#).expect("valid regex"));
+    let selected = SELECTED.get_or_init(|| {
+        regex::Regex::new(r#"(?i)"selectedDocument":"(.*?)""#).expect("valid regex")
+    });
     for page in pages {
-        if selected.captures(&html(page)).is_some_and(|c| c[1] == *type_region) {
+        if selected
+            .captures(&html(page))
+            .is_some_and(|c| c[1] == *type_region)
+        {
             return Some(page.0);
         }
     }
     for page in pages {
         let html = html(page);
-        if has_shortcode(&html, "cmplz-document") && html.contains(&format!("type=\"{kind}\"")) && html.contains(&format!("region=\"{region}\"")) {
+        if has_shortcode(&html, "cmplz-document")
+            && html.contains(&format!("type=\"{kind}\""))
+            && html.contains(&format!("region=\"{region}\""))
+        {
             return Some(page.0);
         }
     }
@@ -971,7 +1480,9 @@ fn find_document_page(pages: &[(u64, String, Option<String>)], kind: &str, regio
         if region == "eu" && html.contains(" region=\"") {
             continue;
         }
-        if has_shortcode(&html, "cmplz-document") && html.contains(&format!("type=\"{type_region}\"")) {
+        if has_shortcode(&html, "cmplz-document")
+            && html.contains(&format!("type=\"{type_region}\""))
+        {
             return Some(page.0);
         }
     }
@@ -979,23 +1490,55 @@ fn find_document_page(pages: &[(u64, String, Option<String>)], kind: &str, regio
 }
 
 impl ActivePlugin for Active {
-    fn enqueue_query<'a>(&'a self, site: &'a Site, query: &'a QueryResult, assets: &'a mut Assets) -> BoxFuture<'a, Result<()>> {
+    fn enqueue_query<'a>(
+        &'a self,
+        site: &'a Site,
+        query: &'a QueryResult,
+        assets: &'a mut Assets,
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // cmplz_document::enqueue_assets() on wp_enqueue_scripts at priority 10.
             if self.is_complianz_page(global_post(query)) {
-                let (handle, file) = if self.options.truthy("use_document_css") { ("cmplz-document", "document.min.css") } else { ("cmplz-document-grid", "document-grid.min.css") };
-                assets.style(handle, format!("{}assets/css/{file}", self.plugin_url), &[], &self.document_version, "all");
+                let (handle, file) = if self.options.truthy("use_document_css") {
+                    ("cmplz-document", "document.min.css")
+                } else {
+                    ("cmplz-document-grid", "document-grid.min.css")
+                };
+                assets.style(
+                    handle,
+                    format!("{}assets/css/{file}", self.plugin_url),
+                    &[],
+                    &self.document_version,
+                    "all",
+                );
             }
             if !matches!(self.options.get("disable_cookie_block"), Value::Int(1)) {
-                assets.style("cmplz-general", format!("{}assets/css/cookieblocker.min.css", self.plugin_url), &[], &self.general_version, "all");
+                assets.style(
+                    "cmplz-general",
+                    format!("{}assets/css/cookieblocker.min.css", self.plugin_url),
+                    &[],
+                    &self.general_version,
+                    "all",
+                );
             }
             // cmplz_DNSMPD::enqueue_assets(): the script of the data request form, on the plugin's pages (and where
             // there is no `global $post`).
             let post = global_post(query);
-            if (post.is_none() || self.is_complianz_page(post)) && (self.options.has_region("us") || self.options.is("datarequest", "yes")) {
+            if (post.is_none() || self.is_complianz_page(post))
+                && (self.options.has_region("us") || self.options.is("datarequest", "yes"))
+            {
                 let version = filemtime(&self.plugin_dir.join("DNSMPD/script.min.js"));
-                let script = assets.script("cmplz-dnsmpd", format!("{}DNSMPD/script.min.js", self.plugin_url), &[], &version, true);
-                script.extra = Some(localize("cmplz_datarequests", &json!({ "url": site.rest_url("complianz/v1/datarequests") })));
+                let script = assets.script(
+                    "cmplz-dnsmpd",
+                    format!("{}DNSMPD/script.min.js", self.plugin_url),
+                    &[],
+                    &version,
+                    true,
+                );
+                script.extra = Some(localize(
+                    "cmplz_datarequests",
+                    &json!({ "url": site.rest_url("complianz/v1/datarequests") }),
+                ));
             }
             if !self.banner_active(query) {
                 return Ok(());
@@ -1006,7 +1549,13 @@ impl ActivePlugin for Active {
                 None => None,
             };
             let settings = self.front_end_settings(site, query, global_link.as_deref());
-            let script = assets.script("cmplz-cookiebanner", format!("{}cookiebanner/js/complianz.min.js", self.plugin_url), &[], &self.script_version, true);
+            let script = assets.script(
+                "cmplz-cookiebanner",
+                format!("{}cookiebanner/js/complianz.min.js", self.plugin_url),
+                &[],
+                &self.script_version,
+                true,
+            );
             script.priority = i32::MAX - 50;
             script.defer_attr = true;
             script.extra = Some(localize("complianz", &Json::Object(settings)));
@@ -1014,11 +1563,25 @@ impl ActivePlugin for Active {
             // enqueue_banner_css(): only with one consent type and a generated stylesheet.
             let types = self.used_consenttypes(query);
             if types.len() == 1 {
-                let relative = format!("css/banner-{}-{}.css", self.banner_id.parse::<i64>().unwrap_or(0), types[0]);
+                let relative = format!(
+                    "css/banner-{}-{}.css",
+                    self.banner_id.parse::<i64>().unwrap_or(0),
+                    types[0]
+                );
                 let file = self.upload_dir.join(&relative);
                 if file.exists() {
-                    let handle = format!("cmplz-banner-{}-{}", self.banner_id.parse::<i64>().unwrap_or(0), types[0]);
-                    let style = assets.style(&handle, format!("{}{relative}", self.upload_url), &[], &filemtime(&file), "all");
+                    let handle = format!(
+                        "cmplz-banner-{}-{}",
+                        self.banner_id.parse::<i64>().unwrap_or(0),
+                        types[0]
+                    );
+                    let style = assets.style(
+                        &handle,
+                        format!("{}{relative}", self.upload_url),
+                        &[],
+                        &filemtime(&file),
+                        "all",
+                    );
                     style.priority = i32::MAX - 50;
                 }
             }
@@ -1026,12 +1589,19 @@ impl ActivePlugin for Active {
         })
     }
 
-    fn wp_head<'a>(&'a self, ctx: &'a HeadContext<'a>, _robots: &'a [(String, rustpress_core::native::Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
+    fn wp_head<'a>(
+        &'a self,
+        ctx: &'a HeadContext<'a>,
+        _robots: &'a [(String, rustpress_core::native::Robot)],
+    ) -> BoxFuture<'a, Result<Option<Head>>> {
         Box::pin(async move {
             if !self.banner_active(ctx.query) {
                 return Ok(None);
             }
-            let mut head = Head { robots: None, ..Head::default() };
+            let mut head = Head {
+                robots: None,
+                ..Head::default()
+            };
             // dynamic_gtm_enqueue(): the consent scripts of Google Tag Gateway, and the statistics in the head.
             head.early.push_str(&self.stats().gtg_consent_script());
             if self.options.is("gtm_code_head", "yes") {
@@ -1043,7 +1613,11 @@ impl ActivePlugin for Active {
         })
     }
 
-    fn wp_footer_query<'a>(&'a self, _site: &'a Site, query: &'a QueryResult) -> BoxFuture<'a, Result<String>> {
+    fn wp_footer_query<'a>(
+        &'a self,
+        _site: &'a Site,
+        query: &'a QueryResult,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             if !self.banner_active(query) {
                 return Ok(String::new());
@@ -1056,7 +1630,9 @@ impl ActivePlugin for Active {
 
     /// `inline_cookie_script_no_warning()` at priority 10, before the emoji script.
     fn print_footer_scripts_early(&self, _site: &Site, query: &QueryResult) -> String {
-        if self.pagebuilder_preview(query) || (self.wizard_completed && self.needs_warning_for(query)) {
+        if self.pagebuilder_preview(query)
+            || (self.wizard_completed && self.needs_warning_for(query))
+        {
             return String::new();
         }
         self.stats().inline_cookie_script_no_warning()
@@ -1064,46 +1640,98 @@ impl ActivePlugin for Active {
 
     /// `inline_cookie_script()` at `PHP_INT_MAX - 50`.
     fn print_footer_scripts(&self, _site: &Site, query: &QueryResult) -> String {
-        if self.pagebuilder_preview(query) || !(self.wizard_completed && self.needs_warning_for(query)) || self.options.is("gtm_code_head", "yes") {
+        if self.pagebuilder_preview(query)
+            || !(self.wizard_completed && self.needs_warning_for(query))
+            || self.options.is("gtm_code_head", "yes")
+        {
             return String::new();
         }
         self.stats().inline_cookie_script()
     }
 
-    fn body_class<'a>(&'a self, _site: &'a Site, query: &'a QueryResult) -> BoxFuture<'a, Result<Vec<String>>> {
-        Box::pin(async move { Ok(if self.is_complianz_page(global_post(query)) { vec!["cmplz-document".to_owned()] } else { Vec::new() }) })
+    fn body_class<'a>(
+        &'a self,
+        _site: &'a Site,
+        query: &'a QueryResult,
+    ) -> BoxFuture<'a, Result<Vec<String>>> {
+        Box::pin(async move {
+            Ok(if self.is_complianz_page(global_post(query)) {
+                vec!["cmplz-document".to_owned()]
+            } else {
+                Vec::new()
+            })
+        })
     }
 
     fn template_output(&self, _site: &Site, query: &QueryResult, html: String) -> String {
         if !self.can_run_cookie_blocker(query) {
             return html;
         }
-        self.blocker.replace_tags(html, &self.blocked_content_text())
+        self.blocker
+            .replace_tags(html, &self.blocked_content_text())
     }
 
     fn shortcode_tags(&self) -> &'static [&'static str] {
         // cmplz_DNSMPD adds its form only for a site that targets the US.
         if self.options.has_region("us") {
-            &["cmplz-document", "cmplz-consent-area", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link", "cmplz-dnsmpi-request"]
+            &[
+                "cmplz-document",
+                "cmplz-consent-area",
+                "cmplz-cookies",
+                "cmplz-manage-consent",
+                "cmplz-revoke-link",
+                "cmplz-accept-link",
+                "cmplz-dnsmpi-request",
+            ]
         } else {
-            &["cmplz-document", "cmplz-consent-area", "cmplz-cookies", "cmplz-manage-consent", "cmplz-revoke-link", "cmplz-accept-link"]
+            &[
+                "cmplz-document",
+                "cmplz-consent-area",
+                "cmplz-cookies",
+                "cmplz-manage-consent",
+                "cmplz-revoke-link",
+                "cmplz-accept-link",
+            ]
         }
     }
 
-    fn shortcode<'a>(&'a self, tag: &'a str, atts: &'a Atts, content: Option<&'a str>, ctx: &'a ShortcodeContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn shortcode<'a>(
+        &'a self,
+        tag: &'a str,
+        atts: &'a Atts,
+        content: Option<&'a str>,
+        ctx: &'a ShortcodeContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
-            let att = |name: &str| atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.clone());
+            let att = |name: &str| {
+                atts.named
+                    .iter()
+                    .rev()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .map(|(_, v)| v.clone())
+            };
             let text = att("text").filter(|v| !v.is_empty() && v != "0");
             Ok(match tag {
                 // load_document(): the document through wp_kses() once more.
                 "cmplz-document" => {
-                    let kind = rustpress_core::slug::sanitize_title_save(&att("type").unwrap_or_default(), self.options.locale());
-                    let region = rustpress_core::slug::sanitize_title_save(&att("region").unwrap_or_default(), self.options.locale());
+                    let kind = rustpress_core::slug::sanitize_title_save(
+                        &att("type").unwrap_or_default(),
+                        self.options.locale(),
+                    );
+                    let region = rustpress_core::slug::sanitize_title_save(
+                        &att("region").unwrap_or_default(),
+                        self.options.locale(),
+                    );
                     if kind.is_empty() || kind == "0" {
                         return Ok(String::new());
                     }
                     let fetched;
-                    let post = match ctx.query.posts.iter().find(|p| Some(p.id) == ctx.global_post) {
+                    let post = match ctx
+                        .query
+                        .posts
+                        .iter()
+                        .find(|p| Some(p.id) == ctx.global_post)
+                    {
                         Some(post) => Some(post),
                         None => {
                             fetched = match ctx.global_post {
@@ -1113,27 +1741,75 @@ impl ActivePlugin for Active {
                             fetched.as_ref()
                         }
                     };
-                    let html = self.document_html(ctx.site, ctx.query, ctx.services, post, &kind, &region).await?;
+                    let html = self
+                        .document_html(ctx.site, ctx.query, ctx.services, post, &kind, &region)
+                        .await?;
                     documents::kses(&html)
                 }
                 // show_consent_area(): the content only once the visitor consented, otherwise a placeholder.
                 "cmplz-consent-area" => {
-                    let Some(content) = content.filter(|c| !c.is_empty() && *c != "0") else { return Ok(String::new()) };
+                    let Some(content) = content.filter(|c| !c.is_empty() && *c != "0") else {
+                        return Ok(String::new());
+                    };
                     let atts = consent::Atts {
-                        id: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("id")).map(|(_, v)| v.as_str()),
-                        clientside: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("clientside")).map(|(_, v)| v.as_str()),
-                        cache_redirect: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("cache_redirect")).map(|(_, v)| v.as_str()),
-                        scroll_into_view: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("scroll_into_view")).map(|(_, v)| v.as_str()),
-                        service: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("service")).map(|(_, v)| v.as_str()),
-                        category: atts.named.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case("category")).map(|(_, v)| v.as_str()),
-                        text: sanitize_text_field(&att("text").unwrap_or_else(|| self.options.tr("Click to accept the cookies for this service"))),
+                        id: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("id"))
+                            .map(|(_, v)| v.as_str()),
+                        clientside: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("clientside"))
+                            .map(|(_, v)| v.as_str()),
+                        cache_redirect: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("cache_redirect"))
+                            .map(|(_, v)| v.as_str()),
+                        scroll_into_view: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("scroll_into_view"))
+                            .map(|(_, v)| v.as_str()),
+                        service: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("service"))
+                            .map(|(_, v)| v.as_str()),
+                        category: atts
+                            .named
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| k.eq_ignore_ascii_case("category"))
+                            .map(|(_, v)| v.as_str()),
+                        text: sanitize_text_field(&att("text").unwrap_or_else(|| {
+                            self.options
+                                .tr("Click to accept the cookies for this service")
+                        })),
                     };
                     let cookie = |name: &str| ctx.query.cookie(name).map(str::to_owned);
-                    match consent::show_consent_area(&atts, ctx.global_post.unwrap_or(0), &self.default_consenttype(), self.options.locale(), &cookie) {
+                    match consent::show_consent_area(
+                        &atts,
+                        ctx.global_post.unwrap_or(0),
+                        &self.default_consenttype(),
+                        self.options.locale(),
+                        &cookie,
+                    ) {
                         consent::Area::Html(html) => html,
                         consent::Area::Consented { prefix } => {
                             let fetched;
-                            let post = match ctx.query.posts.iter().find(|p| Some(p.id) == ctx.global_post) {
+                            let post = match ctx
+                                .query
+                                .posts
+                                .iter()
+                                .find(|p| Some(p.id) == ctx.global_post)
+                            {
                                 Some(post) => Some(post),
                                 None => {
                                     fetched = match ctx.global_post {
@@ -1151,11 +1827,20 @@ impl ActivePlugin for Active {
                 "cmplz-dnsmpi-request" => self.datarequest_form(),
                 "cmplz-manage-consent" => format!(
                     "<div id=\"cmplz-manage-consent-container-nojavascript\">{}&nbsp;{}</div><div id=\"cmplz-manage-consent-container\" name=\"cmplz-manage-consent-container\" class=\"cmplz-manage-consent-container\"></div>",
-                    self.options.tr_x("You have loaded the Cookie Policy without javascript support.", "cookie policy"),
-                    self.options.tr_x("On AMP, you can use the manage consent button on the bottom of the page.", "cookie policy"),
+                    self.options.tr_x(
+                        "You have loaded the Cookie Policy without javascript support.",
+                        "cookie policy"
+                    ),
+                    self.options.tr_x(
+                        "On AMP, you can use the manage consent button on the bottom of the page.",
+                        "cookie policy"
+                    ),
                 ),
                 "cmplz-revoke-link" => {
-                    let text = text.map(|t| sanitize_text_field(&t)).filter(|t| !t.is_empty() && t != "0").unwrap_or_else(|| self.options.tr("Revoke"));
+                    let text = text
+                        .map(|t| sanitize_text_field(&t))
+                        .filter(|t| !t.is_empty() && t != "0")
+                        .unwrap_or_else(|| self.options.tr("Revoke"));
                     let status = self.options.tr("Current status: %s");
                     format!(
                         "{REVOKE_CSS}<button class=\"cmplz-deny cmplz-revoke-custom\">{}</button>&nbsp;<span class=\"cmplz-status-accepted\">{}</span><span class=\"cmplz-status-denied\">{}</span>",
@@ -1165,8 +1850,13 @@ impl ActivePlugin for Active {
                     )
                 }
                 _ => {
-                    let text = text.map(|t| sanitize_text_field(&t)).unwrap_or_else(|| self.options.tr("Click to accept marketing cookies"));
-                    format!("<div class=\"cmplz-custom-accept-btn cmplz-accept\"><a href=\"#\">{}</a></div>", rustpress_core::formatting::esc_html(&text))
+                    let text = text
+                        .map(|t| sanitize_text_field(&t))
+                        .unwrap_or_else(|| self.options.tr("Click to accept marketing cookies"));
+                    format!(
+                        "<div class=\"cmplz-custom-accept-btn cmplz-accept\"><a href=\"#\">{}</a></div>",
+                        rustpress_core::formatting::esc_html(&text)
+                    )
                 }
             })
         })
@@ -1177,7 +1867,12 @@ impl ActivePlugin for Active {
     }
 
     /// `cmplz_render_document_block()` and `cmplz_render_consent_area_block()`.
-    fn render_block<'a>(&'a self, name: &'a str, attrs: &'a Map<String, Json>, ctx: &'a rustpress_core::native::BlockContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn render_block<'a>(
+        &'a self,
+        name: &'a str,
+        attrs: &'a Map<String, Json>,
+        ctx: &'a rustpress_core::native::BlockContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             if name == "complianz/consent-area" {
                 return Ok(consent::render_block(attrs, self.options.locale()));
@@ -1198,7 +1893,8 @@ impl ActivePlugin for Active {
             }
             let region = documents::region_from_legacy_type(&selected);
             let kind = selected.replace(&format!("-{region}"), "");
-            self.document_html(ctx.site, ctx.query, ctx.services, ctx.post, &kind, &region).await
+            self.document_html(ctx.site, ctx.query, ctx.services, ctx.post, &kind, &region)
+                .await
         })
     }
 
@@ -1206,13 +1902,19 @@ impl ActivePlugin for Active {
         REST_INDEX
     }
 
-    fn rest<'a>(&'a self, request: &'a RestRequest<'a>) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
+    fn rest<'a>(
+        &'a self,
+        request: &'a RestRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<RestAnswer>>> {
         Box::pin(async move {
             let route = request.route.trim_end_matches('/');
             Ok(match (request.method, route) {
                 ("GET", "/complianz/v1/banner") => {
                     let region = self.default_region();
-                    let banner_version = self.banner.as_ref().map_or("0".to_owned(), |b| b.banner_version.clone());
+                    let banner_version = self
+                        .banner
+                        .as_ref()
+                        .map_or("0".to_owned(), |b| b.banner_version.clone());
                     Some(RestAnswer::ok(json!({
                         "consenttype": self.default_consenttype(),
                         "region": region,
@@ -1224,12 +1926,26 @@ impl ActivePlugin for Active {
                 ("POST", "/complianz/v1/track") => Some(RestAnswer::ok(json!({ "success": true }))),
                 ("GET", "/complianz/v1/cookie_data") => {
                     // load_cookie_data(): the list of the cookie shredder, only with consent per service.
-                    let list = if !options::loose_eq_int(&self.options.get("safe_mode"), 1) && self.options.is("consent_per_service", "yes") { self.transient("cmplz_cookie_shredder_list").map(php_to_json) } else { None };
+                    let list = if !options::loose_eq_int(&self.options.get("safe_mode"), 1)
+                        && self.options.is("consent_per_service", "yes")
+                    {
+                        self.transient("cmplz_cookie_shredder_list")
+                            .map(php_to_json)
+                    } else {
+                        None
+                    };
                     Some(RestAnswer::ok(list.unwrap_or(Json::Array(Vec::new()))))
                 }
-                ("GET", "/complianz/v1/manage_consent_html") => Some(RestAnswer::ok(Json::String(self.manage_consent_html()))),
-                ("GET", "/complianz/v1/documents") => Some(RestAnswer::ok(self.rest_documents(request).await?)),
-                ("GET", _) if route.starts_with("/complianz/v1/consent-area/") => self.consented_content(request, &route["/complianz/v1/consent-area/".len()..]).await?,
+                ("GET", "/complianz/v1/manage_consent_html") => {
+                    Some(RestAnswer::ok(Json::String(self.manage_consent_html())))
+                }
+                ("GET", "/complianz/v1/documents") => {
+                    Some(RestAnswer::ok(self.rest_documents(request).await?))
+                }
+                ("GET", _) if route.starts_with("/complianz/v1/consent-area/") => {
+                    self.consented_content(request, &route["/complianz/v1/consent-area/".len()..])
+                        .await?
+                }
                 _ => None,
             })
         })
@@ -1246,10 +1962,21 @@ impl Active {
         let mut regions = self.options.regions();
         regions.push("all".to_owned());
         for region in &regions {
-            let Some((region, kinds)) = PAGES.iter().find(|(r, _)| r == region) else { continue };
-            for kind in kinds.iter().filter(|kind| self.options.is(kind, "generated")) {
-                let html = self.document_html(request.site, &query, request.services, None, kind, region).await?;
-                let id = if *region == "eu" { (*kind).to_owned() } else { format!("{kind}-{region}") };
+            let Some((region, kinds)) = PAGES.iter().find(|(r, _)| r == region) else {
+                continue;
+            };
+            for kind in kinds
+                .iter()
+                .filter(|kind| self.options.is(kind, "generated"))
+            {
+                let html = self
+                    .document_html(request.site, &query, request.services, None, kind, region)
+                    .await?;
+                let id = if *region == "eu" {
+                    (*kind).to_owned()
+                } else {
+                    format!("{kind}-{region}")
+                };
                 out.push(json!({ "id": id, "title": self.options.tr(&page_title(kind, region)), "content": html }));
             }
         }
@@ -1258,11 +1985,19 @@ impl Active {
 
     /// `cmplz_rest_consented_content()` for the route `consent-area/(?P<post_id>[0-9]+)/(?P<block_id>[a-z0-9-_]+)`
     /// (matched without regard to case).
-    async fn consented_content(&self, request: &RestRequest<'_>, rest: &str) -> Result<Option<RestAnswer>> {
-        let Some((post_id, block_id)) = rest.split_once('/') else { return Ok(None) };
+    async fn consented_content(
+        &self,
+        request: &RestRequest<'_>,
+        rest: &str,
+    ) -> Result<Option<RestAnswer>> {
+        let Some((post_id, block_id)) = rest.split_once('/') else {
+            return Ok(None);
+        };
         // PCRE reads `9-_` as a range, so `:;<=>?@[\]^` count as well.
         static BLOCK_ID: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let valid_block = BLOCK_ID.get_or_init(|| regex::Regex::new(r"(?i)^[a-z0-9-_]+$").expect("valid regex")).is_match(block_id);
+        let valid_block = BLOCK_ID
+            .get_or_init(|| regex::Regex::new(r"(?i)^[a-z0-9-_]+$").expect("valid regex"))
+            .is_match(block_id);
         if post_id.is_empty() || !post_id.bytes().all(|b| b.is_ascii_digit()) || !valid_block {
             return Ok(None);
         }
@@ -1271,21 +2006,31 @@ impl Active {
             Ok(id) if id > 0 => request.site.db.post(id).await?,
             _ => None,
         };
-        let Some(post) = post else { return Ok(Some(RestAnswer::ok(Json::String(String::new())))) };
+        let Some(post) = post else {
+            return Ok(Some(RestAnswer::ok(Json::String(String::new()))));
+        };
         let forbidden = || RestAnswer::error("rest_forbidden", "", 403);
-        if post.post_status != "publish" && !request.user.is_some_and(|user| user.can_read_post(&post)) {
+        if post.post_status != "publish"
+            && !request.user.is_some_and(|user| user.can_read_post(&post))
+        {
             return Ok(Some(forbidden()));
         }
-        if !post.post_password.is_empty() && rustpress_blocks::content::post_password_required(&post) {
+        if !post.post_password.is_empty()
+            && rustpress_blocks::content::post_password_required(&post)
+        {
             return Ok(Some(forbidden()));
         }
         let output = consent::consented_content(&post.post_content, &block_id);
-        Ok(Some(RestAnswer::ok(Json::String(request.services.do_shortcode(None, &output).await?))))
+        Ok(Some(RestAnswer::ok(Json::String(
+            request.services.do_shortcode(None, &output).await?,
+        ))))
     }
 
     /// `cmplz_rest_api_manage_consent_html()` (the Do Not Track signal of the browser is not looked at).
     fn manage_consent_html(&self) -> String {
-        let Some(banner) = &self.banner else { return String::new() };
+        let Some(banner) = &self.banner else {
+            return String::new();
+        };
         banner.categories_html(&self.default_consenttype(), &self.options, &self.plugin_dir)
     }
 }
@@ -1299,10 +2044,21 @@ fn sanitize_text_field(text: &str) -> String {
     static TAGS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static SPACE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static OCTETS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let mut text = if text.contains('<') { TAGS.get_or_init(|| regex::Regex::new(r"(?s)<[^>]*?>").expect("valid regex")).replace_all(text, "").into_owned() } else { text.to_owned() };
-    let octets = OCTETS.get_or_init(|| regex::Regex::new(r"(?i)%[a-f0-9]{2}").expect("valid regex"));
+    let mut text = if text.contains('<') {
+        TAGS.get_or_init(|| regex::Regex::new(r"(?s)<[^>]*?>").expect("valid regex"))
+            .replace_all(text, "")
+            .into_owned()
+    } else {
+        text.to_owned()
+    };
+    let octets =
+        OCTETS.get_or_init(|| regex::Regex::new(r"(?i)%[a-f0-9]{2}").expect("valid regex"));
     while octets.is_match(&text) {
         text = octets.replace_all(&text, "").into_owned();
     }
-    SPACE.get_or_init(|| regex::Regex::new(r"[\r\n\t ]+").expect("valid regex")).replace_all(&text, " ").trim().to_owned()
+    SPACE
+        .get_or_init(|| regex::Regex::new(r"[\r\n\t ]+").expect("valid regex"))
+        .replace_all(&text, " ")
+        .trim()
+        .to_owned()
 }

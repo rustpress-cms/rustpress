@@ -22,7 +22,10 @@
 
 use futures::future::BoxFuture;
 use rustpress_core::formatting::{esc_attr, esc_html};
-use rustpress_core::native::{ActivePlugin, Assets, Head, HeadContext, Init, NativePlugin, PluginRequest, PluginResponse, Robot};
+use rustpress_core::native::{
+    ActivePlugin, Assets, Head, HeadContext, Init, NativePlugin, PluginRequest, PluginResponse,
+    Robot,
+};
 use rustpress_core::{Result, Site};
 use rustpress_phpser::Value;
 
@@ -32,7 +35,10 @@ pub struct SiteKit;
 const VERSION: &str = "1.191.0";
 
 /// `Regions::EU_USER_CONSENT_POLICY`.
-const EU_REGIONS: [&str; 32] = ["AT", "BE", "BG", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GB", "GR", "HR", "HU", "IE", "IS", "IT", "LI", "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "SE", "SI", "SK"];
+const EU_REGIONS: [&str; 32] = [
+    "AT", "BE", "BG", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GB", "GR", "HR", "HU",
+    "IE", "IS", "IT", "LI", "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "SE", "SI", "SK",
+];
 
 /// The consent mode script of `dist/manifest.php` (its hash is `null`, so it has no `ver`).
 const CONSENT_MODE_SCRIPT: &str = "googlesitekit-consent-mode-5ef17bce870a966299fc.js";
@@ -52,22 +58,58 @@ impl NativePlugin for SiteKit {
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
         Box::pin(async move {
-            let option = |name: &'static str| async move { Ok::<_, rustpress_core::Error>(site.options.fetch(&site.db, name).await?.map(|raw| rustpress_core::options::maybe_unserialize(&raw))) };
-            let modules = active_modules(option("googlesitekit_active_modules").await?, option("googlesitekit-active-modules").await?);
-            let analytics = if modules.iter().any(|m| m == "analytics-4") { Some(AnalyticsSettings::from_option(option("googlesitekit_analytics-4_settings").await?)) } else { None };
-            let consent_mode = option("googlesitekit_consent_mode").await?.and_then(|v| v.get("enabled").map(truthy)).unwrap_or(false);
+            let option = |name: &'static str| async move {
+                Ok::<_, rustpress_core::Error>(
+                    site.options
+                        .fetch(&site.db, name)
+                        .await?
+                        .map(|raw| rustpress_core::options::maybe_unserialize(&raw)),
+                )
+            };
+            let modules = active_modules(
+                option("googlesitekit_active_modules").await?,
+                option("googlesitekit-active-modules").await?,
+            );
+            let analytics = if modules.iter().any(|m| m == "analytics-4") {
+                Some(AnalyticsSettings::from_option(
+                    option("googlesitekit_analytics-4_settings").await?,
+                ))
+            } else {
+                None
+            };
+            let consent_mode = option("googlesitekit_consent_mode")
+                .await?
+                .and_then(|v| v.get("enabled").map(truthy))
+                .unwrap_or(false);
             let prefix = site.db.table_prefix().to_owned();
             let verification_tags = verification_tags(site, &prefix).await?;
             let home_domain = host_of(&site.settings.home);
-            Ok(Box::new(Active { analytics, consent_mode, verification_tags, home_domain, file_meta_key: format!("{prefix}googlesitekit_site_verification_file") }) as Box<dyn ActivePlugin>)
+            Ok(Box::new(Active {
+                analytics,
+                consent_mode,
+                verification_tags,
+                home_domain,
+                file_meta_key: format!("{prefix}googlesitekit_site_verification_file"),
+            }) as Box<dyn ActivePlugin>)
         })
     }
 }
 
 /// `Modules::get_active_modules_option()`: the option, the legacy option, or `pagespeed-insights`.
 fn active_modules(option: Option<Value>, legacy: Option<Value>) -> Vec<String> {
-    let list = |value: &Value| value.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect::<Vec<_>>());
-    option.as_ref().and_then(list).or_else(|| legacy.as_ref().and_then(list)).unwrap_or_else(|| vec!["pagespeed-insights".to_owned()])
+    let list = |value: &Value| {
+        value.as_array().map(|items| {
+            items
+                .iter()
+                .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
+    };
+    option
+        .as_ref()
+        .and_then(list)
+        .or_else(|| legacy.as_ref().and_then(list))
+        .unwrap_or_else(|| vec!["pagespeed-insights".to_owned()])
 }
 
 /// A PHP value in a boolean context.
@@ -126,15 +168,28 @@ impl AnalyticsSettings {
         let option = option.filter(|v| v.as_array().is_some());
         let get = |key: &str| option.as_ref().and_then(|o| o.get(key));
         let tracking_disabled = match get("trackingDisabled") {
-            Some(value) => value.as_array().map(|items| items.iter().map(|(_, v)| php_string(Some(v))).collect()).unwrap_or_default(),
+            Some(value) => value
+                .as_array()
+                .map(|items| items.iter().map(|(_, v)| php_string(Some(v))).collect())
+                .unwrap_or_default(),
             None => vec!["loggedinUsers".to_owned()],
         };
-        Self { measurement_id: php_string(get("measurementID")), google_tag_id: php_string(get("googleTagID")), use_snippet: get("useSnippet").is_none_or(truthy), tracking_disabled, measurement_set: non_empty(get("measurementID")) }
+        Self {
+            measurement_id: php_string(get("measurementID")),
+            google_tag_id: php_string(get("googleTagID")),
+            use_snippet: get("useSnippet").is_none_or(truthy),
+            tracking_disabled,
+            measurement_set: non_empty(get("measurementID")),
+        }
     }
 
     /// `Analytics_4::get_tag_id()`: the Google tag ID, or the measurement ID.
     fn tag_id(&self) -> &str {
-        if self.google_tag_id.is_empty() || self.google_tag_id == "0" { &self.measurement_id } else { &self.google_tag_id }
+        if self.google_tag_id.is_empty() || self.google_tag_id == "0" {
+            &self.measurement_id
+        } else {
+            &self.google_tag_id
+        }
     }
 
     /// `is_tracking_disabled()`: tracking is off for this signed-in user.
@@ -143,7 +198,12 @@ impl AnalyticsSettings {
             return false;
         }
         let Some(viewer) = viewer else { return false };
-        self.tracking_disabled.iter().any(|d| d == "loggedinUsers") || (self.tracking_disabled.iter().any(|d| d == "contentCreators") && viewer.can("edit_posts"))
+        self.tracking_disabled.iter().any(|d| d == "loggedinUsers")
+            || (self
+                .tracking_disabled
+                .iter()
+                .any(|d| d == "contentCreators")
+                && viewer.can("edit_posts"))
     }
 }
 
@@ -151,14 +211,24 @@ impl AnalyticsSettings {
 /// not empty, in the order of the meta rows (or of the transient that caches them).
 async fn verification_tags(site: &Site, prefix: &str) -> Result<Vec<String>> {
     let key = format!("{prefix}googlesitekit_site_verification_meta");
-    let cached = site.options.fetch(&site.db, "_transient_googlesitekit_verification_meta_tags").await?.map(|raw| rustpress_core::options::maybe_unserialize(&raw));
-    let user_tags: Vec<(u64, String)> = match cached.as_ref().and_then(|c| c.get("user_tags")).and_then(Value::as_array) {
+    let cached = site
+        .options
+        .fetch(&site.db, "_transient_googlesitekit_verification_meta_tags")
+        .await?
+        .map(|raw| rustpress_core::options::maybe_unserialize(&raw));
+    let user_tags: Vec<(u64, String)> = match cached
+        .as_ref()
+        .and_then(|c| c.get("user_tags"))
+        .and_then(Value::as_array)
+    {
         Some(items) => items
             .iter()
             .map(|(k, v)| {
                 let id = match k {
                     rustpress_phpser::Key::Int(i) => u64::try_from(*i).unwrap_or(0),
-                    rustpress_phpser::Key::Str(s) => String::from_utf8_lossy(s).parse().unwrap_or(0),
+                    rustpress_phpser::Key::Str(s) => {
+                        String::from_utf8_lossy(s).parse().unwrap_or(0)
+                    }
                 };
                 (id, php_string(Some(v)))
             })
@@ -178,7 +248,13 @@ async fn verification_tags(site: &Site, prefix: &str) -> Result<Vec<String>> {
     if user_tags.is_empty() {
         return Ok(Vec::new());
     }
-    let roles = rustpress_auth::Roles::from_option(&site.options.fetch(&site.db, &format!("{prefix}user_roles")).await?.unwrap_or_default());
+    let roles = rustpress_auth::Roles::from_option(
+        &site
+            .options
+            .fetch(&site.db, &format!("{prefix}user_roles"))
+            .await?
+            .unwrap_or_default(),
+    );
     let mut tags: Vec<String> = Vec::new();
     for (id, tag) in user_tags {
         if tag.is_empty() || tags.contains(&tag) || !can_set_up(site, &roles, id).await? {
@@ -191,15 +267,31 @@ async fn verification_tags(site: &Site, prefix: &str) -> Result<Vec<String>> {
 
 /// `user_can( $user_id, Permissions::SETUP )`: `googlesitekit_setup` stands for `manage_options`.
 async fn can_set_up(site: &Site, roles: &rustpress_auth::Roles, user_id: u64) -> Result<bool> {
-    let Some(user) = site.db.auth_user_by_id(user_id).await? else { return Ok(false) };
-    Ok(rustpress_auth::CurrentUser::load(&site.db, roles, &user).await?.can("manage_options"))
+    let Some(user) = site.db.auth_user_by_id(user_id).await? else {
+        return Ok(false);
+    };
+    Ok(rustpress_auth::CurrentUser::load(&site.db, roles, &user)
+        .await?
+        .can("manage_options"))
 }
 
 /// `print_site_verification_meta()` for one stored tag.
 fn verification_meta(tag: &str) -> String {
-    let tag = rustpress_core::formatting::html_entity_decode(tag).replace("&#039;", "'").replace("&#39;", "'");
-    let tag = if tag.starts_with("<meta ") { tag } else { format!("<meta name=\"google-site-verification\" content=\"{}\">", esc_attr(&tag)) };
-    rustpress_core::kses::kses(&tag, &rustpress_core::kses::Allowed::tags(&[("meta", &["name", "content"])]))
+    let tag = rustpress_core::formatting::html_entity_decode(tag)
+        .replace("&#039;", "'")
+        .replace("&#39;", "'");
+    let tag = if tag.starts_with("<meta ") {
+        tag
+    } else {
+        format!(
+            "<meta name=\"google-site-verification\" content=\"{}\">",
+            esc_attr(&tag)
+        )
+    };
+    rustpress_core::kses::kses(
+        &tag,
+        &rustpress_core::kses::Allowed::tags(&[("meta", &["name", "content"])]),
+    )
 }
 
 struct Active {
@@ -216,7 +308,9 @@ impl Active {
     /// Whether `Analytics_4::register_tag()` places the tag on this site.
     fn tag(&self, site: &Site) -> Option<&AnalyticsSettings> {
         // `Tag_Guard`: `useSnippet` and a measurement ID; `Tag_Environment_Type_Guard`: `production`.
-        self.analytics.as_ref().filter(|s| s.use_snippet && s.measurement_set && site.environment_type() == "production")
+        self.analytics.as_ref().filter(|s| {
+            s.use_snippet && s.measurement_set && site.environment_type() == "production"
+        })
     }
 }
 
@@ -232,14 +326,21 @@ impl ActivePlugin for Active {
     }
 
     fn resource_hints(&self, relation: &str) -> Vec<String> {
-        if relation == "dns-prefetch" { vec!["//www.googletagmanager.com".to_owned()] } else { Vec::new() }
+        if relation == "dns-prefetch" {
+            vec!["//www.googletagmanager.com".to_owned()]
+        } else {
+            Vec::new()
+        }
     }
 
     fn enqueue(&self, site: &Site, assets: &mut Assets) {
         if let Some(settings) = self.tag(site) {
             // `GTag::enqueue_gtag_script()` on `wp_enqueue_scripts` at priority 20.
             let tag_id = settings.tag_id();
-            let src = format!("https://www.googletagmanager.com/gtag/js?id={}", rustpress_core::canonical::rawurlencode(tag_id));
+            let src = format!(
+                "https://www.googletagmanager.com/gtag/js?id={}",
+                rustpress_core::canonical::rawurlencode(tag_id)
+            );
             let script = assets.script("google_gtagjs", src, &[], "", false);
             script.ver = None;
             script.priority = 20;
@@ -253,17 +354,39 @@ impl ActivePlugin for Active {
             ];
             // `script_loader_tag`: `add_async_defer_attribute()`, the comment of `Web_Tag` (10), then the one of `GTag` (20).
             script.tag_attributes = " async".to_owned();
-            script.tag_prefix = format!("\n<!-- {} -->\n<!-- {} -->\n", esc_html(&site.trd("google-site-kit", "Google tag (gtag.js) snippet added by Site Kit")), esc_html(&site.trd("google-site-kit", "Google Analytics snippet added by Site Kit")));
+            script.tag_prefix = format!(
+                "\n<!-- {} -->\n<!-- {} -->\n",
+                esc_html(&site.trd(
+                    "google-site-kit",
+                    "Google tag (gtag.js) snippet added by Site Kit"
+                )),
+                esc_html(&site.trd(
+                    "google-site-kit",
+                    "Google Analytics snippet added by Site Kit"
+                ))
+            );
         }
         if self.consent_mode {
-            let script = assets.script("googlesitekit-consent-mode", site.site_url(&format!("wp-content/plugins/google-site-kit/dist/assets/js/{CONSENT_MODE_SCRIPT}")), &[], "", true);
+            let script = assets.script(
+                "googlesitekit-consent-mode",
+                site.site_url(&format!(
+                    "wp-content/plugins/google-site-kit/dist/assets/js/{CONSENT_MODE_SCRIPT}"
+                )),
+                &[],
+                "",
+                true,
+            );
             script.ver = None;
             // Hooked on `init` at the default priority: after the theme's callback of the same priority.
             script.priority = 11;
         }
     }
 
-    fn wp_head<'a>(&'a self, ctx: &'a HeadContext<'a>, _robots: &'a [(String, Robot)]) -> BoxFuture<'a, Result<Option<Head>>> {
+    fn wp_head<'a>(
+        &'a self,
+        ctx: &'a HeadContext<'a>,
+        _robots: &'a [(String, Robot)],
+    ) -> BoxFuture<'a, Result<Option<Head>>> {
         Box::pin(async move {
             let site = ctx.site;
             let mut head = Head::default();
@@ -272,11 +395,26 @@ impl ActivePlugin for Active {
                 && settings.tracking_disabled_for(ctx.query.viewer.as_ref())
             {
                 // The tabs are the indentation of the PHP template (`\t<?php endif;` after the closing comment).
-                head.first.push_str(&format!("<!-- {} -->\n\t", esc_html(&site.trd("google-site-kit", "Google Analytics opt-out snippet added by Site Kit"))));
+                head.first.push_str(&format!(
+                    "<!-- {} -->\n\t",
+                    esc_html(&site.trd(
+                        "google-site-kit",
+                        "Google Analytics opt-out snippet added by Site Kit"
+                    ))
+                ));
                 if !settings.measurement_id.is_empty() {
-                    head.first.push_str(&format!("<script>\nwindow[\"ga-disable-{}\"] = true;\n</script>\n", esc_attr(&settings.measurement_id)));
+                    head.first.push_str(&format!(
+                        "<script>\nwindow[\"ga-disable-{}\"] = true;\n</script>\n",
+                        esc_attr(&settings.measurement_id)
+                    ));
                 }
-                head.first.push_str(&format!("\t<!-- {} -->\n\t", esc_html(&site.trd("google-site-kit", "End Google Analytics opt-out snippet added by Site Kit"))));
+                head.first.push_str(&format!(
+                    "\t<!-- {} -->\n\t",
+                    esc_html(&site.trd(
+                        "google-site-kit",
+                        "End Google Analytics opt-out snippet added by Site Kit"
+                    ))
+                ));
             }
             // `render_gtag_consent_data_layer_snippet()` at priority 1.
             if self.consent_mode {
@@ -284,7 +422,10 @@ impl ActivePlugin for Active {
             }
             // Priority 10: the generator is hooked when the plugin loads, the verification tags when the modules
             // register on `init`.
-            head.late.push_str(&format!("<meta name=\"generator\" content=\"Site Kit by Google {}\" />", esc_attr(VERSION)));
+            head.late.push_str(&format!(
+                "<meta name=\"generator\" content=\"Site Kit by Google {}\" />",
+                esc_attr(VERSION)
+            ));
             for tag in &self.verification_tags {
                 head.late_init.push_str(&verification_meta(tag));
             }
@@ -294,41 +435,88 @@ impl ActivePlugin for Active {
 
     /// The generator and the verification tags are also hooked on `login_head`.
     fn login_head(&self, _site: &Site) -> String {
-        let mut out = format!("<meta name=\"generator\" content=\"Site Kit by Google {}\" />", esc_attr(VERSION));
+        let mut out = format!(
+            "<meta name=\"generator\" content=\"Site Kit by Google {}\" />",
+            esc_attr(VERSION)
+        );
         for tag in &self.verification_tags {
             out.push_str(&verification_meta(tag));
         }
         out
     }
 
-    fn init<'a>(&'a self, site: &'a Site, request: &'a PluginRequest<'a>) -> BoxFuture<'a, Result<Option<Init>>> {
+    fn init<'a>(
+        &'a self,
+        site: &'a Site,
+        request: &'a PluginRequest<'a>,
+    ) -> BoxFuture<'a, Result<Option<Init>>> {
         Box::pin(async move {
             // `Site_Verification::register()`: `GET /google<token>.html` of a user who can set Site Kit up.
             if !request.method.eq_ignore_ascii_case("GET") {
                 return Ok(None);
             }
-            let Some(token) = request.uri.strip_prefix("/google").and_then(|rest| rest.strip_suffix(".html")) else { return Ok(None) };
-            if token.is_empty() || !token.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+            let Some(token) = request
+                .uri
+                .strip_prefix("/google")
+                .and_then(|rest| rest.strip_suffix(".html"))
+            else {
+                return Ok(None);
+            };
+            if token.is_empty()
+                || !token
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            {
                 return Ok(None);
             }
             let users = site.db.user_meta_by_key(&self.file_meta_key).await?;
-            let Some(&(user_id, _)) = users.iter().filter(|(_, v)| v == token).min_by_key(|(id, _)| *id) else { return Ok(None) };
+            let Some(&(user_id, _)) = users
+                .iter()
+                .filter(|(_, v)| v == token)
+                .min_by_key(|(id, _)| *id)
+            else {
+                return Ok(None);
+            };
             let prefix = site.db.table_prefix().to_owned();
-            let roles = rustpress_auth::Roles::from_option(&site.options.fetch(&site.db, &format!("{prefix}user_roles")).await?.unwrap_or_default());
+            let roles = rustpress_auth::Roles::from_option(
+                &site
+                    .options
+                    .fetch(&site.db, &format!("{prefix}user_roles"))
+                    .await?
+                    .unwrap_or_default(),
+            );
             if !can_set_up(site, &roles, user_id).await? {
                 return Ok(None);
             }
             let body = format!("google-site-verification: google{}.html", esc_html(token));
-            Ok(Some(Init::Response(PluginResponse { status: 200, headers: vec![("Content-Type".to_owned(), "text/html; charset=UTF-8".to_owned())], body })))
+            Ok(Some(Init::Response(PluginResponse {
+                status: 200,
+                headers: vec![(
+                    "Content-Type".to_owned(),
+                    "text/html; charset=UTF-8".to_owned(),
+                )],
+                body,
+            })))
         })
     }
 }
 
 /// `Consent_Mode::render_gtag_consent_data_layer_snippet()`.
 fn consent_mode_snippet(site: &Site) -> String {
-    let regions: Vec<serde_json::Value> = EU_REGIONS.iter().map(|r| serde_json::Value::String((*r).to_owned())).collect();
+    let regions: Vec<serde_json::Value> = EU_REGIONS
+        .iter()
+        .map(|r| serde_json::Value::String((*r).to_owned()))
+        .collect();
     let mut defaults = serde_json::Map::new();
-    for key in ["ad_personalization", "ad_storage", "ad_user_data", "analytics_storage", "functionality_storage", "security_storage", "personalization_storage"] {
+    for key in [
+        "ad_personalization",
+        "ad_storage",
+        "ad_user_data",
+        "analytics_storage",
+        "functionality_storage",
+        "security_storage",
+        "personalization_storage",
+    ] {
         defaults.insert(key.to_owned(), "denied".into());
     }
     defaults.insert("region".to_owned(), serde_json::Value::Array(regions));
@@ -343,8 +531,14 @@ fn consent_mode_snippet(site: &Site) -> String {
     let map = rustpress_blocks::php_json::encode(&map);
     format!(
         "<!-- {} -->\n<script id=\"google_gtagjs-js-consent-mode-data-layer\">\nwindow.dataLayer = window.dataLayer || [];function gtag(){{dataLayer.push(arguments);}}\ngtag('consent', 'default', {defaults});\nwindow._googlesitekitConsentCategoryMap = {map};\nwindow._googlesitekitConsents = {defaults};\n</script>\n<!-- {} -->\n",
-        esc_html(&site.trd("google-site-kit", "Google tag (gtag.js) consent mode dataLayer added by Site Kit")),
-        esc_html(&site.trd("google-site-kit", "End Google tag (gtag.js) consent mode dataLayer added by Site Kit")),
+        esc_html(&site.trd(
+            "google-site-kit",
+            "Google tag (gtag.js) consent mode dataLayer added by Site Kit"
+        )),
+        esc_html(&site.trd(
+            "google-site-kit",
+            "End Google tag (gtag.js) consent mode dataLayer added by Site Kit"
+        )),
     )
 }
 
@@ -366,8 +560,14 @@ mod tests {
     #[test]
     fn active_modules_fall_back() {
         let list = value(r#"a:2:{i:0;s:11:"analytics-4";i:1;s:14:"search-console";}"#);
-        assert_eq!(active_modules(Some(list.clone()), None), ["analytics-4", "search-console"]);
-        assert_eq!(active_modules(None, Some(list)), ["analytics-4", "search-console"]);
+        assert_eq!(
+            active_modules(Some(list.clone()), None),
+            ["analytics-4", "search-console"]
+        );
+        assert_eq!(
+            active_modules(None, Some(list)),
+            ["analytics-4", "search-console"]
+        );
         assert_eq!(active_modules(None, None), ["pagespeed-insights"]);
     }
 
@@ -376,21 +576,40 @@ mod tests {
         let settings = AnalyticsSettings::from_option(None);
         assert!(settings.use_snippet && !settings.measurement_set);
         assert_eq!(settings.tracking_disabled, ["loggedinUsers"]);
-        let settings = AnalyticsSettings::from_option(Some(value(r#"a:4:{s:13:"measurementID";s:9:"G-ABC1234";s:11:"googleTagID";s:0:"";s:10:"useSnippet";b:0;s:16:"trackingDisabled";a:0:{}}"#)));
+        let settings = AnalyticsSettings::from_option(Some(value(
+            r#"a:4:{s:13:"measurementID";s:9:"G-ABC1234";s:11:"googleTagID";s:0:"";s:10:"useSnippet";b:0;s:16:"trackingDisabled";a:0:{}}"#,
+        )));
         assert!(!settings.use_snippet && settings.measurement_set);
         assert!(settings.tracking_disabled.is_empty());
         assert_eq!(settings.tag_id(), "G-ABC1234");
-        let settings = AnalyticsSettings::from_option(Some(value(r#"a:2:{s:13:"measurementID";s:9:"G-ABC1234";s:11:"googleTagID";s:11:"GT-XYZ98765";}"#)));
+        let settings = AnalyticsSettings::from_option(Some(value(
+            r#"a:2:{s:13:"measurementID";s:9:"G-ABC1234";s:11:"googleTagID";s:11:"GT-XYZ98765";}"#,
+        )));
         assert_eq!(settings.tag_id(), "GT-XYZ98765");
     }
 
     #[test]
     fn verification_meta_matches_the_plugin() {
         // Captured from `print_site_verification_meta()` of the plugin's code in the reference.
-        assert_eq!(verification_meta("abc123"), r#"<meta name="google-site-verification" content="abc123">"#);
-        assert_eq!(verification_meta("a&amp;b\"c"), r#"<meta name="google-site-verification" content="a&amp;b&quot;c">"#);
-        assert_eq!(verification_meta(r#"&lt;meta name="google-site-verification" content="xyz" /&gt;"#), r#"<meta name="google-site-verification" content="xyz" />"#);
-        assert_eq!(verification_meta(r#"<meta name="google-site-verification" content="q" onload="x">"#), r#"<meta name="google-site-verification" content="q">"#);
-        assert_eq!(verification_meta("it&#039;s"), r#"<meta name="google-site-verification" content="it&apos;s">"#);
+        assert_eq!(
+            verification_meta("abc123"),
+            r#"<meta name="google-site-verification" content="abc123">"#
+        );
+        assert_eq!(
+            verification_meta("a&amp;b\"c"),
+            r#"<meta name="google-site-verification" content="a&amp;b&quot;c">"#
+        );
+        assert_eq!(
+            verification_meta(r#"&lt;meta name="google-site-verification" content="xyz" /&gt;"#),
+            r#"<meta name="google-site-verification" content="xyz" />"#
+        );
+        assert_eq!(
+            verification_meta(r#"<meta name="google-site-verification" content="q" onload="x">"#),
+            r#"<meta name="google-site-verification" content="q">"#
+        );
+        assert_eq!(
+            verification_meta("it&#039;s"),
+            r#"<meta name="google-site-verification" content="it&apos;s">"#
+        );
     }
 }

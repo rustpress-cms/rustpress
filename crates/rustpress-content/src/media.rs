@@ -73,25 +73,67 @@ pub const MIME_TYPES: &[(&str, &str)] = &[
     ("xla|xls|xlt|xlw", "application/vnd.ms-excel"),
     ("mdb", "application/vnd.ms-access"),
     ("mpp", "application/vnd.ms-project"),
-    ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    (
+        "docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
     ("docm", "application/vnd.ms-word.document.macroEnabled.12"),
-    ("dotx", "application/vnd.openxmlformats-officedocument.wordprocessingml.template"),
+    (
+        "dotx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    ),
     ("dotm", "application/vnd.ms-word.template.macroEnabled.12"),
-    ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    (
+        "xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
     ("xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12"),
-    ("xlsb", "application/vnd.ms-excel.sheet.binary.macroEnabled.12"),
-    ("xltx", "application/vnd.openxmlformats-officedocument.spreadsheetml.template"),
+    (
+        "xlsb",
+        "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+    ),
+    (
+        "xltx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    ),
     ("xltm", "application/vnd.ms-excel.template.macroEnabled.12"),
     ("xlam", "application/vnd.ms-excel.addin.macroEnabled.12"),
-    ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
-    ("pptm", "application/vnd.ms-powerpoint.presentation.macroEnabled.12"),
-    ("ppsx", "application/vnd.openxmlformats-officedocument.presentationml.slideshow"),
-    ("ppsm", "application/vnd.ms-powerpoint.slideshow.macroEnabled.12"),
-    ("potx", "application/vnd.openxmlformats-officedocument.presentationml.template"),
-    ("potm", "application/vnd.ms-powerpoint.template.macroEnabled.12"),
-    ("ppam", "application/vnd.ms-powerpoint.addin.macroEnabled.12"),
-    ("sldx", "application/vnd.openxmlformats-officedocument.presentationml.slide"),
-    ("sldm", "application/vnd.ms-powerpoint.slide.macroEnabled.12"),
+    (
+        "pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ),
+    (
+        "pptm",
+        "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+    ),
+    (
+        "ppsx",
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    ),
+    (
+        "ppsm",
+        "application/vnd.ms-powerpoint.slideshow.macroEnabled.12",
+    ),
+    (
+        "potx",
+        "application/vnd.openxmlformats-officedocument.presentationml.template",
+    ),
+    (
+        "potm",
+        "application/vnd.ms-powerpoint.template.macroEnabled.12",
+    ),
+    (
+        "ppam",
+        "application/vnd.ms-powerpoint.addin.macroEnabled.12",
+    ),
+    (
+        "sldx",
+        "application/vnd.openxmlformats-officedocument.presentationml.slide",
+    ),
+    (
+        "sldm",
+        "application/vnd.ms-powerpoint.slide.macroEnabled.12",
+    ),
     ("onetoc|onetoc2|onetmp|onepkg", "application/onenote"),
     ("oxps", "application/oxps"),
     ("xps", "application/vnd.ms-xpsdocument"),
@@ -114,28 +156,55 @@ const UNFILTERED: [&str; 2] = ["htm|html", "js"];
 /// `wp_check_filetype()`: `(extension, MIME type)`.
 pub fn check_filetype(filename: &str) -> Option<(String, String)> {
     let extension = filename.rsplit_once('.')?.1.to_lowercase();
-    MIME_TYPES.iter().find(|(exts, _)| exts.split('|').any(|e| e == extension)).map(|(_, mime)| (extension, (*mime).to_owned()))
+    MIME_TYPES
+        .iter()
+        .find(|(exts, _)| exts.split('|').any(|e| e == extension))
+        .map(|(_, mime)| (extension, (*mime).to_owned()))
 }
 
 /// `wp_check_filetype( $filename, $mimes )` with a list of `(extensions, MIME type)`.
 pub fn check_filetype_in(filename: &str, mimes: &[(String, String)]) -> Option<(String, String)> {
     let extension = filename.rsplit_once('.')?.1.to_lowercase();
-    mimes.iter().find(|(exts, _)| exts.split('|').any(|e| e == extension)).map(|(_, mime)| (extension, mime.clone()))
+    mimes
+        .iter()
+        .find(|(exts, _)| exts.split('|').any(|e| e == extension))
+        .map(|(_, mime)| (extension, mime.clone()))
 }
 
 /// `get_allowed_mime_types( $user )`: the core's types (without those that need `unfiltered_html` for a user
 /// without it), then the plugins' `upload_mimes`.
-pub fn allowed_mime_types(site: &rustpress_core::Site, user: &rustpress_auth::CurrentUser, rest: bool, media_form_nonce: bool) -> Vec<(String, String)> {
+pub fn allowed_mime_types(
+    site: &rustpress_core::Site,
+    user: &rustpress_auth::CurrentUser,
+    rest: bool,
+    media_form_nonce: bool,
+) -> Vec<(String, String)> {
     let can = |capability: &str| user.can(capability);
     allowed_mime_types_for(site, &user.roles, &can, rest, media_form_nonce)
 }
 
 /// `get_allowed_mime_types()` for a user given by roles and `current_user_can()` (a visitor of the website has
 /// neither).
-pub fn allowed_mime_types_for(site: &rustpress_core::Site, roles: &[String], can: &(dyn Fn(&str) -> bool + Send + Sync), rest: bool, media_form_nonce: bool) -> Vec<(String, String)> {
+pub fn allowed_mime_types_for(
+    site: &rustpress_core::Site,
+    roles: &[String],
+    can: &(dyn Fn(&str) -> bool + Send + Sync),
+    rest: bool,
+    media_form_nonce: bool,
+) -> Vec<(String, String)> {
     let unfiltered = can("unfiltered_html");
-    let core: Vec<(String, String)> = MIME_TYPES.iter().filter(|(exts, _)| unfiltered || !UNFILTERED.contains(exts)).map(|(exts, mime)| ((*exts).to_owned(), (*mime).to_owned())).collect();
-    let uploader = rustpress_core::native::Uploader { site, roles, can, rest, media_form_nonce };
+    let core: Vec<(String, String)> = MIME_TYPES
+        .iter()
+        .filter(|(exts, _)| unfiltered || !UNFILTERED.contains(exts))
+        .map(|(exts, mime)| ((*exts).to_owned(), (*mime).to_owned()))
+        .collect();
+    let uploader = rustpress_core::native::Uploader {
+        site,
+        roles,
+        can,
+        rest,
+        media_form_nonce,
+    };
     site.plugins.upload_mimes(&uploader, core)
 }
 
@@ -151,7 +220,9 @@ pub fn mark_inner_extensions(name: &str, allowed: impl Fn(&str) -> bool) -> Stri
         out.push('.');
         out.push_str(part);
         let letters = part.trim_end_matches(|c: char| c.is_ascii_digit());
-        let shaped = (2..=5).contains(&letters.len()) && letters.chars().all(|c| c.is_ascii_alphabetic()) && part.len() - letters.len() <= 1;
+        let shaped = (2..=5).contains(&letters.len())
+            && letters.chars().all(|c| c.is_ascii_alphabetic())
+            && part.len() - letters.len() <= 1;
         if shaped && !allowed(part) {
             out.push('_');
         }
@@ -260,7 +331,13 @@ fn entry(key: &str, value: Value) -> (Key, Value) {
 }
 
 /// `image_resize_dimensions()` with centered crops: `(source x, y, width, height, new width, new height)`.
-fn resize_dimensions(orig_w: u32, orig_h: u32, dest_w: u32, dest_h: u32, crop: bool) -> Option<(u32, u32, u32, u32, u32, u32)> {
+fn resize_dimensions(
+    orig_w: u32,
+    orig_h: u32,
+    dest_w: u32,
+    dest_h: u32,
+    crop: bool,
+) -> Option<(u32, u32, u32, u32, u32, u32)> {
     if orig_w == 0 || orig_h == 0 || (dest_w == 0 && dest_h == 0) {
         return None;
     }
@@ -287,7 +364,12 @@ fn resize_dimensions(orig_w: u32, orig_h: u32, dest_w: u32, dest_h: u32, crop: b
         crop_h = orig_h;
         s_x = 0;
         s_y = 0;
-        let (w, h) = rustpress_blocks::images::constrain_dimensions(u64::from(orig_w), u64::from(orig_h), u64::from(dest_w), u64::from(dest_h));
+        let (w, h) = rustpress_blocks::images::constrain_dimensions(
+            u64::from(orig_w),
+            u64::from(orig_h),
+            u64::from(dest_w),
+            u64::from(dest_h),
+        );
         new_w = w as u32;
         new_h = h as u32;
     }
@@ -315,7 +397,9 @@ pub fn open_image(path: &Path) -> image::ImageResult<image::DynamicImage> {
 
 /// Runs work that blocks (decoding, resizing and writing images) on the blocking threads instead of an async worker.
 pub async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    tokio::task::spawn_blocking(work).await.unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
+    tokio::task::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
 }
 
 pub fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Result<(), UploadError> {
@@ -334,49 +418,110 @@ pub fn save_image(image: &image::DynamicImage, path: &Path, mime: &str) -> Resul
 }
 
 /// The sizes of the site, `wp_get_registered_image_subsizes()`: `(name, width, height, crop)`. Those of the theme come last.
-pub fn registered_sizes(options: &rustpress_core::options::Options) -> Vec<(String, u32, u32, bool)> {
+pub fn registered_sizes(
+    options: &rustpress_core::options::Options,
+) -> Vec<(String, u32, u32, bool)> {
     let number = |name: &str, default: u64| options.u64(name, default) as u32;
-    let theme = rustpress_core::image_sizes::of_theme(options.get("stylesheet").unwrap_or_default());
+    let theme =
+        rustpress_core::image_sizes::of_theme(options.get("stylesheet").unwrap_or_default());
     let mut sizes = vec![
-        ("thumbnail".into(), number("thumbnail_size_w", 150), number("thumbnail_size_h", 150), options.get("thumbnail_crop").is_some_and(|v| !v.is_empty() && v != "0")),
-        ("medium".into(), number("medium_size_w", 300), number("medium_size_h", 300), false),
-        ("medium_large".into(), number("medium_large_size_w", 768), number("medium_large_size_h", 0), false),
-        ("large".into(), number("large_size_w", 1024), number("large_size_h", 1024), false),
+        (
+            "thumbnail".into(),
+            number("thumbnail_size_w", 150),
+            number("thumbnail_size_h", 150),
+            options
+                .get("thumbnail_crop")
+                .is_some_and(|v| !v.is_empty() && v != "0"),
+        ),
+        (
+            "medium".into(),
+            number("medium_size_w", 300),
+            number("medium_size_h", 300),
+            false,
+        ),
+        (
+            "medium_large".into(),
+            number("medium_large_size_w", 768),
+            number("medium_large_size_h", 0),
+            false,
+        ),
+        (
+            "large".into(),
+            number("large_size_w", 1024),
+            number("large_size_h", 1024),
+            false,
+        ),
         ("1536x1536".into(), 1536, 1536, false),
         ("2048x2048".into(), 2048, 2048, false),
     ];
-    sizes.extend(theme.iter().map(|(name, width, height, crop)| ((*name).to_owned(), *width, *height, *crop)));
+    sizes.extend(
+        theme
+            .iter()
+            .map(|(name, width, height, crop)| ((*name).to_owned(), *width, *height, *crop)),
+    );
     sizes
 }
 
 /// The metadata of an uploaded image: sizes written next to the file. Returns `(metadata, final relative path)`.
-pub fn generate_image_metadata(options: &rustpress_core::options::Options, uploads: &Path, relative: &str, mime: &str) -> Option<(Value, String, Option<String>)> {
+pub fn generate_image_metadata(
+    options: &rustpress_core::options::Options,
+    uploads: &Path,
+    relative: &str,
+    mime: &str,
+) -> Option<(Value, String, Option<String>)> {
     generate_image_metadata_with(options, true, &[], uploads, relative, mime)
 }
 
 /// The sizes `WP_Site_Icon::additional_sizes()` adds: `site_icon-<size>` for every size below 512 (WordPress misspells
 /// the key of the width, so the width is open and the height decides).
 pub fn site_icon_sizes() -> Vec<(String, u32, u32, bool)> {
-    [270u32, 192, 180, 64, 32].into_iter().map(|size| (format!("site_icon-{size}"), 0, size, true)).collect()
+    [270u32, 192, 180, 64, 32]
+        .into_iter()
+        .map(|size| (format!("site_icon-{size}"), 0, size, true))
+        .collect()
 }
 
 /// [`generate_image_metadata`] with more sizes than the ones of the site, or with those only (`registered` false: a site icon).
-pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, registered: bool, extra: &[(String, u32, u32, bool)], uploads: &Path, relative: &str, mime: &str) -> Option<(Value, String, Option<String>)> {
-    if !matches!(mime, "image/jpeg" | "image/png" | "image/gif" | "image/webp") {
+pub fn generate_image_metadata_with(
+    options: &rustpress_core::options::Options,
+    registered: bool,
+    extra: &[(String, u32, u32, bool)],
+    uploads: &Path,
+    relative: &str,
+    mime: &str,
+) -> Option<(Value, String, Option<String>)> {
+    if !matches!(
+        mime,
+        "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+    ) {
         return None;
     }
     let full = uploads.join(relative);
     let mut decoded = open_image(&full).ok()?;
-    let locale = options.get("WPLANG").filter(|l| !l.is_empty()).unwrap_or("en_US").to_owned();
-    let alt = std::fs::read(&full).map(|bytes| image_alttext(&bytes, &locale)).unwrap_or_default();
+    let locale = options
+        .get("WPLANG")
+        .filter(|l| !l.is_empty())
+        .unwrap_or("en_US")
+        .to_owned();
+    let alt = std::fs::read(&full)
+        .map(|bytes| image_alttext(&bytes, &locale))
+        .unwrap_or_default();
     let (mut width, mut height) = (decoded.width(), decoded.height());
     let mut relative = relative.to_owned();
     let mut original_image: Option<String> = None;
     // `big_image_size_threshold`: very large images are scaled down; the original stays.
     if width > 2560 || height > 2560 {
-        let (w, h) = rustpress_blocks::images::constrain_dimensions(u64::from(width), u64::from(height), 2560, 2560);
-        let scaled = decoded.resize_exact(w as u32, h as u32, image::imageops::FilterType::Lanczos3);
-        let (stem, ext) = relative.rsplit_once('.').map(|(a, b)| (a.to_owned(), b.to_owned()))?;
+        let (w, h) = rustpress_blocks::images::constrain_dimensions(
+            u64::from(width),
+            u64::from(height),
+            2560,
+            2560,
+        );
+        let scaled =
+            decoded.resize_exact(w as u32, h as u32, image::imageops::FilterType::Lanczos3);
+        let (stem, ext) = relative
+            .rsplit_once('.')
+            .map(|(a, b)| (a.to_owned(), b.to_owned()))?;
         let scaled_rel = format!("{stem}-scaled.{ext}");
         if save_image(&scaled, &uploads.join(&scaled_rel), mime).is_ok() {
             original_image = full.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -395,12 +540,24 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
     };
     let mut sizes: Vec<(Key, Value)> = Vec::new();
     let mut made: Vec<(u32, u32)> = Vec::new();
-    let mut new_sizes = if registered { registered_sizes(options) } else { Vec::new() };
+    let mut new_sizes = if registered {
+        registered_sizes(options)
+    } else {
+        Vec::new()
+    };
     new_sizes.extend(extra.iter().cloned());
     // `_wp_make_subsizes()` makes the most useful ones first, which is the order of the metadata.
-    new_sizes.sort_by_key(|(name, ..)| ["medium", "large", "thumbnail", "medium_large"].iter().position(|first| first == name).unwrap_or(4));
+    new_sizes.sort_by_key(|(name, ..)| {
+        ["medium", "large", "thumbnail", "medium_large"]
+            .iter()
+            .position(|first| first == name)
+            .unwrap_or(4)
+    });
     for (name, dest_w, dest_h, crop) in new_sizes {
-        let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop) else { continue };
+        let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop)
+        else {
+            continue;
+        };
         if made.contains(&(nw, nh)) && name != "thumbnail" {
             // Same dimensions as a size already written: WordPress reuses the file.
         }
@@ -412,10 +569,18 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
             continue;
         }
         made.push((nw, nh));
-        let filesize = std::fs::metadata(&target).map(|m| m.len() as i64).unwrap_or(0);
+        let filesize = std::fs::metadata(&target)
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
         sizes.push(entry(
             &name,
-            Value::Array(vec![entry("file", s(&file_name)), entry("width", Value::Int(i64::from(nw))), entry("height", Value::Int(i64::from(nh))), entry("mime-type", s(mime)), entry("filesize", Value::Int(filesize))]),
+            Value::Array(vec![
+                entry("file", s(&file_name)),
+                entry("width", Value::Int(i64::from(nw))),
+                entry("height", Value::Int(i64::from(nh))),
+                entry("mime-type", s(mime)),
+                entry("filesize", Value::Int(filesize)),
+            ]),
         ));
     }
     let image_meta = Value::Array(vec![
@@ -433,8 +598,17 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
         entry("keywords", Value::Array(Vec::new())),
         entry("alt", s(&alt)),
     ]);
-    let filesize = std::fs::metadata(&full).map(|m| m.len() as i64).unwrap_or(0);
-    let mut items = vec![entry("width", Value::Int(i64::from(width))), entry("height", Value::Int(i64::from(height))), entry("file", s(&relative)), entry("filesize", Value::Int(filesize)), entry("sizes", Value::Array(sizes)), entry("image_meta", image_meta)];
+    let filesize = std::fs::metadata(&full)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+    let mut items = vec![
+        entry("width", Value::Int(i64::from(width))),
+        entry("height", Value::Int(i64::from(height))),
+        entry("file", s(&relative)),
+        entry("filesize", Value::Int(filesize)),
+        entry("sizes", Value::Array(sizes)),
+        entry("image_meta", image_meta),
+    ];
     if let Some(original) = &original_image {
         items.push(entry("original_image", s(original)));
     }
@@ -443,7 +617,11 @@ pub fn generate_image_metadata_with(options: &rustpress_core::options::Options, 
 
 /// `WP_Image_Editor::multi_resize()` for the sizes of the site: the files written next to `full` and their
 /// entries for the metadata, in the order of the sizes. Sizes that would not be smaller than the image are skipped.
-pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, mime: &str) -> Option<(u32, u32, Vec<(String, Value)>)> {
+pub fn generate_sizes(
+    options: &rustpress_core::options::Options,
+    full: &Path,
+    mime: &str,
+) -> Option<(u32, u32, Vec<(String, Value)>)> {
     let decoded = open_image(full).ok()?;
     let (width, height) = (decoded.width(), decoded.height());
     let dir = full.parent()?.to_path_buf();
@@ -451,17 +629,32 @@ pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, m
     let (stem, ext) = name.rsplit_once('.')?;
     let mut sizes = Vec::new();
     for (size, dest_w, dest_h, crop) in registered_sizes(options) {
-        let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop) else { continue };
+        let Some((sx, sy, cw, ch, nw, nh)) = resize_dimensions(width, height, dest_w, dest_h, crop)
+        else {
+            continue;
+        };
         let file_name = format!("{stem}-{nw}x{nh}.{ext}");
         let target = dir.join(&file_name);
-        let resized = decoded.crop_imm(sx, sy, cw, ch).resize_exact(nw, nh, image::imageops::FilterType::Lanczos3);
+        let resized = decoded.crop_imm(sx, sy, cw, ch).resize_exact(
+            nw,
+            nh,
+            image::imageops::FilterType::Lanczos3,
+        );
         if save_image(&resized, &target, mime).is_err() {
             continue;
         }
-        let filesize = std::fs::metadata(&target).map(|m| m.len() as i64).unwrap_or(0);
+        let filesize = std::fs::metadata(&target)
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
         sizes.push((
             size,
-            Value::Array(vec![entry("file", s(&file_name)), entry("width", Value::Int(i64::from(nw))), entry("height", Value::Int(i64::from(nh))), entry("mime-type", s(mime)), entry("filesize", Value::Int(filesize))]),
+            Value::Array(vec![
+                entry("file", s(&file_name)),
+                entry("width", Value::Int(i64::from(nw))),
+                entry("height", Value::Int(i64::from(nh))),
+                entry("mime-type", s(mime)),
+                entry("filesize", Value::Int(filesize)),
+            ]),
         ));
     }
     Some((width, height, sizes))
@@ -470,24 +663,44 @@ pub fn generate_sizes(options: &rustpress_core::options::Options, full: &Path, m
 /// `wp_get_image_alttext()`: the `Iptc4xmpCore:AltTextAccessibility` of the XMP packet, in the language of the site, else in
 /// its first two letters, else `x-default`. WordPress asks DOMXPath; this reads the elements with their usual prefixes.
 pub fn image_alttext(bytes: &[u8], locale: &str) -> String {
-    let find = |needle: &[u8], from: usize| bytes[from..].windows(needle.len()).position(|w| w == needle).map(|i| i + from);
-    let (Some(start), Some(end)) = (find(b"<x:xmpmeta", 0), find(b"</x:xmpmeta>", 0)) else { return String::new() };
+    let find = |needle: &[u8], from: usize| {
+        bytes[from..]
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .map(|i| i + from)
+    };
+    let (Some(start), Some(end)) = (find(b"<x:xmpmeta", 0), find(b"</x:xmpmeta>", 0)) else {
+        return String::new();
+    };
     if end < start {
         return String::new();
     }
     let xmp = String::from_utf8_lossy(&bytes[start..end + 12]).into_owned();
-    let Some(open) = xmp.find("<Iptc4xmpCore:AltTextAccessibility") else { return String::new() };
-    let Some(close) = xmp[open..].find("</Iptc4xmpCore:AltTextAccessibility>") else { return String::new() };
+    let Some(open) = xmp.find("<Iptc4xmpCore:AltTextAccessibility") else {
+        return String::new();
+    };
+    let Some(close) = xmp[open..].find("</Iptc4xmpCore:AltTextAccessibility>") else {
+        return String::new();
+    };
     let node = &xmp[open..open + close];
     let item = |lang: &str| -> String {
         let mut rest = node;
         while let Some(at) = rest.find("<rdf:li") {
             let tag_end = rest[at..].find('>').map_or(rest.len(), |i| at + i);
             let tag = &rest[at..tag_end];
-            let text_end = rest[tag_end..].find("</rdf:li>").map_or(rest.len(), |i| tag_end + i);
-            if tag.contains(&format!("xml:lang=\"{lang}\"")) || tag.contains(&format!("xml:lang='{lang}'")) {
+            let text_end = rest[tag_end..]
+                .find("</rdf:li>")
+                .map_or(rest.len(), |i| tag_end + i);
+            if tag.contains(&format!("xml:lang=\"{lang}\""))
+                || tag.contains(&format!("xml:lang='{lang}'"))
+            {
                 let text = &rest[(tag_end + 1).min(text_end)..text_end];
-                return text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+                return text
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'")
+                    .replace("&amp;", "&");
             }
             rest = &rest[text_end..];
         }
@@ -506,22 +719,66 @@ pub fn image_alttext(bytes: &[u8], locale: &str) -> String {
 
 /// `WP_Image_Editor_GD::crop()` and `save()` as `wp_crop_image()` uses them: the part `(x, y, width, height)` of the
 /// image at `src`, scaled to `dst_w` x `dst_h`, saved next to it as `cropped-<name>`. Returns the path.
-pub fn crop_image(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str) -> Result<PathBuf, UploadError> {
-    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    crop_image_as(src, x, y, w, h, dst_w, dst_h, mime, &format!("cropped-{name}"))
+pub fn crop_image(
+    src: &Path,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    dst_w: u32,
+    dst_h: u32,
+    mime: &str,
+) -> Result<PathBuf, UploadError> {
+    let name = src
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    crop_image_as(
+        src,
+        x,
+        y,
+        w,
+        h,
+        dst_w,
+        dst_h,
+        mime,
+        &format!("cropped-{name}"),
+    )
 }
 
 /// [crop_image] with the name of the new file (`$dst_file` of `wp_crop_image()`), made unique in the folder.
 #[allow(clippy::too_many_arguments)]
-pub fn crop_image_as(src: &Path, x: u32, y: u32, w: u32, h: u32, dst_w: u32, dst_h: u32, mime: &str, target_name: &str) -> Result<PathBuf, UploadError> {
+pub fn crop_image_as(
+    src: &Path,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    dst_w: u32,
+    dst_h: u32,
+    mime: &str,
+    target_name: &str,
+) -> Result<PathBuf, UploadError> {
     let decoded = open_image(src).map_err(|e| UploadError(e.to_string()))?;
-    let (w, h) = (w.min(decoded.width().saturating_sub(x)), h.min(decoded.height().saturating_sub(y)));
+    let (w, h) = (
+        w.min(decoded.width().saturating_sub(x)),
+        h.min(decoded.height().saturating_sub(y)),
+    );
     if w == 0 || h == 0 {
         return Err(UploadError("empty crop".into()));
     }
-    let (dst_w, dst_h) = (if dst_w == 0 { w } else { dst_w }, if dst_h == 0 { h } else { dst_h });
-    let cropped = decoded.crop_imm(x, y, w, h).resize_exact(dst_w, dst_h, image::imageops::FilterType::Lanczos3);
-    let dir = src.parent().ok_or_else(|| UploadError("no directory".into()))?;
+    let (dst_w, dst_h) = (
+        if dst_w == 0 { w } else { dst_w },
+        if dst_h == 0 { h } else { dst_h },
+    );
+    let cropped = decoded.crop_imm(x, y, w, h).resize_exact(
+        dst_w,
+        dst_h,
+        image::imageops::FilterType::Lanczos3,
+    );
+    let dir = src
+        .parent()
+        .ok_or_else(|| UploadError("no directory".into()))?;
     let target = dir.join(unique_filename(dir, target_name));
     save_image(&cropped, &target, mime)?;
     Ok(target)
@@ -547,48 +804,106 @@ pub struct StoredUpload {
 }
 
 /// `wp_handle_upload()`: checks the file and stores it in `subdir` of the uploads with a unique name.
-pub fn store_upload(content: &Content<'_>, uploads: &Path, file: &mut UploadedFile, subdir: &str) -> Result<StoredUpload, UploadError> {
+pub fn store_upload(
+    content: &Content<'_>,
+    uploads: &Path,
+    file: &mut UploadedFile,
+    subdir: &str,
+) -> Result<StoredUpload, UploadError> {
     let tr = |t: &str| content.site.tr(t);
     let site = content.site;
     // `wp_handle_upload_prefilter` of the plugins comes before every check.
     let can = |capability: &str| content.user.can(capability);
-    let uploader = rustpress_core::native::Uploader { site, roles: &content.user.roles, can: &can, rest: file.rest, media_form_nonce: file.media_form_nonce };
-    site.plugins.upload_prefilter(&uploader, &mut file.name, &mut file.bytes).map_err(UploadError)?;
+    let uploader = rustpress_core::native::Uploader {
+        site,
+        roles: &content.user.roles,
+        can: &can,
+        rest: file.rest,
+        media_form_nonce: file.media_form_nonce,
+    };
+    site.plugins
+        .upload_prefilter(&uploader, &mut file.name, &mut file.bytes)
+        .map_err(UploadError)?;
     let mimes = allowed_mime_types(site, content.user, file.rest, file.media_form_nonce);
     if file.bytes.is_empty() {
-        return Err(UploadError(rustpress_core::i18n::sprintf(&tr("File is empty. Please upload something more substantial. This error could also be caused by uploads being disabled in your php.ini or by %s being defined as smaller than %s in php.ini."), &["post_max_size", "upload_max_filesize"])));
+        return Err(UploadError(rustpress_core::i18n::sprintf(
+            &tr(
+                "File is empty. Please upload something more substantial. This error could also be caused by uploads being disabled in your php.ini or by %s being defined as smaller than %s in php.ini.",
+            ),
+            &["post_max_size", "upload_max_filesize"],
+        )));
     }
     let allowed = |ext: &str| check_filetype_in(&format!("x.{ext}"), &mimes).is_some();
     let name = mark_inner_extensions(&sanitize::file_name(&file.name, &site.locale()), allowed);
     let refused = || UploadError(tr("Sorry, you are not allowed to upload this file type."));
     // A type the core refuses may still pass a plugin's `wp_check_filetype_and_ext`.
-    let (name, mime) = match check_filetype_in(&name, &mimes).and_then(|(_, mime)| check_image_upload(&name, &mime, &file.bytes)) {
+    let (name, mime) = match check_filetype_in(&name, &mimes)
+        .and_then(|(_, mime)| check_image_upload(&name, &mime, &file.bytes))
+    {
         Some(checked) => checked,
-        None => site.plugins.accept_filetype(&name, &mimes).ok_or_else(refused)?,
+        None => site
+            .plugins
+            .accept_filetype(&name, &mimes)
+            .ok_or_else(refused)?,
     };
-    let dir: PathBuf = if subdir.is_empty() { uploads.to_path_buf() } else { uploads.join(subdir) };
+    let dir: PathBuf = if subdir.is_empty() {
+        uploads.to_path_buf()
+    } else {
+        uploads.join(subdir)
+    };
     std::fs::create_dir_all(&dir).map_err(|e| UploadError(e.to_string()))?;
     let unique = unique_filename(&dir, &name);
     let target = dir.join(&unique);
     std::fs::write(&target, &file.bytes).map_err(|e| UploadError(e.to_string()))?;
-    let relative = if subdir.is_empty() { unique.clone() } else { format!("{subdir}/{unique}") };
+    let relative = if subdir.is_empty() {
+        unique.clone()
+    } else {
+        format!("{subdir}/{unique}")
+    };
     let base_url = rustpress_blocks::images::upload_baseurl(content.site);
     let url = format!("{}/{relative}", base_url.trim_end_matches('/'));
-    Ok(StoredUpload { relative, url, mime, path: target })
+    Ok(StoredUpload {
+        relative,
+        url,
+        mime,
+        path: target,
+    })
 }
 
 /// Stores the file and makes the attachment: `media_handle_upload()`. Returns the attachment ID.
-pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: UploadedFile, post_parent: u64) -> Result<u64, UploadError> {
+pub async fn handle_upload(
+    content: &Content<'_>,
+    uploads: &Path,
+    file: UploadedFile,
+    post_parent: u64,
+) -> Result<u64, UploadError> {
     let site = content.site;
     let mut file = file;
     let original_name = file.name.clone();
     // `media_handle_upload()`: a file goes in the folder of the post it is attached to; pages do not backdate it.
-    let parent = if post_parent > 0 { content.db.post(post_parent).await.ok().flatten() } else { None };
-    let subdir = match parent.filter(|post| post.post_type != "page" && post.post_date.get(..4).is_some_and(|year| year.parse::<u32>().is_ok_and(|year| year > 0))) {
-        Some(post) if content.site.options.get("uploads_use_yearmonth_folders") == Some("1") => format!("{}/{}", &post.post_date[..4], &post.post_date[5..7]),
+    let parent = if post_parent > 0 {
+        content.db.post(post_parent).await.ok().flatten()
+    } else {
+        None
+    };
+    let subdir = match parent.filter(|post| {
+        post.post_type != "page"
+            && post
+                .post_date
+                .get(..4)
+                .is_some_and(|year| year.parse::<u32>().is_ok_and(|year| year > 0))
+    }) {
+        Some(post) if content.site.options.get("uploads_use_yearmonth_folders") == Some("1") => {
+            format!("{}/{}", &post.post_date[..4], &post.post_date[5..7])
+        }
         _ => upload_subdir(content),
     };
-    let StoredUpload { relative, url, mime, path: target } = store_upload(content, uploads, &mut file, &subdir)?;
+    let StoredUpload {
+        relative,
+        url,
+        mime,
+        path: target,
+    } = store_upload(content, uploads, &mut file, &subdir)?;
     // `sanitize_text_field( wp_basename( $name, ".$ext" ) )` of the name as it was sent, not of the file.
     let title = {
         let base = original_name.rsplit(['/', '\\']).next().unwrap_or_default();
@@ -603,17 +918,29 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
         post_parent: Some(post_parent),
         guid: Some(url),
         post_author: Some(content.user.id),
-        comment_status: Some(content.site.options.string("default_comment_status", "closed")),
+        comment_status: Some(
+            content
+                .site
+                .options
+                .string("default_comment_status", "closed"),
+        ),
         ping_status: Some("closed".into()),
         ..Default::default()
     };
-    let id = content.insert_post(&data).await.map_err(|e| UploadError(match e {
-        ContentError::Message(m) => m,
-        other => other.to_string(),
-    }))?;
+    let id = content.insert_post(&data).await.map_err(|e| {
+        UploadError(match e {
+            ContentError::Message(m) => m,
+            other => other.to_string(),
+        })
+    })?;
     let mut stored_relative = relative.clone();
     let generated = {
-        let (options, uploads, relative, mime) = (content.site.options.clone(), uploads.to_path_buf(), relative.clone(), mime.clone());
+        let (options, uploads, relative, mime) = (
+            content.site.options.clone(),
+            uploads.to_path_buf(),
+            relative.clone(),
+            mime.clone(),
+        );
         blocking(move || generate_image_metadata(&options, &uploads, &relative, &mime)).await
     };
     let metadata = match generated {
@@ -622,15 +949,23 @@ pub async fn handle_upload(content: &Content<'_>, uploads: &Path, file: Uploaded
             meta
         }
         None => {
-            let filesize = std::fs::metadata(&target).map(|m| m.len() as i64).unwrap_or(0);
+            let filesize = std::fs::metadata(&target)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
             Value::Array(vec![entry("filesize", Value::Int(filesize))])
         }
     };
-    let metadata = site.plugins.attachment_metadata(site, &mime, &target, &stored_relative, metadata);
+    let metadata =
+        site.plugins
+            .attachment_metadata(site, &mime, &target, &stored_relative, metadata);
     let w = content.writer;
-    w.update_post_meta(id, "_wp_attached_file", &stored_relative).await.map_err(|e| UploadError(e.to_string()))?;
+    w.update_post_meta(id, "_wp_attached_file", &stored_relative)
+        .await
+        .map_err(|e| UploadError(e.to_string()))?;
     let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata)).into_owned();
-    w.update_post_meta(id, "_wp_attachment_metadata", &serialized).await.map_err(|e| UploadError(e.to_string()))?;
+    w.update_post_meta(id, "_wp_attachment_metadata", &serialized)
+        .await
+        .map_err(|e| UploadError(e.to_string()))?;
     Ok(id)
 }
 
@@ -641,18 +976,30 @@ mod upload_tests {
     /// What the reference made of a 2400x1600 image with Twenty Seventeen active, in its order.
     #[test]
     fn the_sizes_of_the_theme_are_made_after_those_of_the_site() {
-        let options = rustpress_core::options::Options::from_pairs([("stylesheet", "twentyseventeen"), ("thumbnail_crop", "1")]);
+        let options = rustpress_core::options::Options::from_pairs([
+            ("stylesheet", "twentyseventeen"),
+            ("thumbnail_crop", "1"),
+        ]);
         let dir = std::env::temp_dir().join(format!("rustpress-sizes-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        image::RgbImage::new(2400, 1600).save(dir.join("photo.jpg")).unwrap();
-        let (metadata, ..) = generate_image_metadata(&options, &dir, "photo.jpg", "image/jpeg").unwrap();
+        image::RgbImage::new(2400, 1600)
+            .save(dir.join("photo.jpg"))
+            .unwrap();
+        let (metadata, ..) =
+            generate_image_metadata(&options, &dir, "photo.jpg", "image/jpeg").unwrap();
         let sizes = metadata.get("sizes").unwrap();
-        let Value::Array(sizes) = sizes else { panic!("sizes") };
+        let Value::Array(sizes) = sizes else {
+            panic!("sizes")
+        };
         let made: Vec<(String, i64, i64)> = sizes
             .iter()
             .map(|(key, size)| {
                 let Key::Str(name) = key else { panic!("key") };
-                (String::from_utf8_lossy(name).into_owned(), size.get("width").and_then(Value::as_i64).unwrap(), size.get("height").and_then(Value::as_i64).unwrap())
+                (
+                    String::from_utf8_lossy(name).into_owned(),
+                    size.get("width").and_then(Value::as_i64).unwrap(),
+                    size.get("height").and_then(Value::as_i64).unwrap(),
+                )
             })
             .collect();
         std::fs::remove_dir_all(&dir).unwrap();
@@ -666,7 +1013,10 @@ mod upload_tests {
             ("twentyseventeen-featured-image", 2000, 1200),
             ("twentyseventeen-thumbnail-avatar", 100, 100),
         ];
-        assert_eq!(made, expected.map(|(name, width, height)| (name.to_owned(), width, height)));
+        assert_eq!(
+            made,
+            expected.map(|(name, width, height)| (name.to_owned(), width, height))
+        );
     }
 
     fn allowed(ext: &str) -> bool {
@@ -684,11 +1034,20 @@ mod upload_tests {
     #[test]
     fn inner_extensions_get_an_underscore() {
         assert_eq!(mark_inner_extensions("x.php.jpg", allowed), "x.php_.jpg");
-        assert_eq!(mark_inner_extensions("x.phtml5.jpg", allowed), "x.phtml5_.jpg");
+        assert_eq!(
+            mark_inner_extensions("x.phtml5.jpg", allowed),
+            "x.phtml5_.jpg"
+        );
         // Allowed types, numbers and long parts stay.
         assert_eq!(mark_inner_extensions("x.jpg.png", allowed), "x.jpg.png");
-        assert_eq!(mark_inner_extensions("report.2024.pdf", allowed), "report.2024.pdf");
-        assert_eq!(mark_inner_extensions("a.verylongpart.pdf", allowed), "a.verylongpart.pdf");
+        assert_eq!(
+            mark_inner_extensions("report.2024.pdf", allowed),
+            "report.2024.pdf"
+        );
+        assert_eq!(
+            mark_inner_extensions("a.verylongpart.pdf", allowed),
+            "a.verylongpart.pdf"
+        );
         assert_eq!(mark_inner_extensions("plain.jpg", allowed), "plain.jpg");
     }
 
@@ -699,9 +1058,18 @@ mod upload_tests {
         assert_eq!(image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
         assert_eq!(image_mime(b"<?php echo 1;"), None);
         // A PNG named .jpg is renamed, PHP named .jpg is refused, other files pass.
-        assert_eq!(check_image_upload("a.jpg", "image/jpeg", &png), Some(("a.png".to_owned(), "image/png".to_owned())));
-        assert_eq!(check_image_upload("a.jpg", "image/jpeg", b"<?php echo 1;"), None);
-        assert_eq!(check_image_upload("a.pdf", "application/pdf", b"%PDF-1.7"), Some(("a.pdf".to_owned(), "application/pdf".to_owned())));
+        assert_eq!(
+            check_image_upload("a.jpg", "image/jpeg", &png),
+            Some(("a.png".to_owned(), "image/png".to_owned()))
+        );
+        assert_eq!(
+            check_image_upload("a.jpg", "image/jpeg", b"<?php echo 1;"),
+            None
+        );
+        assert_eq!(
+            check_image_upload("a.pdf", "application/pdf", b"%PDF-1.7"),
+            Some(("a.pdf".to_owned(), "application/pdf".to_owned()))
+        );
     }
 
     #[test]
@@ -711,8 +1079,13 @@ mod upload_tests {
         let (small, wide) = (dir.join("small.png"), dir.join("wide.png"));
         image::DynamicImage::new_luma8(40, 30).save(&small).unwrap();
         // A few hundred bytes that claim more pixels than any upload may have.
-        image::DynamicImage::new_luma8(MAX_IMAGE_SIDE + 1, 1).save(&wide).unwrap();
-        assert_eq!(open_image(&small).map(|i| (i.width(), i.height())).ok(), Some((40, 30)));
+        image::DynamicImage::new_luma8(MAX_IMAGE_SIDE + 1, 1)
+            .save(&wide)
+            .unwrap();
+        assert_eq!(
+            open_image(&small).map(|i| (i.width(), i.height())).ok(),
+            Some((40, 30))
+        );
         assert!(open_image(&wide).is_err());
         std::fs::remove_dir_all(&dir).ok();
     }

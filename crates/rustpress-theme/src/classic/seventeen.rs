@@ -15,47 +15,74 @@ use rustpress_core::{Queried, Site};
 use rustpress_db::Post;
 use rustpress_phpser::Value;
 
+use super::Ctx;
 use super::comments;
 use super::menu::{self, MenuItem, NavArgs};
 use super::tags::{self, Pagination};
 use super::widgets::{self, Sidebar};
-use super::Ctx;
 use crate::Result;
 use crate::document::{
-    Document, EMOJI_CSS, INLINE_LIMIT, body_classes, discovery_links, document_title, emoji_detection_script, emoji_style, oembed_links, read, script_modules, wp_version,
+    Document, EMOJI_CSS, INLINE_LIMIT, body_classes, discovery_links, document_title,
+    emoji_detection_script, emoji_style, oembed_links, read, script_modules, wp_version,
 };
 use crate::global_styles::GlobalStyles;
 
 const THEME: &str = "twentyseventeen";
 
 fn sidebar(id: &'static str) -> Sidebar<'static> {
-    Sidebar { id, before_widget: "<section id=\"%1$s\" class=\"widget %2$s\">", after_widget: "</section>", before_title: "<h2 class=\"widget-title\">", after_title: "</h2>" }
+    Sidebar {
+        id,
+        before_widget: "<section id=\"%1$s\" class=\"widget %2$s\">",
+        after_widget: "</section>",
+        before_title: "<h2 class=\"widget-title\">",
+        after_title: "</h2>",
+    }
 }
 
 /// The sidebars `twentyseventeen_widgets_init()` registers.
 pub fn registered_sidebars(site: &Site) -> Vec<widgets::RegisteredSidebar> {
     let t = |text: &str| site.i18n().gettext(THEME, text);
-    [("sidebar-1", "Blog Sidebar", "Add widgets here to appear in your sidebar on blog posts and archive pages."), ("sidebar-2", "Footer 1", "Add widgets here to appear in your footer."), ("sidebar-3", "Footer 2", "Add widgets here to appear in your footer.")]
-        .into_iter()
-        .map(|(id, name, description)| {
-            let wrap = sidebar(id);
-            widgets::RegisteredSidebar {
-                id: id.to_owned(),
-                name: t(name),
-                description: t(description),
-                class: String::new(),
-                before_widget: wrap.before_widget.to_owned(),
-                after_widget: wrap.after_widget.to_owned(),
-                before_title: wrap.before_title.to_owned(),
-                after_title: wrap.after_title.to_owned(),
-                show_in_rest: false,
-            }
-        })
-        .collect()
+    [
+        (
+            "sidebar-1",
+            "Blog Sidebar",
+            "Add widgets here to appear in your sidebar on blog posts and archive pages.",
+        ),
+        (
+            "sidebar-2",
+            "Footer 1",
+            "Add widgets here to appear in your footer.",
+        ),
+        (
+            "sidebar-3",
+            "Footer 2",
+            "Add widgets here to appear in your footer.",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, name, description)| {
+        let wrap = sidebar(id);
+        widgets::RegisteredSidebar {
+            id: id.to_owned(),
+            name: t(name),
+            description: t(description),
+            class: String::new(),
+            before_widget: wrap.before_widget.to_owned(),
+            after_widget: wrap.after_widget.to_owned(),
+            before_title: wrap.before_title.to_owned(),
+            after_title: wrap.after_title.to_owned(),
+            show_in_rest: false,
+        }
+    })
+    .collect()
 }
 
 /// `get_search_form()` for a widget rendered outside of a page of the theme.
-pub fn widget_search_form(site: &Site, q: &rustpress_core::QueryResult, env: &rustpress_blocks::Env<'_>) -> String {
+pub fn widget_search_form(
+    site: &Site,
+    q: &rustpress_core::QueryResult,
+    env: &rustpress_blocks::Env<'_>,
+) -> String {
     search_form_markup(site, q, env)
 }
 
@@ -63,7 +90,14 @@ pub fn widget_search_form(site: &Site, q: &rustpress_core::QueryResult, env: &ru
 async fn sidebar_widgets(ctx: &Ctx<'_>, id: &'static str) -> Result<String> {
     let request_uri = ctx.request_uri();
     let search = || search_form(ctx);
-    let services = widgets::Services { site: ctx.site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: &request_uri, search_form: &search };
+    let services = widgets::Services {
+        site: ctx.site,
+        q: ctx.q,
+        env: &ctx.env,
+        stylesheet: &ctx.theme.stylesheet,
+        request_uri: &request_uri,
+        search_form: &search,
+    };
     widgets::dynamic_sidebar(&services, &sidebar(id)).await
 }
 
@@ -124,8 +158,14 @@ fn tx(ctx: &Ctx<'_>, text: &str, context: &str) -> String {
 /// `twentyseventeen_get_svg()` without a title.
 fn svg(icon: &str, fallback: bool) -> String {
     let icon = esc_attr(icon);
-    let spare = if fallback { format!("<span class=\"svg-fallback icon-{icon}\"></span>") } else { String::new() };
-    format!("<svg class=\"icon icon-{icon}\" aria-hidden=\"true\" role=\"img\"> <use href=\"#icon-{icon}\" xlink:href=\"#icon-{icon}\"></use> {spare}</svg>")
+    let spare = if fallback {
+        format!("<span class=\"svg-fallback icon-{icon}\"></span>")
+    } else {
+        String::new()
+    };
+    format!(
+        "<svg class=\"icon icon-{icon}\" aria-hidden=\"true\" role=\"img\"> <use href=\"#icon-{icon}\" xlink:href=\"#icon-{icon}\"></use> {spare}</svg>"
+    )
 }
 
 // ---------------------------------------------------------------- conditionals
@@ -154,18 +194,26 @@ async fn has_header_image(ctx: &Ctx<'_>) -> bool {
 /// `get_header_image()`: the theme mod, else the theme's default image, in the scheme of the request
 /// (`set_url_scheme()`; `is_ssl()` shows in the scheme of `siteurl`). For a random header also what
 /// `_get_random_header_data()` picked, which `get_custom_header()` returns then.
-async fn header_image(ctx: &Ctx<'_>) -> (Option<String>, Option<super::custom_header::RandomHeader>) {
+async fn header_image(
+    ctx: &Ctx<'_>,
+) -> (Option<String>, Option<super::custom_header::RandomHeader>) {
     use super::custom_header as header;
     let uri = ctx.theme.template_directory_uri();
-    let Some(support) = header::support(&ctx.theme.template, &uri) else { return (None, None) };
+    let Some(support) = header::support(&ctx.theme.template, &uri) else {
+        return (None, None);
+    };
     let defaults = header::default_headers(ctx.site, &ctx.theme.template, &uri);
     let uploaded = if ctx.mod_str("header_image").as_deref() == Some("random-uploaded-image") {
-        header::uploaded_header_images(ctx.site, &ctx.site.settings.stylesheet).await.unwrap_or_default()
+        header::uploaded_header_images(ctx.site, &ctx.site.settings.stylesheet)
+            .await
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
-    let random = header::random_header(&ctx.mods, &support, &defaults, &uploaded).filter(|pick| header::is_random_header_image("any", &ctx.mods, &support, Some(pick)));
-    let url = header::header_image(ctx.site, &ctx.mods, &support, random.as_ref()).filter(|url| !url.is_empty());
+    let random = header::random_header(&ctx.mods, &support, &defaults, &uploaded)
+        .filter(|pick| header::is_random_header_image("any", &ctx.mods, &support, Some(pick)));
+    let url = header::header_image(ctx.site, &ctx.mods, &support, random.as_ref())
+        .filter(|url| !url.is_empty());
     (url, random)
 }
 
@@ -195,27 +243,58 @@ async fn custom_header_markup(ctx: &Ctx<'_>) -> Result<String> {
         ctx.env.with_state(|s| s.custom_header_script = true);
     }
     let Some(url) = url else {
-        return Ok(if preview(ctx).is_some() { "<div id=\"wp-custom-header\" class=\"wp-custom-header\"></div>".to_owned() } else { String::new() });
+        return Ok(if preview(ctx).is_some() {
+            "<div id=\"wp-custom-header\" class=\"wp-custom-header\"></div>".to_owned()
+        } else {
+            String::new()
+        });
     };
     let data = ctx.mods.get("header_image_data");
     let (mut width, mut height, mut attachment) = (
-        data.and_then(|d| object_prop(d, "width")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
-        data.and_then(|d| object_prop(d, "height")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
-        data.and_then(|d| object_prop(d, "attachment_id")).and_then(Value::as_i64).unwrap_or(0).max(0) as u64,
+        data.and_then(|d| object_prop(d, "width"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0) as u64,
+        data.and_then(|d| object_prop(d, "height"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0) as u64,
+        data.and_then(|d| object_prop(d, "attachment_id"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0) as u64,
     );
     if let Some(random) = &random {
         // `get_custom_header()` returns the random pick, with the size of the theme where it has none.
-        let size = |value: &Option<Value>, default: u64| value.as_ref().and_then(Value::as_i64).map_or(default, |n| n.unsigned_abs());
-        let support = super::custom_header::support(&ctx.theme.template, &ctx.theme.template_directory_uri());
+        let size = |value: &Option<Value>, default: u64| {
+            value
+                .as_ref()
+                .and_then(Value::as_i64)
+                .map_or(default, |n| n.unsigned_abs())
+        };
+        let support =
+            super::custom_header::support(&ctx.theme.template, &ctx.theme.template_directory_uri());
         let (theme_width, theme_height) = support.map_or((0, 0), |s| (s.width, s.height));
-        (width, height, attachment) = (size(&random.width, theme_width), size(&random.height, theme_height), random.attachment_id);
+        (width, height, attachment) = (
+            size(&random.width, theme_width),
+            size(&random.height, theme_height),
+            random.attachment_id,
+        );
     }
     let mut alt = String::new();
-    let mut attrs: Vec<(String, String)> = vec![("src".into(), url.clone()), ("width".into(), width.to_string()), ("height".into(), height.to_string())];
+    let mut attrs: Vec<(String, String)> = vec![
+        ("src".into(), url.clone()),
+        ("width".into(), width.to_string()),
+        ("height".into(), height.to_string()),
+    ];
     let mut srcset = None;
     if attachment != 0 {
         let rows = ctx.site.db.post_meta(attachment).await?;
-        if let Some(a) = rows.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt")).and_then(|m| m.meta_value.clone()) {
+        if let Some(a) = rows
+            .iter()
+            .find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt"))
+            .and_then(|m| m.meta_value.clone())
+        {
             alt = a;
         }
         if let Some(meta) = images::attachment_metadata(&ctx.env, attachment).await? {
@@ -228,19 +307,32 @@ async fn custom_header_markup(ctx: &Ctx<'_>) -> Result<String> {
         // `twentyseventeen_header_image_tag()` replaces the generated sizes.
         attrs.push(("sizes".into(), "(max-width: 767px) 200vw, 100vw".into()));
     }
-    let input = LoadingInput { width: Some(width), height: Some(height), ..LoadingInput::default() };
-    attrs.extend(images::loading_attributes(&ctx.env, "img", &input, "get_header_image_tag"));
+    let input = LoadingInput {
+        width: Some(width),
+        height: Some(height),
+        ..LoadingInput::default()
+    };
+    attrs.extend(images::loading_attributes(
+        &ctx.env,
+        "img",
+        &input,
+        "get_header_image_tag",
+    ));
     let mut html = String::from("<img");
     for (name, value) in &attrs {
         html.push_str(&format!(" {name}=\"{}\"", esc_attr(value)));
     }
     html.push_str(" />");
-    Ok(format!("<div id=\"wp-custom-header\" class=\"wp-custom-header\">{html}</div>"))
+    Ok(format!(
+        "<div id=\"wp-custom-header\" class=\"wp-custom-header\">{html}</div>"
+    ))
 }
 
 /// `get_bloginfo( $show, 'display' )`: the filters of `bloginfo`.
 fn bloginfo_display(ctx: &Ctx<'_>, value: &str) -> String {
-    esc_html(&rustpress_core::formatting::convert_chars(&ctx.site.texturize(value)))
+    esc_html(&rustpress_core::formatting::convert_chars(
+        &ctx.site.texturize(value),
+    ))
 }
 
 /// `the_custom_logo()`.
@@ -249,38 +341,86 @@ async fn custom_logo(ctx: &Ctx<'_>) -> Result<String> {
     if id == 0 {
         // A placeholder that the live preview can fill.
         return Ok(match preview(ctx) {
-            Some(_) => format!("<a href=\"{}\" class=\"custom-logo-link\" style=\"display:none;\"><img class=\"custom-logo\" alt=\"\" /></a>", esc_url(&ctx.site.home_url("/"))),
+            Some(_) => format!(
+                "<a href=\"{}\" class=\"custom-logo-link\" style=\"display:none;\"><img class=\"custom-logo\" alt=\"\" /></a>",
+                esc_url(&ctx.site.home_url("/"))
+            ),
             None => String::new(),
         });
     }
     let rows = ctx.site.db.post_meta(id).await?;
-    let alt_meta = rows.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt")).and_then(|m| m.meta_value.clone()).unwrap_or_default();
-    let mut attrs: Vec<(String, AttrValue)> = vec![("class".into(), AttrValue::Text("custom-logo".into())), ("loading".into(), AttrValue::Omit)];
+    let alt_meta = rows
+        .iter()
+        .find(|m| m.meta_key.as_deref() == Some("_wp_attachment_image_alt"))
+        .and_then(|m| m.meta_value.clone())
+        .unwrap_or_default();
+    let mut attrs: Vec<(String, AttrValue)> = vec![
+        ("class".into(), AttrValue::Text("custom-logo".into())),
+        ("loading".into(), AttrValue::Omit),
+    ];
     if alt_meta.is_empty() || alt_meta == "0" {
-        attrs.push(("alt".into(), AttrValue::Text(bloginfo_display(ctx, &ctx.site.settings.blogname))));
+        attrs.push((
+            "alt".into(),
+            AttrValue::Text(bloginfo_display(ctx, &ctx.site.settings.blogname)),
+        ));
     }
-    let image = images::get_attachment_image(&ctx.env, id, "full", &ImageArgs { attrs, post_thumbnail: false, thumbnail_of: None, dimensions: None, requested: None }).await?;
+    let image = images::get_attachment_image(
+        &ctx.env,
+        id,
+        "full",
+        &ImageArgs {
+            attrs,
+            post_thumbnail: false,
+            thumbnail_of: None,
+            dimensions: None,
+            requested: None,
+        },
+    )
+    .await?;
     let q = ctx.q;
-    let current = !q.flags.is_paged && (q.flags.is_front_page || (q.flags.is_home && ctx.site.settings.page_for_posts != q.queried_object_id()));
-    let aria = if current { " aria-current=\"page\"" } else { "" };
-    Ok(format!("<a href=\"{}\" class=\"custom-logo-link\" rel=\"home\"{aria}>{image}</a>", esc_url(&ctx.site.home_url("/"))))
+    let current = !q.flags.is_paged
+        && (q.flags.is_front_page
+            || (q.flags.is_home && ctx.site.settings.page_for_posts != q.queried_object_id()));
+    let aria = if current {
+        " aria-current=\"page\""
+    } else {
+        ""
+    };
+    Ok(format!(
+        "<a href=\"{}\" class=\"custom-logo-link\" rel=\"home\"{aria}>{image}</a>",
+        esc_url(&ctx.site.home_url("/"))
+    ))
 }
 
 async fn site_branding(ctx: &Ctx<'_>, has_top_menu: bool) -> Result<String> {
     let q = ctx.q;
     let site = ctx.site;
-    let is_front = !q.flags.is_paged && (q.flags.is_front_page || (q.flags.is_home && site.settings.page_for_posts != q.queried_object_id()));
-    let current = if is_front { "aria-current=\"page\"" } else { "" };
+    let is_front = !q.flags.is_paged
+        && (q.flags.is_front_page
+            || (q.flags.is_home && site.settings.page_for_posts != q.queried_object_id()));
+    let current = if is_front {
+        "aria-current=\"page\""
+    } else {
+        ""
+    };
     let home = esc_url(&site.home_url("/"));
     let name = &bloginfo_display(ctx, &site.settings.blogname);
     let title = if q.flags.is_front_page {
-        format!("<h1 class=\"site-title\"><a href=\"{home}\" rel=\"home\" {current}>{name}</a></h1>")
+        format!(
+            "<h1 class=\"site-title\"><a href=\"{home}\" rel=\"home\" {current}>{name}</a></h1>"
+        )
     } else {
         format!("<p class=\"site-title\"><a href=\"{home}\" rel=\"home\" {current}>{name}</a></p>")
     };
     let description = &bloginfo_display(ctx, &site.settings.blogdescription);
-    let description = if description.is_empty() && preview(ctx).is_none() { String::new() } else { format!("<p class=\"site-description\">{description}</p>") };
-    let scroll = if (is_frontpage(ctx) || (q.flags.is_home && q.flags.is_front_page)) && !has_top_menu {
+    let description = if description.is_empty() && preview(ctx).is_none() {
+        String::new()
+    } else {
+        format!("<p class=\"site-description\">{description}</p>")
+    };
+    let scroll = if (is_frontpage(ctx) || (q.flags.is_home && q.flags.is_front_page))
+        && !has_top_menu
+    {
         format!(
             "\t\t<a href=\"#content\" class=\"menu-scroll-down\">{}<span class=\"screen-reader-text\">\n\t\t\t{}\t\t</span></a>\n\t",
             svg("arrow-right", false),
@@ -297,8 +437,12 @@ async fn site_branding(ctx: &Ctx<'_>, has_top_menu: bool) -> Result<String> {
 
 /// `wp_nav_menu( [ 'theme_location' => 'top', 'menu_id' => 'top-menu' ] )`.
 async fn top_menu(ctx: &Ctx<'_>) -> Result<Option<String>> {
-    let Some(id) = menu::menu_location(&ctx.mods, "top") else { return Ok(None) };
-    let Some(mut menu) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(None) };
+    let Some(id) = menu::menu_location(&ctx.mods, "top") else {
+        return Ok(None);
+    };
+    let Some(mut menu) = menu::load_menu(ctx.site, preview(ctx), id).await? else {
+        return Ok(None);
+    };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut menu.items).await?;
     let mut args = NavArgs::new("top");
@@ -306,15 +450,32 @@ async fn top_menu(ctx: &Ctx<'_>) -> Result<Option<String>> {
     args.customize = ctx.q.customize.clone().filter(|p| p.menus_previewed());
     let title_hook = |title: &str, item: &MenuItem, _depth: usize| {
         // `twentyseventeen_dropdown_icon_to_menu_link()`.
-        if item.classes.iter().any(|c| c == "menu-item-has-children" || c == "page_item_has_children") { format!("{title}{}", svg("angle-down", false)) } else { title.to_owned() }
+        if item
+            .classes
+            .iter()
+            .any(|c| c == "menu-item-has-children" || c == "page_item_has_children")
+        {
+            format!("{title}{}", svg("angle-down", false))
+        } else {
+            title.to_owned()
+        }
     };
     let link_hook = |link: String, _item: &MenuItem, _depth: usize| link;
     args.use_ids_once(&ctx.env, &menu.items);
-    Ok(Some(menu::wp_nav_menu(ctx.site, &menu, &menu.items, &args, &title_hook, &link_hook)))
+    Ok(Some(menu::wp_nav_menu(
+        ctx.site,
+        &menu,
+        &menu.items,
+        &args,
+        &title_hook,
+        &link_hook,
+    )))
 }
 
 async fn navigation_top(ctx: &Ctx<'_>, menu_html: &str) -> Result<String> {
-    let scroll = if (is_frontpage(ctx) || (ctx.q.flags.is_home && ctx.q.flags.is_front_page)) && has_header_image(ctx).await {
+    let scroll = if (is_frontpage(ctx) || (ctx.q.flags.is_home && ctx.q.flags.is_front_page))
+        && has_header_image(ctx).await
+    {
         format!(
             "\t\t<a href=\"#content\" class=\"menu-scroll-down\">{}<span class=\"screen-reader-text\">\n\t\t\t{}\t\t</span></a>\n\t",
             svg("arrow-right", false),
@@ -355,8 +516,20 @@ async fn header(ctx: &Ctx<'_>, classes: &[String], bar: &str) -> Result<String> 
     out.push_str("\n\t</header><!-- #masthead -->\n\n\t");
     // `twentyseventeen_should_show_featured_image()`.
     let q = ctx.q;
-    if (q.flags.is_single || (q.flags.is_page && !is_frontpage(ctx))) && images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await? != 0 {
-        let image = images::get_attachment_image(&ctx.env, images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await?, "twentyseventeen-featured-image", &ImageArgs { post_thumbnail: true, thumbnail_of: Some(q.queried_object_id()), ..ImageArgs::default() }).await?;
+    if (q.flags.is_single || (q.flags.is_page && !is_frontpage(ctx)))
+        && images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await? != 0
+    {
+        let image = images::get_attachment_image(
+            &ctx.env,
+            images::post_thumbnail_id(&ctx.env, q.queried_object_id()).await?,
+            "twentyseventeen-featured-image",
+            &ImageArgs {
+                post_thumbnail: true,
+                thumbnail_of: Some(q.queried_object_id()),
+                ..ImageArgs::default()
+            },
+        )
+        .await?;
         out.push_str(&format!("<div class=\"single-featured-image-header\">{image}</div><!-- .single-featured-image-header -->"));
     }
     ctx.env.with_state(|s| s.media.in_header = false);
@@ -372,12 +545,18 @@ async fn footer(ctx: &Ctx<'_>) -> Result<String> {
     let two = active_sidebar(ctx, "sidebar-2");
     let three = active_sidebar(ctx, "sidebar-3");
     if two || three {
-        widgets_html = format!("\n\n\t<aside class=\"widget-area\" aria-label=\"{}\">\n\t\t", esc_attr(&t(ctx, "Footer")));
+        widgets_html = format!(
+            "\n\n\t<aside class=\"widget-area\" aria-label=\"{}\">\n\t\t",
+            esc_attr(&t(ctx, "Footer"))
+        );
         if two {
             widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-1\">\n\t\t\t\t{}\t\t\t</div>\n\t\t\t", sidebar_widgets(ctx, "sidebar-2").await?));
         }
         if three {
-            widgets_html.push_str(&format!("\t\t\t<div class=\"widget-column footer-widget-2\">\n\t\t\t\t{}\t\t\t</div>\n\t\t", sidebar_widgets(ctx, "sidebar-3").await?));
+            widgets_html.push_str(&format!(
+                "\t\t\t<div class=\"widget-column footer-widget-2\">\n\t\t\t\t{}\t\t\t</div>\n\t\t",
+                sidebar_widgets(ctx, "sidebar-3").await?
+            ));
         }
         widgets_html.push_str("\t</aside><!-- .widget-area -->\n\n\t");
     }
@@ -397,11 +576,17 @@ async fn privacy_policy_link(ctx: &Ctx<'_>) -> Result<String> {
     if id == 0 {
         return Ok(String::new());
     }
-    let Some(page) = ctx.site.db.post(id).await? else { return Ok(String::new()) };
+    let Some(page) = ctx.site.db.post(id).await? else {
+        return Ok(String::new());
+    };
     if page.post_status != "publish" {
         return Ok(String::new());
     }
-    Ok(format!("<a class=\"privacy-policy-link\" href=\"{}\" rel=\"privacy-policy\">{}</a><span role=\"separator\" aria-hidden=\"true\"></span>", esc_url(&ctx.site.permalink(&page).await?), esc_html(&page.post_title)))
+    Ok(format!(
+        "<a class=\"privacy-policy-link\" href=\"{}\" rel=\"privacy-policy\">{}</a><span role=\"separator\" aria-hidden=\"true\"></span>",
+        esc_url(&ctx.site.permalink(&page).await?),
+        esc_html(&page.post_title)
+    ))
 }
 
 // ------------------------------------------------------------------- the loop
@@ -413,10 +598,22 @@ async fn time_link(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> Result<String
     let site = ctx.site;
     if site.plugins.hides_date(site, post).await? {
         let time_string = "<time class=\"entry-date published\" datetime=\"\"></time><time class=\"updated\" datetime=\"\"></time>";
-        return Ok(rustpress_core::i18n::sprintf(&t(ctx, "<span class=\"screen-reader-text\">Posted on</span> %s"), &[&format!("<a href=\"{}\" rel=\"bookmark\">{time_string}</a>", esc_url(permalink))]));
+        return Ok(rustpress_core::i18n::sprintf(
+            &t(
+                ctx,
+                "<span class=\"screen-reader-text\">Posted on</span> %s",
+            ),
+            &[&format!(
+                "<a href=\"{}\" rel=\"bookmark\">{time_string}</a>",
+                esc_url(permalink)
+            )],
+        ));
     }
     let posted = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
-    let modified = site.timezone.local_timestamp(&post.post_modified).unwrap_or(0);
+    let modified = site
+        .timezone
+        .local_timestamp(&post.post_modified)
+        .unwrap_or(0);
     let date_format = site.options.string("date_format", "F j, Y");
     let time_string = if posted != modified {
         format!(
@@ -427,9 +624,22 @@ async fn time_link(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> Result<String
             site.date(&date_format, modified)
         )
     } else {
-        format!("<time class=\"entry-date published updated\" datetime=\"{}\">{}</time>", site.date("c", posted), site.date(&date_format, posted))
+        format!(
+            "<time class=\"entry-date published updated\" datetime=\"{}\">{}</time>",
+            site.date("c", posted),
+            site.date(&date_format, posted)
+        )
     };
-    Ok(rustpress_core::i18n::sprintf(&t(ctx, "<span class=\"screen-reader-text\">Posted on</span> %s"), &[&format!("<a href=\"{}\" rel=\"bookmark\">{time_string}</a>", esc_url(permalink))]))
+    Ok(rustpress_core::i18n::sprintf(
+        &t(
+            ctx,
+            "<span class=\"screen-reader-text\">Posted on</span> %s",
+        ),
+        &[&format!(
+            "<a href=\"{}\" rel=\"bookmark\">{time_string}</a>",
+            esc_url(permalink)
+        )],
+    ))
 }
 
 /// `twentyseventeen_posted_on()`.
@@ -439,8 +649,18 @@ async fn posted_on(ctx: &Ctx<'_>, post: &Post, permalink: &str) -> Result<String
         Some(user) => (user.display_name.clone(), ctx.site.author_url(user)),
         None => (String::new(), String::new()),
     };
-    let byline = rustpress_core::i18n::sprintf(&t(ctx, "by %s"), &[&format!("<span class=\"author vcard\"><a class=\"url fn n\" href=\"{}\">{}</a></span>", esc_url(&url), name)]);
-    Ok(format!("<span class=\"posted-on\">{}</span><span class=\"byline\"> {byline}</span>", time_link(ctx, post, permalink).await?))
+    let byline = rustpress_core::i18n::sprintf(
+        &t(ctx, "by %s"),
+        &[&format!(
+            "<span class=\"author vcard\"><a class=\"url fn n\" href=\"{}\">{}</a></span>",
+            esc_url(&url),
+            name
+        )],
+    );
+    Ok(format!(
+        "<span class=\"posted-on\">{}</span><span class=\"byline\"> {byline}</span>",
+        time_link(ctx, post, permalink).await?
+    ))
 }
 
 /// `twentyseventeen_categorized_blog()`.
@@ -476,48 +696,102 @@ async fn entry_footer(ctx: &Ctx<'_>, post: &Post) -> Result<String> {
 }
 
 /// `twentyseventeen_content_image_sizes_attr()` (filter `wp_calculate_image_sizes`).
-pub fn calculated_sizes(site: &Site, q: &rustpress_core::QueryResult, stylesheet: &str, sizes: Option<String>, width: u64) -> Option<String> {
+pub fn calculated_sizes(
+    site: &Site,
+    q: &rustpress_core::QueryResult,
+    stylesheet: &str,
+    sizes: Option<String>,
+    width: u64,
+) -> Option<String> {
     let mut sizes = sizes;
     if 740 <= width {
         sizes = Some("(max-width: 706px) 89vw, (max-width: 767px) 82vw, 740px".to_owned());
     }
     let mods = menu::theme_mod(site, stylesheet);
-    let one_column_page = q.flags.is_page && mods.get("page_options").and_then(Value::as_str) == Some("one-column");
-    if (widgets::is_active_sidebar(site, "sidebar-1") || q.flags.is_archive || q.flags.is_search || q.flags.is_home || q.flags.is_page) && !one_column_page && 767 <= width {
-        sizes = Some("(max-width: 767px) 89vw, (max-width: 1000px) 54vw, (max-width: 1071px) 543px, 580px".to_owned());
+    let one_column_page =
+        q.flags.is_page && mods.get("page_options").and_then(Value::as_str) == Some("one-column");
+    if (widgets::is_active_sidebar(site, "sidebar-1")
+        || q.flags.is_archive
+        || q.flags.is_search
+        || q.flags.is_home
+        || q.flags.is_page)
+        && !one_column_page
+        && 767 <= width
+    {
+        sizes = Some(
+            "(max-width: 767px) 89vw, (max-width: 1000px) 54vw, (max-width: 1071px) 543px, 580px"
+                .to_owned(),
+        );
     }
     sizes
 }
 
 /// `twentyseventeen_excerpt_more()` as a template (`%1$s` permalink, `%2$s` title).
 pub fn excerpt_more_template(i18n: &rustpress_core::i18n::I18n) -> String {
-    let text = i18n.gettext(THEME, "Continue reading<span class=\"screen-reader-text\"> \"%s\"</span>").replace("%s", "%2$s");
+    let text = i18n
+        .gettext(
+            THEME,
+            "Continue reading<span class=\"screen-reader-text\"> \"%s\"</span>",
+        )
+        .replace("%s", "%2$s");
     format!(" &hellip; <p class=\"link-more\"><a href=\"%1$s\" class=\"more-link\">{text}</a></p>")
 }
 
 /// `twentyseventeen_post_thumbnail_sizes_attr()` (filter `wp_get_attachment_image_attributes`).
 pub fn attachment_sizes_attr(_site: &Site, q: &rustpress_core::QueryResult) -> String {
-    if q.flags.is_archive || q.flags.is_search || q.flags.is_home { "(max-width: 767px) 89vw, (max-width: 1000px) 54vw, (max-width: 1071px) 543px, 580px".to_owned() } else { "100vw".to_owned() }
+    if q.flags.is_archive || q.flags.is_search || q.flags.is_home {
+        "(max-width: 767px) 89vw, (max-width: 1000px) 54vw, (max-width: 1071px) 543px, 580px"
+            .to_owned()
+    } else {
+        "100vw".to_owned()
+    }
 }
 /// One article of the loop: `template-parts/post/content.php`.
 /// `get_query_var( 'page' )` as `WP_Query::generate_postdata()` takes it.
 fn current_page(ctx: &Ctx<'_>) -> u64 {
-    ctx.q.vars.u64("page").filter(|page| *page != 0).unwrap_or(1)
+    ctx.q
+        .vars
+        .u64("page")
+        .filter(|page| *page != 0)
+        .unwrap_or(1)
 }
 
 /// `get_post_format()`: the template parts exist for these four, the others use `content.php`.
 async fn post_format(ctx: &Ctx<'_>, post: &Post) -> Result<Option<String>> {
-    let terms = ctx.site.db.terms_for_post(post.id, Some("post_format")).await?;
-    Ok(terms.first().and_then(|t| t.slug.strip_prefix("post-format-")).filter(|f| matches!(*f, "audio" | "video" | "image" | "gallery")).map(str::to_owned))
+    let terms = ctx
+        .site
+        .db
+        .terms_for_post(post.id, Some("post_format"))
+        .await?;
+    Ok(terms
+        .first()
+        .and_then(|t| t.slug.strip_prefix("post-format-"))
+        .filter(|f| matches!(*f, "audio" | "video" | "image" | "gallery"))
+        .map(str::to_owned))
 }
 
 /// `get_edit_post_link()` through `twentyseventeen_edit_link()`: empty for who may not edit the post.
 fn edit_link(ctx: &Ctx<'_>, post: &Post) -> String {
-    if preview(ctx).is_some() || !ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.can_edit_post(post)) {
+    if preview(ctx).is_some()
+        || !ctx
+            .q
+            .viewer
+            .as_ref()
+            .is_some_and(|viewer| viewer.can_edit_post(post))
+    {
         return String::new();
     }
-    let text = rustpress_core::i18n::sprintf(&t(ctx, "Edit<span class=\"screen-reader-text\"> \"%s\"</span>"), &[&the_title_for(ctx.site, post)]);
-    format!("<span class=\"edit-link\"><a class=\"post-edit-link\" href=\"{}\">{text}</a></span>", esc_url(&ctx.site.site_url(&format!("wp-admin/post.php?post={}&action=edit", post.id))))
+    let text = rustpress_core::i18n::sprintf(
+        &t(ctx, "Edit<span class=\"screen-reader-text\"> \"%s\"</span>"),
+        &[&the_title_for(ctx.site, post)],
+    );
+    format!(
+        "<span class=\"edit-link\"><a class=\"post-edit-link\" href=\"{}\">{text}</a></span>",
+        esc_url(
+            &ctx.site
+                .site_url(&format!("wp-admin/post.php?post={}&action=edit", post.id))
+        )
+    )
 }
 
 /// `wp_link_pages()` with the arguments of the theme. The templates of posts wrap the numbers in a span.
@@ -529,9 +803,15 @@ async fn link_pages(ctx: &Ctx<'_>, post: &Post, number_span: bool) -> Result<Str
     let site = ctx.site;
     let q = ctx.q;
     let page = current_page(ctx).min(pages.len() as u64);
-    let more = (q.queried_object_id() == post.id && (q.flags.is_page || q.flags.is_single)) || q.flags.is_feed || page > 1;
+    let more = (q.queried_object_id() == post.id && (q.flags.is_page || q.flags.is_single))
+        || q.flags.is_feed
+        || page > 1;
     let permalink = site.permalink(post).await?;
-    let (before, after) = if number_span { ("<span class=\"page-number\">", "</span>") } else { ("", "") };
+    let (before, after) = if number_span {
+        ("<span class=\"page-number\">", "</span>")
+    } else {
+        ("", "")
+    };
     let mut out = format!("<div class=\"page-links\">{}", t(ctx, "Pages:"));
     for number in 1..=pages.len() as u64 {
         let label = format!("{before}{number}{after}");
@@ -539,16 +819,33 @@ async fn link_pages(ctx: &Ctx<'_>, post: &Post, number_span: bool) -> Result<Str
             // `_wp_link_page()`.
             let url = if number == 1 {
                 permalink.clone()
-            } else if !site.uses_pretty_permalinks() || matches!(post.post_status.as_str(), "draft" | "pending") {
+            } else if !site.uses_pretty_permalinks()
+                || matches!(post.post_status.as_str(), "draft" | "pending")
+            {
                 rustpress_core::urls::add_query_arg(&permalink, "page", &number.to_string())
-            } else if site.settings.show_on_front == rustpress_core::settings::ShowOnFront::Page && site.settings.page_on_front == post.id {
-                format!("{}/{}", permalink.trim_end_matches('/'), site.user_trailingslashit(&format!("page/{number}")))
+            } else if site.settings.show_on_front == rustpress_core::settings::ShowOnFront::Page
+                && site.settings.page_on_front == post.id
+            {
+                format!(
+                    "{}/{}",
+                    permalink.trim_end_matches('/'),
+                    site.user_trailingslashit(&format!("page/{number}"))
+                )
             } else {
-                format!("{}/{}", permalink.trim_end_matches('/'), site.user_trailingslashit(&number.to_string()))
+                format!(
+                    "{}/{}",
+                    permalink.trim_end_matches('/'),
+                    site.user_trailingslashit(&number.to_string())
+                )
             };
-            format!("<a href=\"{}\" class=\"post-page-numbers\">{label}</a>", esc_url(&url))
+            format!(
+                "<a href=\"{}\" class=\"post-page-numbers\">{label}</a>",
+                esc_url(&url)
+            )
         } else {
-            format!("<span class=\"post-page-numbers current\" aria-current=\"page\">{label}</span>")
+            format!(
+                "<span class=\"post-page-numbers current\" aria-current=\"page\">{label}</span>"
+            )
         };
         out.push(' ');
         out.push_str(&link);
@@ -559,14 +856,26 @@ async fn link_pages(ctx: &Ctx<'_>, post: &Post, number_span: bool) -> Result<Str
 
 /// `get_media_embedded_in_content()`.
 fn embedded_media(content: &str, types: &[&str]) -> Vec<String> {
-    let alternatives: Vec<String> = types.iter().map(|tag| format!(r"<{tag}[^<]*?(?:>[\s\S]*?</{tag}>|\s*/>)")).collect();
-    let Ok(pattern) = regex::Regex::new(&alternatives.join("|")) else { return Vec::new() };
-    pattern.find_iter(content).map(|m| m.as_str().to_owned()).collect()
+    let alternatives: Vec<String> = types
+        .iter()
+        .map(|tag| format!(r"<{tag}[^<]*?(?:>[\s\S]*?</{tag}>|\s*/>)"))
+        .collect();
+    let Ok(pattern) = regex::Regex::new(&alternatives.join("|")) else {
+        return Vec::new();
+    };
+    pattern
+        .find_iter(content)
+        .map(|m| m.as_str().to_owned())
+        .collect()
 }
 
 /// `get_post_gallery()`: all galleries are built each time, the first one is used.
 async fn post_gallery(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<Option<String>> {
-    Ok(rustpress_blocks::shortcodes::post_galleries(&ctx.env, post).await?.into_iter().next().filter(|gallery| !gallery.is_empty()))
+    Ok(rustpress_blocks::shortcodes::post_galleries(&ctx.env, post)
+        .await?
+        .into_iter()
+        .next()
+        .filter(|gallery| !gallery.is_empty()))
 }
 
 /// `template-parts/post/content.php` and the templates of the post formats `audio`, `video`, `image` and `gallery`.
@@ -579,7 +888,12 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     let format = post_format(ctx, post).await?;
     let format = format.as_deref();
     let classes = post_class(&ctx.env, post, &[], is_home_unpaged, q.flags.is_singular()).await?;
-    let sticky = if site.settings.sticky_posts.contains(&post.id) && q.flags.is_home && is_home_unpaged { svg("thumb-tack", false) } else { String::new() };
+    let sticky =
+        if site.settings.sticky_posts.contains(&post.id) && q.flags.is_home && is_home_unpaged {
+            svg("thumb-tack", false)
+        } else {
+            String::new()
+        };
     let mut meta = String::new();
     if post.post_type == "post" {
         meta.push_str("<div class=\"entry-meta\">");
@@ -597,9 +911,15 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     } else if is_single {
         format!("<h1 class=\"entry-title\">{title}</h1>")
     } else if q.flags.is_front_page && q.flags.is_home {
-        format!("<h3 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h3>", esc_url(&permalink))
+        format!(
+            "<h3 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h3>",
+            esc_url(&permalink)
+        )
     } else {
-        format!("<h2 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h2>", esc_url(&permalink))
+        format!(
+            "<h2 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h2>",
+            esc_url(&permalink)
+        )
     };
 
     let raw = get_the_content(&ctx.env, post, current_page(ctx), is_single).await?;
@@ -608,14 +928,33 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     if let Some(kind @ ("audio" | "video")) = format {
         let rendered = the_content(&ctx.env, post, &raw).await?;
         if !rendered.contains("wp-playlist-script") {
-            media = embedded_media(&rendered, if kind == "audio" { &["audio"] } else { &["video", "object", "embed", "iframe"] });
+            media = embedded_media(
+                &rendered,
+                if kind == "audio" {
+                    &["audio"]
+                } else {
+                    &["video", "object", "embed", "iframe"]
+                },
+            );
         }
     }
 
     // `get_the_post_thumbnail()` runs in the conditions as well, and each call counts as media.
     let thumbnail_id = images::post_thumbnail_id(&ctx.env, post.id).await?;
-    let args = ImageArgs { post_thumbnail: true, thumbnail_of: Some(post.id), ..ImageArgs::default() };
-    let has_thumbnail = thumbnail_id != 0 && !images::get_attachment_image(&ctx.env, thumbnail_id, "twentyseventeen-featured-image", &args).await?.is_empty();
+    let args = ImageArgs {
+        post_thumbnail: true,
+        thumbnail_of: Some(post.id),
+        ..ImageArgs::default()
+    };
+    let has_thumbnail = thumbnail_id != 0
+        && !images::get_attachment_image(
+            &ctx.env,
+            thumbnail_id,
+            "twentyseventeen-featured-image",
+            &args,
+        )
+        .await?
+        .is_empty();
     let mut thumbnail = String::new();
     let shows_thumbnail = has_thumbnail
         && !is_single
@@ -625,8 +964,17 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
             _ => true,
         };
     if shows_thumbnail {
-        let image = images::get_attachment_image(&ctx.env, thumbnail_id, "twentyseventeen-featured-image", &args).await?;
-        thumbnail = format!("\t\t<div class=\"post-thumbnail\">\n\t\t\t<a href=\"{}\">\n\t\t\t\t{image}\t\t\t</a>\n\t\t</div><!-- .post-thumbnail -->\n\t", esc_url(&permalink));
+        let image = images::get_attachment_image(
+            &ctx.env,
+            thumbnail_id,
+            "twentyseventeen-featured-image",
+            &args,
+        )
+        .await?;
+        thumbnail = format!(
+            "\t\t<div class=\"post-thumbnail\">\n\t\t\t<a href=\"{}\">\n\t\t\t\t{image}\t\t\t</a>\n\t\t</div><!-- .post-thumbnail -->\n\t",
+            esc_url(&permalink)
+        );
     }
 
     let mut body = String::new();
@@ -634,12 +982,27 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
         Some(kind @ ("audio" | "video")) => {
             if !is_single {
                 for html in &media {
-                    body.push_str(&if kind == "audio" { format!("<div class=\"entry-audio\">{html}</div><!-- .entry-audio -->") } else { format!("<div class=\"entry-video\">{html}</div>") });
+                    body.push_str(&if kind == "audio" {
+                        format!("<div class=\"entry-audio\">{html}</div><!-- .entry-audio -->")
+                    } else {
+                        format!("<div class=\"entry-video\">{html}</div>")
+                    });
                 }
             }
             is_single || media.is_empty()
         }
-        Some("image") => is_single || thumbnail_id == 0 || images::get_attachment_image(&ctx.env, thumbnail_id, "twentyseventeen-featured-image", &args).await?.is_empty(),
+        Some("image") => {
+            is_single
+                || thumbnail_id == 0
+                || images::get_attachment_image(
+                    &ctx.env,
+                    thumbnail_id,
+                    "twentyseventeen-featured-image",
+                    &args,
+                )
+                .await?
+                .is_empty()
+        }
         Some("gallery") => {
             if !is_single && post_gallery(ctx, post).await?.is_some() {
                 let gallery = post_gallery(ctx, post).await?.unwrap_or_default();
@@ -653,9 +1016,17 @@ async fn content_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
         body.push_str(&the_content(&ctx.env, post, &raw).await?);
         body.push_str(&link_pages(ctx, post, true).await?);
     }
-    let footer = if is_single { entry_footer(ctx, post).await? } else { String::new() };
+    let footer = if is_single {
+        entry_footer(ctx, post).await?
+    } else {
+        String::new()
+    };
     // The templates of the formats have a block of PHP or an empty line more.
-    let before_thumbnail = if matches!(format, Some("audio" | "video")) { "\n\t" } else { "" };
+    let before_thumbnail = if matches!(format, Some("audio" | "video")) {
+        "\n\t"
+    } else {
+        ""
+    };
     let before_body = if format.is_some() { "\n" } else { "" };
     let after_body = before_body;
     Ok(format!(
@@ -674,12 +1045,21 @@ fn is_static_front_page(ctx: &Ctx<'_>) -> bool {
 /// The image of a panel, a percentage for its height.
 async fn panel_image(ctx: &Ctx<'_>, post: &Post) -> Result<String> {
     let id = images::post_thumbnail_id(&ctx.env, post.id).await?;
-    let Some(attachment) = (id != 0).then_some(ctx.site.db.post(id).await?).flatten() else { return Ok(String::new()) };
+    let Some(attachment) = (id != 0).then_some(ctx.site.db.post(id).await?).flatten() else {
+        return Ok(String::new());
+    };
     let (meta, attached) = images::load_metadata(ctx.site, &attachment).await?;
-    let (Some(meta), Some(attached)) = (meta, attached) else { return Ok(String::new()) };
-    let image = images::image_downsize(&images::attachment_url(ctx.site, &attached), &meta, "twentyseventeen-featured-image");
+    let (Some(meta), Some(attached)) = (meta, attached) else {
+        return Ok(String::new());
+    };
+    let image = images::image_downsize(
+        &images::attachment_url(ctx.site, &attached),
+        &meta,
+        "twentyseventeen-featured-image",
+    );
     // PHP prints a float with 14 digits.
-    let ratio = rustpress_blocks::general::php_float(image.height as f64 / image.width as f64 * 100.0);
+    let ratio =
+        rustpress_blocks::general::php_float(image.height as f64 / image.width as f64 * 100.0);
     Ok(format!(
         "\n\t\t<div class=\"panel-image\" style=\"background-image: url({});\">\n\t\t\t<div class=\"panel-image-prop\" style=\"padding-top: {}%\"></div>\n\t\t</div><!-- .panel-image -->\n\n\t",
         esc_url(&image.url),
@@ -689,15 +1069,31 @@ async fn panel_image(ctx: &Ctx<'_>, post: &Post) -> Result<String> {
 
 /// What `content-front-page.php` and `content-front-page-panels.php` share. `recent` is the list of the blog panel,
 /// whose `wp_reset_postdata()` leaves the post of the page for `the_ID()` in the last line: `closing_id`.
-async fn panel_article(ctx: &Ctx<'_>, post: &Arc<Post>, anchor: &str, recent: &str, closing_id: u64, lead: &str, with_links: bool) -> Result<String> {
+async fn panel_article(
+    ctx: &Ctx<'_>,
+    post: &Arc<Post>,
+    anchor: &str,
+    recent: &str,
+    closing_id: u64,
+    lead: &str,
+    with_links: bool,
+) -> Result<String> {
     let classes = post_class(&ctx.env, post, &["twentyseventeen-panel", ""], false, true).await?;
     let image = panel_image(ctx, post).await?;
     let title = the_title_for(ctx.site, post);
-    let heading = if title.is_empty() { String::new() } else { format!("<h2 class=\"entry-title\">{title}</h2>") };
+    let heading = if title.is_empty() {
+        String::new()
+    } else {
+        format!("<h2 class=\"entry-title\">{title}</h2>")
+    };
     let edit = edit_link(ctx, post);
     let raw = get_the_content(&ctx.env, post, current_page(ctx), true).await?;
     let content = the_content(&ctx.env, post, &raw).await?;
-    let links = if with_links { link_pages(ctx, post, false).await? } else { String::new() };
+    let links = if with_links {
+        link_pages(ctx, post, false).await?
+    } else {
+        String::new()
+    };
     Ok(format!(
         "{lead}<article id=\"{anchor}\" class=\"{classes}\" >\n\n\t{image}\n\t<div class=\"panel-content\">\n\t\t<div class=\"wrap\">\n\t\t\t<header class=\"entry-header\">\n\t\t\t\t{heading}\n\t\t\t\t{edit}\n\t\t\t</header><!-- .entry-header -->\n\n\t\t\t<div class=\"entry-content\">\n\t\t\t\t{content}{links}\t\t\t</div><!-- .entry-content -->\n\n{recent}\t\t</div><!-- .wrap -->\n\t</div><!-- .panel-content -->\n\n</article><!-- #post-{closing_id} -->\n",
         classes = esc_attr(&classes.join(" ")),
@@ -706,7 +1102,16 @@ async fn panel_article(ctx: &Ctx<'_>, post: &Arc<Post>, anchor: &str, recent: &s
 
 /// `template-parts/page/content-front-page.php`.
 async fn front_page_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
-    panel_article(ctx, post, &format!("post-{}", post.id), "", post.id, "", true).await
+    panel_article(
+        ctx,
+        post,
+        &format!("post-{}", post.id),
+        "",
+        post.id,
+        "",
+        true,
+    )
+    .await
 }
 
 /// The panels of `front-page.php`: `twentyseventeen_front_page_section()` for the sections that have a page.
@@ -723,19 +1128,34 @@ async fn front_page_section(ctx: &Ctx<'_>, number: u32) -> Result<String> {
     let placeholder = || match preview(ctx) {
         Some(_) => format!(
             "<article class=\"panel-placeholder panel twentyseventeen-panel twentyseventeen-panel{number}\" id=\"panel{number}\"><span class=\"twentyseventeen-panel-title\">{}</span></article>",
-            rustpress_core::i18n::sprintf(&t(ctx, "Front Page Section %s Placeholder"), &[&number.to_string()])
+            rustpress_core::i18n::sprintf(
+                &t(ctx, "Front Page Section %s Placeholder"),
+                &[&number.to_string()]
+            )
         ),
         None => String::new(),
     };
-    let Some(id) = ctx.mod_str(&format!("panel_{number}")).and_then(|id| id.parse::<u64>().ok()).filter(|id| *id != 0) else { return Ok(placeholder()) };
+    let Some(id) = ctx
+        .mod_str(&format!("panel_{number}"))
+        .and_then(|id| id.parse::<u64>().ok())
+        .filter(|id| *id != 0)
+    else {
+        return Ok(placeholder());
+    };
     let post = ctx.site.db.post(id).await?;
-    let Some(post) = post.filter(|post| matches!(post.post_status.as_str(), "publish" | "private")) else { return Ok(placeholder()) };
+    let Some(post) = post.filter(|post| matches!(post.post_status.as_str(), "publish" | "private"))
+    else {
+        return Ok(placeholder());
+    };
     let post = Arc::new(post);
     ctx.env.with_state(|s| s.looped_posts.push(post.id));
     let mut recent = String::from("\t\t\t\n");
     let mut closing_id = post.id;
     if ctx.site.settings.page_for_posts == post.id {
-        let query = rustpress_db::PostQuery { limit: Some(3), ..rustpress_db::PostQuery::default() };
+        let query = rustpress_db::PostQuery {
+            limit: Some(3),
+            ..rustpress_db::PostQuery::default()
+        };
         let posts = ctx.site.db.posts(&query).await?;
         recent = String::from("\t\t\t\n\t\t\t\t\n\t\t\t\t");
         if !posts.is_empty() {
@@ -749,13 +1169,26 @@ async fn front_page_section(ctx: &Ctx<'_>, number: u32) -> Result<String> {
         }
         recent.push_str("\t\t\t\n");
     }
-    panel_article(ctx, &post, &format!("panel{number}"), &recent, closing_id, "\n", false).await
+    panel_article(
+        ctx,
+        &post,
+        &format!("panel{number}"),
+        &recent,
+        closing_id,
+        "\n",
+        false,
+    )
+    .await
 }
 
 /// The social links menu of `footer.php`.
 async fn social_navigation(ctx: &Ctx<'_>) -> Result<String> {
-    let Some(id) = menu::menu_location(&ctx.mods, "social") else { return Ok(String::new()) };
-    let Some(mut social) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(String::new()) };
+    let Some(id) = menu::menu_location(&ctx.mods, "social") else {
+        return Ok(String::new());
+    };
+    let Some(mut social) = menu::load_menu(ctx.site, preview(ctx), id).await? else {
+        return Ok(String::new());
+    };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut social.items).await?;
     let mut args = NavArgs::new("social");
@@ -767,13 +1200,26 @@ async fn social_navigation(ctx: &Ctx<'_>) -> Result<String> {
     let link_after = args.link_after.clone();
     let title_hook = |title: &str, _: &MenuItem, _: usize| title.to_owned();
     // `twentyseventeen_nav_menu_social_icons()`.
-    let link_hook = |link: String, _: &MenuItem, _: usize| match SOCIAL_ICONS.iter().find(|(address, _)| link.contains(address)) {
+    let link_hook = |link: String, _: &MenuItem, _: usize| match SOCIAL_ICONS
+        .iter()
+        .find(|(address, _)| link.contains(address))
+    {
         Some((_, icon)) => link.replace(&link_after, &format!("</span>{}", svg(icon, false))),
         None => link,
     };
     args.use_ids_once(&ctx.env, &social.items);
-    let html = menu::wp_nav_menu(ctx.site, &social, &social.items, &args, &title_hook, &link_hook);
-    Ok(format!("\t\t\t\t\t<nav class=\"social-navigation\" aria-label=\"{}\">\n\t\t\t\t\t\t{html}\t\t\t\t\t</nav><!-- .social-navigation -->\n\t\t\t\t\t", esc_attr(&t(ctx, "Footer Social Links Menu"))))
+    let html = menu::wp_nav_menu(
+        ctx.site,
+        &social,
+        &social.items,
+        &args,
+        &title_hook,
+        &link_hook,
+    );
+    Ok(format!(
+        "\t\t\t\t\t<nav class=\"social-navigation\" aria-label=\"{}\">\n\t\t\t\t\t\t{html}\t\t\t\t\t</nav><!-- .social-navigation -->\n\t\t\t\t\t",
+        esc_attr(&t(ctx, "Footer Social Links Menu"))
+    ))
 }
 
 /// `twentyseventeen_content_width()`.
@@ -797,15 +1243,33 @@ fn custom_colors_css(ctx: &Ctx<'_>) -> String {
     if ctx.mod_str("colorscheme").as_deref() != Some("custom") && preview(ctx).is_none() {
         return String::new();
     }
-    let hue = ctx.mod_str("colorscheme_hue").and_then(|hue| hue.trim().parse::<i64>().ok()).map_or(250, i64::abs).to_string();
-    let css = include_str!("seventeen_colors.css").replace("{$hue}", &hue).replace("{$saturation}", "50%").replace("{$reduced_saturation}", "40%");
-    let data_hue = if preview(ctx).is_some() { format!("data-hue=\"{hue}\"") } else { String::new() };
-    format!("\t<style type=\"text/css\" id=\"custom-theme-colors\" {data_hue}>\n\t\t{css}\t</style>\n\t")
+    let hue = ctx
+        .mod_str("colorscheme_hue")
+        .and_then(|hue| hue.trim().parse::<i64>().ok())
+        .map_or(250, i64::abs)
+        .to_string();
+    let css = include_str!("seventeen_colors.css")
+        .replace("{$hue}", &hue)
+        .replace("{$saturation}", "50%")
+        .replace("{$reduced_saturation}", "40%");
+    let data_hue = if preview(ctx).is_some() {
+        format!("data-hue=\"{hue}\"")
+    } else {
+        String::new()
+    };
+    format!(
+        "\t<style type=\"text/css\" id=\"custom-theme-colors\" {data_hue}>\n\t\t{css}\t</style>\n\t"
+    )
 }
 
 /// `twentyseventeen_header_style()`.
 fn header_style(ctx: &Ctx<'_>) -> String {
-    let Some(color) = ctx.mod_str("header_textcolor").filter(|color| !color.is_empty() && color != "ffffff") else { return String::new() };
+    let Some(color) = ctx
+        .mod_str("header_textcolor")
+        .filter(|color| !color.is_empty() && color != "ffffff")
+    else {
+        return String::new();
+    };
     let rules = if color == "blank" {
         "\t\t.site-title,\n\t\t.site-description {\n\t\t\tposition: absolute;\n\t\t\tclip-path: inset(50%);\n\t\t}\n\t\t\t".to_owned()
     } else {
@@ -829,9 +1293,15 @@ fn header_style(ctx: &Ctx<'_>) -> String {
             "body.has-header-image.colors-custom .site-description",
             "body.has-header-video.colors-custom .site-description",
         ];
-        format!("\t\t{} {{\n\t\t\tcolor: #{};\n\t\t}}\n\t", selectors.join(",\n\t\t"), esc_attr(&color))
+        format!(
+            "\t\t{} {{\n\t\t\tcolor: #{};\n\t\t}}\n\t",
+            selectors.join(",\n\t\t"),
+            esc_attr(&color)
+        )
     };
-    format!("\t\t<style id=\"twentyseventeen-custom-header-styles\" type=\"text/css\">\n\t\t{rules}\t</style>\n\t\t")
+    format!(
+        "\t\t<style id=\"twentyseventeen-custom-header-styles\" type=\"text/css\">\n\t\t{rules}\t</style>\n\t\t"
+    )
 }
 
 async fn pagination(ctx: &Ctx<'_>) -> String {
@@ -839,9 +1309,20 @@ async fn pagination(ctx: &Ctx<'_>) -> String {
         ctx.site,
         ctx.q,
         &Pagination {
-            prev_text: format!("{}<span class=\"screen-reader-text\">{}</span>", svg("arrow-left", false), t(ctx, "Previous page")),
-            next_text: format!("<span class=\"screen-reader-text\">{}</span>{}", t(ctx, "Next page"), svg("arrow-right", false)),
-            before_page_number: format!("<span class=\"meta-nav screen-reader-text\">{} </span>", t(ctx, "Page")),
+            prev_text: format!(
+                "{}<span class=\"screen-reader-text\">{}</span>",
+                svg("arrow-left", false),
+                t(ctx, "Previous page")
+            ),
+            next_text: format!(
+                "<span class=\"screen-reader-text\">{}</span>{}",
+                t(ctx, "Next page"),
+                svg("arrow-right", false)
+            ),
+            before_page_number: format!(
+                "<span class=\"meta-nav screen-reader-text\">{} </span>",
+                t(ctx, "Page")
+            ),
             mid_size: 1,
         },
     )
@@ -863,7 +1344,11 @@ fn search_form(ctx: &Ctx<'_>) -> String {
     search_form_markup(ctx.site, ctx.q, &ctx.env)
 }
 
-fn search_form_markup(site: &Site, q: &rustpress_core::QueryResult, env: &rustpress_blocks::Env<'_>) -> String {
+fn search_form_markup(
+    site: &Site,
+    q: &rustpress_core::QueryResult,
+    env: &rustpress_blocks::Env<'_>,
+) -> String {
     let tx = |text: &str, context: &str| site.i18n().pgettext(THEME, context, text);
     let unique = env.with_state(|s| s.unique_id("search-form-"));
     let query = esc_attr(q.vars.get("s").unwrap_or(""));
@@ -904,37 +1389,84 @@ async fn archive_header(ctx: &Ctx<'_>) -> Result<String> {
             } else if f.is_tag {
                 site.trx("Tag:", "tag archive title prefix")
             } else {
-                rustpress_core::i18n::sprintf(&site.trx("%s:", "taxonomy term archive title prefix"), &[&site.taxonomy_singular_label(&term.taxonomy)])
+                rustpress_core::i18n::sprintf(
+                    &site.trx("%s:", "taxonomy term archive title prefix"),
+                    &[&site.taxonomy_singular_label(&term.taxonomy)],
+                )
             };
-            (format!("{prefix} <span>{}</span>", term.name), term.description.clone())
+            (
+                format!("{prefix} <span>{}</span>", term.name),
+                term.description.clone(),
+            )
         }
-        Queried::User(user) if f.is_author => (format!("{} <span>{}</span>", site.trx("Author:", "author archive title prefix"), user.display_name), String::new()),
-        Queried::PostType(post_type) if f.is_post_type_archive && !(f.is_year || f.is_month || f.is_day) => {
-            (format!("{} <span>{}</span>", site.trx("Archives:", "post type archive title prefix"), site.post_type_label(post_type)), String::new())
+        Queried::User(user) if f.is_author => (
+            format!(
+                "{} <span>{}</span>",
+                site.trx("Author:", "author archive title prefix"),
+                user.display_name
+            ),
+            String::new(),
+        ),
+        Queried::PostType(post_type)
+            if f.is_post_type_archive && !(f.is_year || f.is_month || f.is_day) =>
+        {
+            (
+                format!(
+                    "{} <span>{}</span>",
+                    site.trx("Archives:", "post type archive title prefix"),
+                    site.post_type_label(post_type)
+                ),
+                String::new(),
+            )
         }
         _ if f.is_year || f.is_month || f.is_day => {
             let first = q.posts.first();
-            let ts = first.and_then(|p| site.timezone.local_timestamp(&p.post_date)).unwrap_or(0);
+            let ts = first
+                .and_then(|p| site.timezone.local_timestamp(&p.post_date))
+                .unwrap_or(0);
             // `get_the_date()` of the global post: empty when a plugin ran `the_post` for it in `wp_head` and hides its
             // date from then on.
             let hidden = match first {
-                Some(post) if site.plugins.resets_query_in_head() => site.plugins.hides_date(site, post).await?,
+                Some(post) if site.plugins.resets_query_in_head() => {
+                    site.plugins.hides_date(site, post).await?
+                }
                 _ => false,
             };
             let (prefix, format) = if f.is_day {
-                (site.trx("Day:", "date archive title prefix"), site.trx("F j, Y", "daily archives date format"))
+                (
+                    site.trx("Day:", "date archive title prefix"),
+                    site.trx("F j, Y", "daily archives date format"),
+                )
             } else if f.is_month {
-                (site.trx("Month:", "date archive title prefix"), site.trx("F Y", "monthly archives date format"))
+                (
+                    site.trx("Month:", "date archive title prefix"),
+                    site.trx("F Y", "monthly archives date format"),
+                )
             } else {
-                (site.trx("Year:", "date archive title prefix"), site.trx("Y", "yearly archives date format"))
+                (
+                    site.trx("Year:", "date archive title prefix"),
+                    site.trx("Y", "yearly archives date format"),
+                )
             };
-            (format!("{prefix} <span>{}</span>", if hidden { String::new() } else { site.date(&format, ts) }), String::new())
+            (
+                format!(
+                    "{prefix} <span>{}</span>",
+                    if hidden {
+                        String::new()
+                    } else {
+                        site.date(&format, ts)
+                    }
+                ),
+                String::new(),
+            )
         }
         _ => (site.tr("Archives"), String::new()),
     };
     let mut out = format!("<h1 class=\"page-title\">{title}</h1>");
     if !description.is_empty() {
-        out.push_str(&format!("<div class=\"taxonomy-description\">{description}</div>"));
+        out.push_str(&format!(
+            "<div class=\"taxonomy-description\">{description}</div>"
+        ));
     }
     Ok(out)
 }
@@ -944,18 +1476,40 @@ async fn excerpt_part(ctx: &Ctx<'_>, post: &Arc<Post>) -> Result<String> {
     let site = ctx.site;
     let q = ctx.q;
     let permalink = site.permalink(post).await?;
-    let classes = post_class(&ctx.env, post, &[], q.flags.is_home && !q.flags.is_paged, q.flags.is_singular()).await?;
-    let meta = if post.post_type == "post" { format!("\t\t\t<div class=\"entry-meta\">\n\t\t\t\t{}\t\t\t</div><!-- .entry-meta -->\n\t\t", time_link(ctx, post, &permalink).await?) } else { String::new() };
+    let classes = post_class(
+        &ctx.env,
+        post,
+        &[],
+        q.flags.is_home && !q.flags.is_paged,
+        q.flags.is_singular(),
+    )
+    .await?;
+    let meta = if post.post_type == "post" {
+        format!(
+            "\t\t\t<div class=\"entry-meta\">\n\t\t\t\t{}\t\t\t</div><!-- .entry-meta -->\n\t\t",
+            time_link(ctx, post, &permalink).await?
+        )
+    } else {
+        String::new()
+    };
     let title = the_title_for(site, post);
     let heading = if title.is_empty() {
         String::new()
     } else if q.flags.is_front_page && !q.flags.is_home {
-        format!("<h3 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h3>", esc_url(&permalink))
+        format!(
+            "<h3 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h3>",
+            esc_url(&permalink)
+        )
     } else {
-        format!("<h2 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h2>", esc_url(&permalink))
+        format!(
+            "<h2 class=\"entry-title\"><a href=\"{}\" rel=\"bookmark\">{title}</a></h2>",
+            esc_url(&permalink)
+        )
     };
     let excerpt = rustpress_blocks::excerpt::get_the_excerpt(&ctx.env, post).await?;
-    let excerpt = rustpress_core::formatting::wpautop(&rustpress_core::formatting::convert_chars(&site.texturize(&excerpt)));
+    let excerpt = rustpress_core::formatting::wpautop(&rustpress_core::formatting::convert_chars(
+        &site.texturize(&excerpt),
+    ));
     Ok(format!(
         "\n<article id=\"post-{id}\" class=\"{classes}\">\n\n\t<header class=\"entry-header\">\n\t\t{meta}\n\t\t{heading}\t</header><!-- .entry-header -->\n\n\t<div class=\"entry-summary\">\n\t\t{excerpt}\t</div><!-- .entry-summary -->\n\n</article><!-- #post-{id} -->\n",
         id = post.id,
@@ -983,29 +1537,63 @@ async fn post_navigation(ctx: &Ctx<'_>, post: &Post) -> Result<String> {
     let site = ctx.site;
     let mut links = String::new();
     for previous in [true, false] {
-        let Some(id) = site.db.adjacent_post_id(&post.post_type, &post.post_date, post.id, previous).await? else { continue };
-        let Some(other) = site.db.post(id).await? else { continue };
+        let Some(id) = site
+            .db
+            .adjacent_post_id(&post.post_type, &post.post_date, post.id, previous)
+            .await?
+        else {
+            continue;
+        };
+        let Some(other) = site.db.post(id).await? else {
+            continue;
+        };
         if other.post_status != "publish" {
             continue;
         }
         let mut title = other.post_title.clone();
         if title.is_empty() {
-            title = if previous { site.tr("Previous Post") } else { site.tr("Next Post") };
+            title = if previous {
+                site.tr("Previous Post")
+            } else {
+                site.tr("Next Post")
+            };
         }
         let title = super::menu::the_title_filters(site, &title);
         let template = if previous {
-            format!("<span class=\"screen-reader-text\">{}</span><span aria-hidden=\"true\" class=\"nav-subtitle\">{}</span> <span class=\"nav-title\"><span class=\"nav-title-icon-wrapper\">{}</span>%title</span>", t(ctx, "Previous Post"), t(ctx, "Previous"), svg("arrow-left", false))
+            format!(
+                "<span class=\"screen-reader-text\">{}</span><span aria-hidden=\"true\" class=\"nav-subtitle\">{}</span> <span class=\"nav-title\"><span class=\"nav-title-icon-wrapper\">{}</span>%title</span>",
+                t(ctx, "Previous Post"),
+                t(ctx, "Previous"),
+                svg("arrow-left", false)
+            )
         } else {
-            format!("<span class=\"screen-reader-text\">{}</span><span aria-hidden=\"true\" class=\"nav-subtitle\">{}</span> <span class=\"nav-title\">%title<span class=\"nav-title-icon-wrapper\">{}</span></span>", t(ctx, "Next Post"), t(ctx, "Next"), svg("arrow-right", false))
+            format!(
+                "<span class=\"screen-reader-text\">{}</span><span aria-hidden=\"true\" class=\"nav-subtitle\">{}</span> <span class=\"nav-title\">%title<span class=\"nav-title-icon-wrapper\">{}</span></span>",
+                t(ctx, "Next Post"),
+                t(ctx, "Next"),
+                svg("arrow-right", false)
+            )
         };
         let inner = template.replace("%title", &title);
-        let anchor = format!("<a href=\"{}\" rel=\"{}\">{inner}</a>", esc_url(&site.permalink(&other).await?), if previous { "prev" } else { "next" });
-        links.push_str(&format!("<div class=\"nav-{}\">{anchor}</div>", if previous { "previous" } else { "next" }));
+        let anchor = format!(
+            "<a href=\"{}\" rel=\"{}\">{inner}</a>",
+            esc_url(&site.permalink(&other).await?),
+            if previous { "prev" } else { "next" }
+        );
+        links.push_str(&format!(
+            "<div class=\"nav-{}\">{anchor}</div>",
+            if previous { "previous" } else { "next" }
+        ));
     }
     if links.is_empty() {
         return Ok(String::new());
     }
-    Ok(tags::navigation_markup(&links, "post-navigation", &site.tr("Post navigation"), &site.tr("Posts")))
+    Ok(tags::navigation_markup(
+        &links,
+        "post-navigation",
+        &site.tr("Post navigation"),
+        &site.tr("Posts"),
+    ))
 }
 
 /// The body of the main template (`index.php`, `archive.php`, `search.php`, ...).
@@ -1029,15 +1617,45 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
         } else {
             content_part(ctx, &post).await?
         });
-        if (f.is_single || f.is_page) && !is_static_front_page(ctx) && (comments::comments_open(ctx.site, q.viewer.as_ref(), &post) || ctx.site.comments_number(&post, q.viewer.as_ref()) > 0) {
-            let args = comments::ListArgs { avatar_size: 100, reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")), short_ping: true, cpage: None, ..Default::default() };
+        if (f.is_single || f.is_page)
+            && !is_static_front_page(ctx)
+            && (comments::comments_open(ctx.site, q.viewer.as_ref(), &post)
+                || ctx.site.comments_number(&post, q.viewer.as_ref()) > 0)
+        {
+            let args = comments::ListArgs {
+                avatar_size: 100,
+                reply_text: format!("{}{}", svg("mail-reply", false), t(ctx, "Reply")),
+                short_ping: true,
+                cpage: None,
+                ..Default::default()
+            };
             let text = |s: &str| t(ctx, s);
             let text_x = |s: &str, c: &str| tx(ctx, s, c);
             let pagination = comments::PaginationText {
-                prev_text: format!("{}<span class=\"screen-reader-text\">{}</span>", svg("arrow-left", false), t(ctx, "Previous")),
-                next_text: format!("<span class=\"screen-reader-text\">{}</span>{}", t(ctx, "Next"), svg("arrow-right", false)),
+                prev_text: format!(
+                    "{}<span class=\"screen-reader-text\">{}</span>",
+                    svg("arrow-left", false),
+                    t(ctx, "Previous")
+                ),
+                next_text: format!(
+                    "<span class=\"screen-reader-text\">{}</span>{}",
+                    t(ctx, "Next"),
+                    svg("arrow-right", false)
+                ),
             };
-            loop_html.push_str(&comments::comments_template(ctx.site, &ctx.env, &post, &args, &ctx.request_uri(), &pagination, &text, &text_x).await?);
+            loop_html.push_str(
+                &comments::comments_template(
+                    ctx.site,
+                    &ctx.env,
+                    &post,
+                    &args,
+                    &ctx.request_uri(),
+                    &pagination,
+                    &text,
+                    &text_x,
+                )
+                .await?,
+            );
         }
         if f.is_single {
             loop_html.push_str(&post_navigation(ctx, &post).await?);
@@ -1049,49 +1667,108 @@ async fn main_template(ctx: &Ctx<'_>) -> Result<String> {
         return Ok(format!(
             "\n<div class=\"wrap\">\n\t<div id=\"primary\" class=\"content-area\">\n\t\t<main id=\"main\" class=\"site-main\">\n\n\t\t\t<section class=\"error-404 not-found\">\n\t\t\t\t<header class=\"page-header\">\n\t\t\t\t\t<h1 class=\"page-title\">{}</h1>\n\t\t\t\t</header><!-- .page-header -->\n\t\t\t\t<div class=\"page-content\">\n\t\t\t\t\t<p>{}</p>\n\n\t\t\t\t\t{}\n\t\t\t\t</div><!-- .page-content -->\n\t\t\t</section><!-- .error-404 -->\n\t\t</main><!-- #main -->\n\t</div><!-- #primary -->\n</div><!-- .wrap -->\n\n",
             t(ctx, "Oops! That page can&rsquo;t be found."),
-            t(ctx, "It looks like nothing was found at this location. Maybe try a search?"),
+            t(
+                ctx,
+                "It looks like nothing was found at this location. Maybe try a search?"
+            ),
             search_form(ctx)
         ));
     }
     if is_static_front_page(ctx) {
         let panels = front_page_panels(ctx).await?;
-        return Ok(format!("\n<div id=\"primary\" class=\"content-area\">\n\t<main id=\"main\" class=\"site-main\">\n\n\t\t{loop_html}\n\t\t{panels}\n\t</main><!-- #main -->\n</div><!-- #primary -->\n\n"));
+        return Ok(format!(
+            "\n<div id=\"primary\" class=\"content-area\">\n\t<main id=\"main\" class=\"site-main\">\n\n\t\t{loop_html}\n\t\t{panels}\n\t</main><!-- #main -->\n</div><!-- #primary -->\n\n"
+        ));
     }
     if f.is_singular() {
-        let tail = if f.is_page { "</div><!-- #primary -->\n" } else { "</div><!-- #primary -->\n\t" };
-        let sidebar = if f.is_page { String::new() } else { get_sidebar(ctx).await? };
+        let tail = if f.is_page {
+            "</div><!-- #primary -->\n"
+        } else {
+            "</div><!-- #primary -->\n\t"
+        };
+        let sidebar = if f.is_page {
+            String::new()
+        } else {
+            get_sidebar(ctx).await?
+        };
         return Ok(format!(
             "\n<div class=\"wrap\">\n\t<div id=\"primary\" class=\"content-area\">\n\t\t<main id=\"main\" class=\"site-main\">\n\n\t\t\t{loop_html}\n\t\t</main><!-- #main -->\n\t{tail}{sidebar}</div><!-- .wrap -->\n\n",
         ));
     }
     let pagination_html = pagination(ctx).await;
-    let lead = if f.is_search || f.is_archive { "\n" } else { "" };
+    let lead = if f.is_search || f.is_archive {
+        "\n"
+    } else {
+        ""
+    };
     let header = if f.is_search {
         let title = if q.posts.is_empty() {
-            format!("\t\t\t<h1 class=\"page-title\">{}</h1>\n\t\t", t(ctx, "Nothing Found"))
+            format!(
+                "\t\t\t<h1 class=\"page-title\">{}</h1>\n\t\t",
+                t(ctx, "Nothing Found")
+            )
         } else {
             format!(
                 "\t\t\t<h1 class=\"page-title\">\n\t\t\t{}\t\t\t</h1>\n\t\t",
-                rustpress_core::i18n::sprintf(&t(ctx, "Search Results for: %s"), &[&format!("<span>{}</span>", esc_html(q.vars.get("s").unwrap_or("")))])
+                rustpress_core::i18n::sprintf(
+                    &t(ctx, "Search Results for: %s"),
+                    &[&format!(
+                        "<span>{}</span>",
+                        esc_html(q.vars.get("s").unwrap_or(""))
+                    )]
+                )
             )
         };
         format!("\t<header class=\"page-header\">\n\t\t{title}\t</header><!-- .page-header -->\n")
     } else if f.is_archive {
-        if q.posts.is_empty() { "\t".to_owned() } else { format!("\t\t\t<header class=\"page-header\">\n\t\t\t{}\t\t</header><!-- .page-header -->\n\t", archive_header(ctx).await?) }
+        if q.posts.is_empty() {
+            "\t".to_owned()
+        } else {
+            format!(
+                "\t\t\t<header class=\"page-header\">\n\t\t\t{}\t\t</header><!-- .page-header -->\n\t",
+                archive_header(ctx).await?
+            )
+        }
     } else if f.is_home && !f.is_front_page {
         let page_title = match &q.queried {
             Queried::Post(page) => the_title_for(ctx.site, page),
             _ => String::new(),
         };
-        format!("\t\t\t<header class=\"page-header\">\n\t\t\t<h1 class=\"page-title\">{page_title}</h1>\n\t\t</header>\n\t")
+        format!(
+            "\t\t\t<header class=\"page-header\">\n\t\t\t<h1 class=\"page-title\">{page_title}</h1>\n\t\t</header>\n\t"
+        )
     } else {
-        format!("\t\t<header class=\"page-header\">\n\t\t<h2 class=\"page-title\">{}</h2>\n\t</header>\n\t", t(ctx, "Posts"))
+        format!(
+            "\t\t<header class=\"page-header\">\n\t\t<h2 class=\"page-title\">{}</h2>\n\t</header>\n\t",
+            t(ctx, "Posts")
+        )
     };
-    let main_indent = if f.is_search { "\t\t" } else if f.is_archive { "\t\t\t\t\t" } else { "\t\t\t" };
+    let main_indent = if f.is_search {
+        "\t\t"
+    } else if f.is_archive {
+        "\t\t\t\t\t"
+    } else {
+        "\t\t\t"
+    };
     let body = if q.posts.is_empty() && f.is_search {
-        format!("\n\t\t\t<p>{}</p>\n\t\t\t{}", t(ctx, "Sorry, but nothing matched your search terms. Please try again with some different keywords."), search_form(ctx))
+        format!(
+            "\n\t\t\t<p>{}</p>\n\t\t\t{}",
+            t(
+                ctx,
+                "Sorry, but nothing matched your search terms. Please try again with some different keywords."
+            ),
+            search_form(ctx)
+        )
     } else if q.posts.is_empty() {
-        format!("\n\n<section class=\"no-results not-found\">\n\t<header class=\"page-header\">\n\t\t<h1 class=\"page-title\">{}</h1>\n\t</header>\n\n\t<div class=\"page-content\">\n\t\t\t<p>{}</p>\n\t\t\t{}\t</div><!-- .page-content -->\n</section><!-- .no-results -->\n", t(ctx, "Nothing Found"), t(ctx, "It seems we can&rsquo;t find what you&rsquo;re looking for. Perhaps searching can help."), search_form(ctx))
+        format!(
+            "\n\n<section class=\"no-results not-found\">\n\t<header class=\"page-header\">\n\t\t<h1 class=\"page-title\">{}</h1>\n\t</header>\n\n\t<div class=\"page-content\">\n\t\t\t<p>{}</p>\n\t\t\t{}\t</div><!-- .page-content -->\n</section><!-- .no-results -->\n",
+            t(ctx, "Nothing Found"),
+            t(
+                ctx,
+                "It seems we can&rsquo;t find what you&rsquo;re looking for. Perhaps searching can help."
+            ),
+            search_form(ctx)
+        )
     } else {
         format!("{loop_html}{pagination_html}")
     };
@@ -1108,7 +1785,9 @@ fn script_version(wp_root: &std::path::Path, handle: &str, default: &str) -> Str
     let text = read(&wp_root.join("wp-includes").join("script-loader.php")).unwrap_or_default();
     let marker = format!("'{handle}'");
     for line in text.lines() {
-        if line.trim_start().starts_with(&format!("$scripts->add( {marker},"))
+        if line
+            .trim_start()
+            .starts_with(&format!("$scripts->add( {marker},"))
             && let Some(rest) = line.rsplit("array(),").next()
             && let Some(v) = rest.split('\'').nth(1)
         {
@@ -1119,7 +1798,11 @@ fn script_version(wp_root: &std::path::Path, handle: &str, default: &str) -> Str
 }
 
 /// The head, and what the plugins print on `wp_body_open` and in `wp_footer` (they work it out with the head).
-async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Registry) -> Result<(String, String, (String, String))> {
+async fn head(
+    ctx: &Ctx<'_>,
+    state: &rustpress_blocks::env::State,
+    registry: &Registry,
+) -> Result<(String, String, (String, String))> {
     let site = ctx.site;
     let theme = ctx.theme;
     let q = ctx.q;
@@ -1129,7 +1812,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let theme_uri = theme.template_directory_uri();
     let mut out = String::new();
 
-    let crate::head::PluginHead { head: plugin_head, blocks: early_blocks } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
+    let crate::head::PluginHead {
+        head: plugin_head,
+        blocks: early_blocks,
+    } = crate::head::plugin_head(theme, site, q, registry, true, None).await?;
     // The plugins' actions of priority 0 added when they load come before the theme's `twentyseventeen_javascript_detection()`.
     out.push_str(&plugin_head.early);
     out.push_str("<script>(function(html){html.className = html.className.replace(/\\bno-js\\b/,'js')})(document.documentElement);</script>\n");
@@ -1142,10 +1828,15 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         };
         out.push_str(&format!("<title>{}</title>\n", esc_html(&title)));
     }
-    out.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
+    out.push_str(&rustpress_core::native::robots_tag(
+        plugin_head.robots.as_deref().unwrap_or_default(),
+    ));
     out.push_str(&plugin_head.html);
     let plugin_assets = site.plugins.assets_for(site, Some(q), None).await;
-    out.push_str(&rustpress_core::native::resource_hints(site, &plugin_assets));
+    out.push_str(&rustpress_core::native::resource_hints(
+        site,
+        &plugin_assets,
+    ));
     out.push_str(&crate::head::feed_links(site, q).await?);
     out.push_str(&oembed_links(site, q).await?);
 
@@ -1163,13 +1854,21 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     let common_present = rustpress_core::files::is_file(&common);
     if common_present {
         // The common stylesheet stays the same in every direction here.
-        sheets.push(Sheet { id: "wp-block-library".into(), path: common, url: String::new(), source: "/wp-includes/css/dist/block-library/common.min.css".into(), rtl: false });
+        sheets.push(Sheet {
+            id: "wp-block-library".into(),
+            path: common,
+            url: String::new(),
+            source: "/wp-includes/css/dist/block-library/common.min.css".into(),
+            rtl: false,
+        });
     }
     // Blocks a plugin rendered in `wp_head` (after `wp_maybe_inline_styles()` ran there) have ordinary enqueued
     // stylesheets, printed as links after the theme's; the others load on demand.
     let mut early: Vec<String> = Vec::new();
     for name in &early_blocks {
-        let Some(block_type) = registry.get(name) else { continue };
+        let Some(block_type) = registry.get(name) else {
+            continue;
+        };
         for handle in &block_type.styles {
             if !early.contains(handle) {
                 early.push(handle.clone());
@@ -1178,7 +1877,9 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     let mut handles: Vec<String> = Vec::new();
     for name in &state.used_blocks {
-        let Some(block_type) = registry.get(name) else { continue };
+        let Some(block_type) = registry.get(name) else {
+            continue;
+        };
         for handle in &block_type.styles {
             if !handles.contains(handle) {
                 handles.push(handle.clone());
@@ -1194,7 +1895,9 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     handles.retain(|h| !early.contains(h));
     for handle in &handles {
-        let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
+        let Some(slug) = handle.strip_prefix("wp-block-") else {
+            continue;
+        };
         let path = registry.blocks_dir().join(slug).join("style.min.css");
         if rustpress_core::files::is_file(&path) {
             let url = format!("{includes_url}/blocks/{slug}/style.min.css?ver={version}");
@@ -1203,16 +1906,31 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
             let variant = crate::document::rtl_variant(rtl, &path, &url);
             let is_rtl = variant.is_some();
             let (path, url) = variant.unwrap_or((path, url));
-            sheets.push(Sheet { id: handle.clone(), path, source, url, rtl: is_rtl });
+            sheets.push(Sheet {
+                id: handle.clone(),
+                path,
+                source,
+                url,
+                rtl: is_rtl,
+            });
         }
     }
     // Smallest files first until the inline budget is used up.
     // `wp_maybe_inline_styles()` runs twice: in `wp_head` for the common block styles alone (which gives them an
     // empty `src`), and in the footer for the block styles enqueued while the page rendered.
-    let mut by_size: Vec<(usize, u64)> = sheets.iter().enumerate().filter(|(_, s)| s.id != "wp-block-library").filter_map(|(i, s)| rustpress_core::files::size(&s.path).map(|len| (i, len))).collect();
+    let mut by_size: Vec<(usize, u64)> = sheets
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.id != "wp-block-library")
+        .filter_map(|(i, s)| rustpress_core::files::size(&s.path).map(|len| (i, len)))
+        .collect();
     by_size.sort_by_key(|(_, size)| *size);
     let mut budget = 0u64;
-    let mut inline: Vec<usize> = sheets.iter().position(|s| s.id == "wp-block-library").into_iter().collect();
+    let mut inline: Vec<usize> = sheets
+        .iter()
+        .position(|s| s.id == "wp-block-library")
+        .into_iter()
+        .collect();
     for (i, size) in by_size {
         if budget + size > INLINE_LIMIT {
             break;
@@ -1225,21 +1943,45 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(crate::customize_preview::WIDGETS_PREVIEW_CSS);
     }
     out.push_str("<style id=\"wp-img-auto-sizes-contain-inline-css\">\nimg:is([sizes=auto i],[sizes^=\"auto,\" i]){contain-intrinsic-size:3000px 1500px}\n/*# sourceURL=wp-img-auto-sizes-contain-inline-css */\n</style>\n");
-    let toolbar = q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar);
+    let toolbar = q
+        .viewer
+        .as_ref()
+        .is_some_and(|viewer| viewer.show_admin_bar);
     if preview.is_some() {
-        out.push_str(&crate::customize_preview::styles(&includes_url, &version, rtl, toolbar));
+        out.push_str(&crate::customize_preview::styles(
+            &includes_url,
+            &version,
+            rtl,
+            toolbar,
+        ));
     } else if toolbar {
-        out.push_str(&crate::document::toolbar_styles(&includes_url, &version, rtl));
+        out.push_str(&crate::document::toolbar_styles(
+            &includes_url,
+            &version,
+            rtl,
+        ));
     }
     out.push_str(&emoji_style());
     for (i, sheet) in sheets.iter().enumerate() {
         if inline.contains(&i) {
             let css = read(&sheet.path).unwrap_or_default();
             // The core adds an (empty) inline style to the common block stylesheet.
-            let extra = if sheet.id == "wp-block-library" { "\n" } else { "" };
-            out.push_str(&format!("<style id=\"{}-inline-css\">\n{}\n{extra}/*# sourceURL={} */\n</style>\n", sheet.id, css, sheet.source));
+            let extra = if sheet.id == "wp-block-library" {
+                "\n"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "<style id=\"{}-inline-css\">\n{}\n{extra}/*# sourceURL={} */\n</style>\n",
+                sheet.id, css, sheet.source
+            ));
         } else {
-            out.push_str(&format!("<link rel='stylesheet' id='{}{}-css' href='{}' media='all' />\n", sheet.id, if sheet.rtl { "-rtl" } else { "" }, sheet.url));
+            out.push_str(&format!(
+                "<link rel='stylesheet' id='{}{}-css' href='{}' media='all' />\n",
+                sheet.id,
+                if sheet.rtl { "-rtl" } else { "" },
+                sheet.url
+            ));
         }
     }
     let _ = EMOJI_CSS;
@@ -1260,7 +2002,10 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
             }
         }
     }
-    let global = GlobalStyles::new(&theme.json, registry).with_other_blocks(ctx.site.plugins.block_names()).classic_chunks(Some(&queued)).join("\n");
+    let global = GlobalStyles::new(&theme.json, registry)
+        .with_other_blocks(ctx.site.plugins.block_names())
+        .classic_chunks(Some(&queued))
+        .join("\n");
     out.push_str(&format!("\n<style id=\"global-styles-inline-css\">\n{global}\n/*# sourceURL=global-styles-inline-css */\n</style>\n"));
 
     // The theme's own styles and scripts (`twentyseventeen_scripts()`).
@@ -1268,7 +2013,11 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     out.push('\n');
     // Stylesheets plugins enqueue at priority 10 come before the theme's, later ones after it.
     let mut style_printer = crate::plugin_assets::StylePrinter::new(wp_root, site);
-    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets.styles.iter().cloned().partition(|a| a.priority <= 10);
+    let (early_styles, late_styles): (Vec<_>, Vec<_>) = plugin_assets
+        .styles
+        .iter()
+        .cloned()
+        .partition(|a| a.priority <= 10);
     out.push_str(&style_printer.links(&early_styles));
     if fonts_on {
         out.push_str(&format!("<link rel='stylesheet' id='twentyseventeen-fonts-css' href='{theme_uri}/assets/fonts/font-libre-franklin.css?ver=20230328' media='all' />\n"));
@@ -1281,22 +2030,36 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     out.push_str(&style_printer.links(&late_styles));
     // The media widgets and the Text widget enqueue the players for widgets the preview may add.
     if preview.is_some() {
-        out.push_str(&crate::customize_preview::media_styles(&includes_url, &version));
+        out.push_str(&crate::customize_preview::media_styles(
+            &includes_url,
+            &version,
+        ));
     }
     for handle in &early {
-        let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
+        let Some(slug) = handle.strip_prefix("wp-block-") else {
+            continue;
+        };
         if rustpress_core::files::is_file(&registry.blocks_dir().join(slug).join("style.min.css")) {
             out.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
         }
     }
     // The plugins' scripts are queued first; the theme's global script needs jQuery.
-    let mut printer = crate::plugin_assets::ScriptPrinter::new(&includes_url, &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(
+        &includes_url,
+        &script_version(wp_root, "jquery-core", "3.7.1"),
+        &script_version(wp_root, "jquery-migrate", "3.4.1"),
+    )
+    .with_packages(wp_root, site);
     // `customize-preview`, queued first, needs jQuery (through `customize-base`).
     if preview.is_some() {
         out.push_str(&printer.core("jquery"));
     }
     // Scripts of a later `wp_enqueue_scripts` callback than the theme's are queued after its own.
-    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets
+        .scripts
+        .iter()
+        .cloned()
+        .partition(|a| a.priority <= 10);
     out.push_str(&printer.scripts(&early_scripts, false));
     out.push_str(&printer.core("jquery"));
     let has_menu = menu::has_nav_menu(site, preview, &ctx.mods, "top").await?;
@@ -1306,8 +2069,15 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         l10n.push(("collapse", t(ctx, "Collapse child menu")));
         l10n.push(("icon", svg("angle-down", true)));
     }
-    let json = serde_json::Value::Object(l10n.into_iter().map(|(k, v)| (k.to_owned(), serde_json::Value::String(v))).collect());
-    let json = rustpress_blocks::php_json::encode(&json).replace("\\/", "/").replace('<', "\\u003C").replace('>', "\\u003E");
+    let json = serde_json::Value::Object(
+        l10n.into_iter()
+            .map(|(k, v)| (k.to_owned(), serde_json::Value::String(v)))
+            .collect(),
+    );
+    let json = rustpress_blocks::php_json::encode(&json)
+        .replace("\\/", "/")
+        .replace('<', "\\u003C")
+        .replace('>', "\\u003E");
     out.push_str(&format!("<script id=\"twentyseventeen-global-js-extra\">\nvar twentyseventeenScreenReaderText = {json};\n//# sourceURL=twentyseventeen-global-js-extra\n</script>\n"));
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"twentyseventeen-global-js\" src=\"{theme_uri}/assets/js/global.js?ver=20211130\"></script>\n"));
     if has_menu {
@@ -1315,20 +2085,38 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     }
     out.push_str(&printer.scripts(&late_scripts, false));
 
-    out.push_str(&discovery_links(site, q, &version, 0, !plugin_head.removed.contains(&"rel_canonical"), &crate::document::locale_stylesheet(theme, site)).await?);
+    out.push_str(
+        &discovery_links(
+            site,
+            q,
+            &version,
+            0,
+            !plugin_head.removed.contains(&"rel_canonical"),
+            &crate::document::locale_stylesheet(theme, site),
+        )
+        .await?,
+    );
     out.push_str(&plugin_head.late);
     // `twentyseventeen_pingback_header()`.
     if let (true, Queried::Post(post)) = (q.flags.is_singular(), &q.queried)
         && site.pings_open(post, q.viewer.as_ref())
     {
-        out.push_str(&format!("<link rel=\"pingback\" href=\"{}\">\n", esc_url(&site.site_url("xmlrpc.php"))));
+        out.push_str(&format!(
+            "<link rel=\"pingback\" href=\"{}\">\n",
+            esc_url(&site.site_url("xmlrpc.php"))
+        ));
     }
     out.push_str(&custom_colors_css(ctx));
     // What plugins hook on `wp_head` on `init` (before the widgets register).
     out.push_str(&plugin_head.late_init);
     // `recent_comments_style()`: an active "Recent Comments" widget.
     // `show_recent_comments_widget_style`, which a plugin that unregisters the widget turns off.
-    if (preview.is_some() || widgets::sidebars_widgets(site).iter().any(|(name, ids)| name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-")))) && !site.plugins.comments_off_everywhere(q.viewer.as_ref()) {
+    if (preview.is_some()
+        || widgets::sidebars_widgets(site).iter().any(|(name, ids)| {
+            name != "wp_inactive_widgets" && ids.iter().any(|id| id.starts_with("recent-comments-"))
+        }))
+        && !site.plugins.comments_off_everywhere(q.viewer.as_ref())
+    {
         out.push_str("<style>.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>");
     }
     out.push_str(&header_style(ctx));
@@ -1340,7 +2128,11 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
     out.push_str(&plugin_head.on_wp);
     let icon = super::wp_site_icon(ctx.site).await?;
     // The default icon in the preview, so that the live preview can replace it.
-    out.push_str(if icon.is_empty() && preview.is_some() { "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n" } else { &icon });
+    out.push_str(if icon.is_empty() && preview.is_some() {
+        "<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"32x32\" />\n"
+    } else {
+        &icon
+    });
     match custom_css(ctx).await? {
         Some(css) => out.push_str(&format!("<style id=\"wp-custom-css\">\n{css}\n</style>\n")),
         None if preview.is_some() => out.push_str("<style id=\"wp-custom-css\">\n\n</style>\n"),
@@ -1359,7 +2151,11 @@ async fn head(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, registry: &Re
         out.push_str(&late);
         out.push('\n');
     }
-    Ok((out, plugin_head.body_open, (plugin_head.footer, plugin_head.footer_on_wp)))
+    Ok((
+        out,
+        plugin_head.body_open,
+        (plugin_head.footer, plugin_head.footer_on_wp),
+    ))
 }
 
 /// `wp_get_custom_css()`.
@@ -1374,7 +2170,11 @@ async fn custom_css(ctx: &Ctx<'_>) -> Result<Option<String>> {
 
 // --------------------------------------------------------------------- footer
 
-async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_head_footer: &(String, String)) -> Result<String> {
+async fn wp_footer(
+    ctx: &Ctx<'_>,
+    state: &rustpress_blocks::env::State,
+    plugin_head_footer: &(String, String),
+) -> Result<String> {
     let site = ctx.site;
     let wp_root = &ctx.theme.wp_root;
     let version = wp_version(wp_root);
@@ -1391,32 +2191,67 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
     let preview = preview(ctx);
     // `wp_underscore_playlist_templates()` runs first (the Text widget asks for it in the preview), the speculation
     // rules are for visitors.
-    let playlist = if state.playlist || preview.is_some() { rustpress_blocks::shortcodes::playlist_templates(site) } else { String::new() };
-    let speculation = if ctx.q.viewer.is_some() || preview.is_some() { String::new() } else { crate::document::speculation_rules(site, ctx.theme) };
-    let nav_menus = preview.filter(|p| p.menus_previewed()).map(crate::customize_preview::nav_menus_exports).unwrap_or_default();
+    let playlist = if state.playlist || preview.is_some() {
+        rustpress_blocks::shortcodes::playlist_templates(site)
+    } else {
+        String::new()
+    };
+    let speculation = if ctx.q.viewer.is_some() || preview.is_some() {
+        String::new()
+    } else {
+        crate::document::speculation_rules(site, ctx.theme)
+    };
+    let nav_menus = preview
+        .filter(|p| p.menus_previewed())
+        .map(crate::customize_preview::nav_menus_exports)
+        .unwrap_or_default();
     // `WP_Script_Modules::add_hooks()`: the import map, the modules and the preloads, then the data on `wp_footer`.
-    let mut out = format!("{playlist}{speculation}{nav_menus}{plugin_footer}{}{importmap}{module_scripts}{preloads}{}{}", plugin_head_footer.0, state.interactivity.data_script().unwrap_or_default(), plugin_head_footer.1);
+    let mut out = format!(
+        "{playlist}{speculation}{nav_menus}{plugin_footer}{}{importmap}{module_scripts}{preloads}{}{}",
+        plugin_head_footer.0,
+        state.interactivity.data_script().unwrap_or_default(),
+        plugin_head_footer.1
+    );
     if let Some(preview) = preview {
         out.push_str(&preview_footer_scripts(ctx, state, preview).await?);
         out.push_str(&site.plugins.print_footer_scripts_early(site, ctx.q));
         out.push_str(&emoji_detection_script(site, wp_root, &version));
         out.push_str(crate::customize_preview::FOOTER_EXPORTS);
-        out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
+        out.push_str(
+            &read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg"))
+                .unwrap_or_default(),
+        );
         return Ok(out);
     }
     let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
-    let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
-    if ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar) {
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(
+        &site.site_url("wp-includes"),
+        &script_version(wp_root, "jquery-core", "3.7.1"),
+        &script_version(wp_root, "jquery-migrate", "3.4.1"),
+    )
+    .with_packages(wp_root, site);
+    if ctx
+        .q
+        .viewer
+        .as_ref()
+        .is_some_and(|viewer| viewer.show_admin_bar)
+    {
         let includes_url = site.site_url("wp-includes");
         out.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={version}\"></script>\n"));
     }
-    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets.scripts.iter().cloned().partition(|a| a.priority <= 10);
+    let (early_scripts, late_scripts): (Vec<_>, Vec<_>) = plugin_assets
+        .scripts
+        .iter()
+        .cloned()
+        .partition(|a| a.priority <= 10);
     out.push_str(&printer.scripts(&early_scripts, true));
     out.push_str(&format!("<script data-wp-strategy=\"defer\" defer id=\"jquery-scrollto-js\" src=\"{}/assets/js/jquery.scrollTo.js?ver=2.1.3\"></script>\n", ctx.theme.template_directory_uri()));
     // `comment-reply`, enqueued by `twentyseventeen_scripts()` for singular pages with open comments.
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
         && site.comments_open(post, ctx.q.viewer.as_ref())
-        && !site.plugins.closes_singular_comments(post, ctx.q.viewer.as_ref())
+        && !site
+            .plugins
+            .closes_singular_comments(post, ctx.q.viewer.as_ref())
         && site.options.get("thread_comments") == Some("1")
     {
         out.push_str(&format!("<script async data-wp-strategy=\"async\" fetchpriority=\"low\" id=\"comment-reply-js\" src=\"{}/js/comment-reply.min.js?ver={version}\"></script>\n", site.site_url("wp-includes")));
@@ -1430,7 +2265,14 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
         out.push_str(&printer.core("backbone"));
     }
     if state.mediaelement || state.playlist {
-        out.push_str(&crate::document::mediaelement_scripts(site, wp_root, &includes_url, &version, state.vimeo, state.mediaelement));
+        out.push_str(&crate::document::mediaelement_scripts(
+            site,
+            wp_root,
+            &includes_url,
+            &version,
+            state.vimeo,
+            state.mediaelement,
+        ));
     }
     if state.playlist {
         printer.mark_printed(&["mediaelement", "mediaelement-core", "mediaelement-migrate"]);
@@ -1439,37 +2281,72 @@ async fn wp_footer(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, plugin_h
     out.push_str(&site.plugins.print_footer_scripts_early(site, ctx.q));
     out.push_str(&emoji_detection_script(site, wp_root, &version));
     out.push_str(&site.plugins.print_footer_scripts(site, ctx.q));
-    out.push_str(&read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default());
+    out.push_str(
+        &read(&ctx.theme.template_dir().join("assets/images/svg-icons.svg")).unwrap_or_default(),
+    );
     Ok(out)
 }
 
 /// The scripts of the footer in the preview, in the order of the queue: `customize-preview` (`wp_loaded`) and the
 /// theme's script for it (`customize_preview_init`), the toolbar's (`template_redirect`), the plugins', the theme's
 /// (`wp_enqueue_scripts`), the media widgets' and the Text widget's, the components' and what the header enqueued.
-async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::State, preview: &rustpress_core::customize::Preview) -> Result<String> {
+async fn preview_footer_scripts(
+    ctx: &Ctx<'_>,
+    state: &rustpress_blocks::env::State,
+    preview: &rustpress_core::customize::Preview,
+) -> Result<String> {
     let site = ctx.site;
     let wp_root = &ctx.theme.wp_root;
     let theme_uri = ctx.theme.template_directory_uri();
     let theme_scripts = [
-        crate::customize_preview::ThemeScript { handle: "twentyseventeen-customize-preview", src: format!("{theme_uri}/assets/js/customize-preview.js"), deps: &["customize-preview"], ver: "20161002", strategy: None },
-        crate::customize_preview::ThemeScript { handle: "jquery-scrollto", src: format!("{theme_uri}/assets/js/jquery.scrollTo.js"), deps: &["jquery"], ver: "2.1.3", strategy: Some("defer") },
+        crate::customize_preview::ThemeScript {
+            handle: "twentyseventeen-customize-preview",
+            src: format!("{theme_uri}/assets/js/customize-preview.js"),
+            deps: &["customize-preview"],
+            ver: "20161002",
+            strategy: None,
+        },
+        crate::customize_preview::ThemeScript {
+            handle: "jquery-scrollto",
+            src: format!("{theme_uri}/assets/js/jquery.scrollTo.js"),
+            deps: &["jquery"],
+            ver: "2.1.3",
+            strategy: Some("defer"),
+        },
     ];
-    let mut scripts = crate::customize_preview::FooterScripts::new(site, wp_root, &theme_scripts, &["jquery", "jquery-core", "jquery-migrate"]);
+    let mut scripts = crate::customize_preview::FooterScripts::new(
+        site,
+        wp_root,
+        &theme_scripts,
+        &["jquery", "jquery-core", "jquery-migrate"],
+    );
     scripts.enqueue("customize-preview");
     scripts.enqueue("twentyseventeen-customize-preview");
     let mut out = scripts.print();
-    if ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar) {
+    if ctx
+        .q
+        .viewer
+        .as_ref()
+        .is_some_and(|viewer| viewer.show_admin_bar)
+    {
         let includes_url = site.site_url("wp-includes");
         out.push_str(&format!("<script id=\"hoverintent-js-js\" src=\"{includes_url}/js/hoverintent-js.min.js?ver=2.2.1\"></script>\n<script id=\"admin-bar-js\" src=\"{includes_url}/js/admin-bar.min.js?ver={}\"></script>\n", wp_version(wp_root)));
     }
     let plugin_assets = site.plugins.assets_for(site, Some(ctx.q), None).await;
-    let mut printer = crate::plugin_assets::ScriptPrinter::new(&site.site_url("wp-includes"), &script_version(wp_root, "jquery-core", "3.7.1"), &script_version(wp_root, "jquery-migrate", "3.4.1")).with_packages(wp_root, site);
+    let mut printer = crate::plugin_assets::ScriptPrinter::new(
+        &site.site_url("wp-includes"),
+        &script_version(wp_root, "jquery-core", "3.7.1"),
+        &script_version(wp_root, "jquery-migrate", "3.4.1"),
+    )
+    .with_packages(wp_root, site);
     printer.mark_printed(&["jquery"]);
     out.push_str(&printer.scripts(&plugin_assets.scripts, true));
     scripts.enqueue("jquery-scrollto");
     if let (true, Queried::Post(post)) = (ctx.q.flags.is_singular(), &ctx.q.queried)
         && site.comments_open(post, ctx.q.viewer.as_ref())
-        && !site.plugins.closes_singular_comments(post, ctx.q.viewer.as_ref())
+        && !site
+            .plugins
+            .closes_singular_comments(post, ctx.q.viewer.as_ref())
         && site.options.get("thread_comments") == Some("1")
     {
         scripts.enqueue("comment-reply");
@@ -1487,7 +2364,11 @@ async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::St
     }
     if state.custom_header_script {
         scripts.enqueue("wp-custom-header");
-        scripts.localize("wp-custom-header", "_wpCustomHeaderSettings", &header_video_settings(ctx).await?);
+        scripts.localize(
+            "wp-custom-header",
+            "_wpCustomHeaderSettings",
+            &header_video_settings(ctx).await?,
+        );
     }
     out.push_str(&scripts.print());
     Ok(out)
@@ -1497,20 +2378,44 @@ async fn preview_footer_scripts(ctx: &Ctx<'_>, state: &rustpress_blocks::env::St
 async fn header_video_settings(ctx: &Ctx<'_>) -> Result<serde_json::Value> {
     let (image, random) = header_image(ctx).await;
     let data = ctx.mods.get("header_image_data");
-    let support = super::custom_header::support(&ctx.theme.template, &ctx.theme.template_directory_uri());
-    let size = |name: &str, default: u64| data.and_then(|d| object_prop(d, name)).and_then(Value::as_i64).map_or(default, i64::unsigned_abs);
-    let (mut width, mut height) = (size("width", support.as_ref().map_or(0, |s| s.width)), size("height", support.as_ref().map_or(0, |s| s.height)));
+    let support =
+        super::custom_header::support(&ctx.theme.template, &ctx.theme.template_directory_uri());
+    let size = |name: &str, default: u64| {
+        data.and_then(|d| object_prop(d, name))
+            .and_then(Value::as_i64)
+            .map_or(default, i64::unsigned_abs)
+    };
+    let (mut width, mut height) = (
+        size("width", support.as_ref().map_or(0, |s| s.width)),
+        size("height", support.as_ref().map_or(0, |s| s.height)),
+    );
     if let Some(random) = &random {
-        let pick = |value: &Option<Value>, default: u64| value.as_ref().and_then(Value::as_i64).map_or(default, i64::unsigned_abs);
-        (width, height) = (pick(&random.width, support.as_ref().map_or(0, |s| s.width)), pick(&random.height, support.as_ref().map_or(0, |s| s.height)));
+        let pick = |value: &Option<Value>, default: u64| {
+            value
+                .as_ref()
+                .and_then(Value::as_i64)
+                .map_or(default, i64::unsigned_abs)
+        };
+        (width, height) = (
+            pick(&random.width, support.as_ref().map_or(0, |s| s.width)),
+            pick(&random.height, support.as_ref().map_or(0, |s| s.height)),
+        );
     }
     let video = header_video_url(ctx).await?;
-    let mime = if regex::Regex::new(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_ok_and(|re| re.is_match(&video)) {
+    let mime = if regex::Regex::new(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)")
+        .is_ok_and(|re| re.is_match(&video))
+    {
         "video/x-youtube".to_owned()
     } else {
         video_mime_type(&video).to_owned()
     };
-    let control = |text: &str, icon: &str| format!("<span class=\"screen-reader-text\">{}</span>{}", t(ctx, text), svg(icon, false));
+    let control = |text: &str, icon: &str| {
+        format!(
+            "<span class=\"screen-reader-text\">{}</span>{}",
+            t(ctx, text),
+            svg(icon, false)
+        )
+    };
     Ok(serde_json::json!({
         "mimeType": mime,
         "posterUrl": image.unwrap_or_default(),
@@ -1531,7 +2436,10 @@ async fn header_video_settings(ctx: &Ctx<'_>) -> Result<serde_json::Value> {
 /// The video types of `wp_check_filetype( $url, wp_get_mime_types() )`.
 fn video_mime_type(url: &str) -> &'static str {
     let path = url.split(['?', '#']).next().unwrap_or_default();
-    let extension = path.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()).unwrap_or_default();
+    let extension = path
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .unwrap_or_default();
     match extension.as_str() {
         "asf" | "asx" => "video/x-ms-asf",
         "wmv" => "video/x-ms-wmv",
@@ -1554,16 +2462,27 @@ fn video_mime_type(url: &str) -> &'static str {
 
 /// `get_header_video_url()`: the uploaded video, else the external one.
 async fn header_video_url(ctx: &Ctx<'_>) -> Result<String> {
-    let id = ctx.mod_str("header_video").and_then(|id| id.trim().parse::<i64>().ok()).map_or(0, i64::unsigned_abs);
+    let id = ctx
+        .mod_str("header_video")
+        .and_then(|id| id.trim().parse::<i64>().ok())
+        .map_or(0, i64::unsigned_abs);
     let url = if id != 0 {
         match ctx.site.db.post(id).await? {
-            Some(post) if post.post_type == "attachment" => images::load_metadata(ctx.site, &post).await?.1.map(|file| images::attachment_url(ctx.site, &file)).unwrap_or_default(),
+            Some(post) if post.post_type == "attachment" => images::load_metadata(ctx.site, &post)
+                .await?
+                .1
+                .map(|file| images::attachment_url(ctx.site, &file))
+                .unwrap_or_default(),
             _ => String::new(),
         }
     } else {
         ctx.mod_str("external_header_video").unwrap_or_default()
     };
-    Ok(if url.is_empty() { url } else { rustpress_core::formatting::esc_url_raw(&url) })
+    Ok(if url.is_empty() {
+        url
+    } else {
+        rustpress_core::formatting::esc_url_raw(&url)
+    })
 }
 
 /// `get_header_video_settings()` for the response of the partials (`export_header_video_settings()`).
@@ -1583,7 +2502,11 @@ pub(super) async fn header_video_export(ctx: &Ctx<'_>) -> Result<serde_json::Val
 /// The callbacks of the partials (`WP_Customize_Partial::render()`): the theme's, and those of WordPress and its
 /// components the theme shows. `None` for a partial that is not registered or may not be refreshed (`null`); a
 /// callback that fails gives `false`.
-pub async fn render_partial(ctx: &Ctx<'_>, id: &str, context: Option<&serde_json::Value>) -> Result<Option<serde_json::Value>> {
+pub async fn render_partial(
+    ctx: &Ctx<'_>,
+    id: &str,
+    context: Option<&serde_json::Value>,
+) -> Result<Option<serde_json::Value>> {
     let failed = || Ok(Some(serde_json::Value::Bool(false)));
     Ok(Some(serde_json::Value::String(match id {
         // `twentyseventeen_customize_partial_blogname()` and `_blogdescription()`.
@@ -1592,22 +2515,58 @@ pub async fn render_partial(ctx: &Ctx<'_>, id: &str, context: Option<&serde_json
         // `_render_custom_logo_partial()`.
         "custom_logo" => custom_logo(ctx).await?,
         "custom_header" => custom_header_markup(ctx).await?,
-        "panel_1" | "panel_2" | "panel_3" | "panel_4" => front_page_section(ctx, id[6..].parse().unwrap_or(1)).await?,
+        "panel_1" | "panel_2" | "panel_3" | "panel_4" => {
+            front_page_section(ctx, id[6..].parse().unwrap_or(1)).await?
+        }
         _ => {
-            if let Some(widget) = id.strip_prefix("widget[").and_then(|rest| rest.strip_suffix(']')) {
+            if let Some(widget) = id
+                .strip_prefix("widget[")
+                .and_then(|rest| rest.strip_suffix(']'))
+            {
                 // `render_widget_partial()`: the widget alone in its sidebar.
                 // The setting of the widget must exist.
-                if widgets::split_id(widget).is_none_or(|(base, number)| widgets::instance(ctx.site, base, number).is_none()) {
+                if widgets::split_id(widget).is_none_or(|(base, number)| {
+                    widgets::instance(ctx.site, base, number).is_none()
+                }) {
                     return Ok(None);
                 }
-                let Some(sidebar_id) = context.and_then(|c| c.get("sidebar_id")).and_then(serde_json::Value::as_str) else { return failed() };
-                let Some(registered) = ["sidebar-1", "sidebar-2", "sidebar-3"].into_iter().find(|s| *s == sidebar_id) else { return failed() };
-                let number = context.and_then(|c| c.get("sidebar_instance_number")).and_then(serde_json::Value::as_i64);
+                let Some(sidebar_id) = context
+                    .and_then(|c| c.get("sidebar_id"))
+                    .and_then(serde_json::Value::as_str)
+                else {
+                    return failed();
+                };
+                let Some(registered) = ["sidebar-1", "sidebar-2", "sidebar-3"]
+                    .into_iter()
+                    .find(|s| *s == sidebar_id)
+                else {
+                    return failed();
+                };
+                let number = context
+                    .and_then(|c| c.get("sidebar_instance_number"))
+                    .and_then(serde_json::Value::as_i64);
                 let request_uri = ctx.request_uri();
                 let search = || search_form(ctx);
-                let services = widgets::Services { site: ctx.site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: &request_uri, search_form: &search };
-                widgets::render_widget_partial(&services, &sidebar(registered), widget, number).await?
-            } else if id.strip_prefix("nav_menu_instance[").and_then(|rest| rest.strip_suffix(']')).is_some_and(|hmac| hmac.len() == 32 && hmac.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())) {
+                let services = widgets::Services {
+                    site: ctx.site,
+                    q: ctx.q,
+                    env: &ctx.env,
+                    stylesheet: &ctx.theme.stylesheet,
+                    request_uri: &request_uri,
+                    search_form: &search,
+                };
+                widgets::render_widget_partial(&services, &sidebar(registered), widget, number)
+                    .await?
+            } else if id
+                .strip_prefix("nav_menu_instance[")
+                .and_then(|rest| rest.strip_suffix(']'))
+                .is_some_and(|hmac| {
+                    hmac.len() == 32
+                        && hmac
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                })
+            {
                 // `render_nav_menu_partial()`: `false` unless the arguments carry their hash.
                 match context {
                     Some(args) => match nav_menu_partial(ctx, args).await? {
@@ -1625,45 +2584,99 @@ pub async fn render_partial(ctx: &Ctx<'_>, id: &str, context: Option<&serde_json
 
 /// `wp_nav_menu( $nav_menu_args )` of a partial, after its `args_hmac` was checked.
 async fn nav_menu_partial(ctx: &Ctx<'_>, args: &serde_json::Value) -> Result<Option<String>> {
-    let Some(map) = args.as_object() else { return Ok(None) };
-    let Some(hmac) = map.get("args_hmac").and_then(serde_json::Value::as_str) else { return Ok(None) };
-    let mut sorted: Vec<(&String, &serde_json::Value)> = map.iter().filter(|(k, _)| *k != "args_hmac").collect();
+    let Some(map) = args.as_object() else {
+        return Ok(None);
+    };
+    let Some(hmac) = map.get("args_hmac").and_then(serde_json::Value::as_str) else {
+        return Ok(None);
+    };
+    let mut sorted: Vec<(&String, &serde_json::Value)> =
+        map.iter().filter(|(k, _)| *k != "args_hmac").collect();
     sorted.sort_by(|a, b| a.0.cmp(b.0));
-    let php = rustpress_phpser::Value::Array(sorted.iter().map(|(k, v)| (rustpress_phpser::Key::Str(k.as_bytes().to_vec()), menu::json_to_php(v))).collect());
+    let php = rustpress_phpser::Value::Array(
+        sorted
+            .iter()
+            .map(|(k, v)| {
+                (
+                    rustpress_phpser::Key::Str(k.as_bytes().to_vec()),
+                    menu::json_to_php(v),
+                )
+            })
+            .collect(),
+    );
     let expected = menu::hash_nav_menu_args(&php);
     if !rustpress_core::hash_equals(&expected, hmac) {
         return Ok(None);
     }
-    let text = |key: &str| map.get(key).and_then(serde_json::Value::as_str).unwrap_or_default().to_owned();
+    let text = |key: &str| {
+        map.get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
     let location = text("theme_location");
     let mut nav = NavArgs::new(&location);
     nav.menu_id = text("menu_id");
     nav.menu_class = text("menu_class");
-    nav.depth = map.get("depth").and_then(serde_json::Value::as_u64).unwrap_or(0) as usize;
+    nav.depth = map
+        .get("depth")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize;
     nav.link_before = text("link_before");
     nav.link_after = text("link_after");
-    nav.container = map.get("container").and_then(serde_json::Value::as_str).filter(|c| !c.is_empty()).map(|tag| (tag.to_owned(), Some(text("container_aria_label"))));
+    nav.container = map
+        .get("container")
+        .and_then(serde_json::Value::as_str)
+        .filter(|c| !c.is_empty())
+        .map(|tag| (tag.to_owned(), Some(text("container_aria_label"))));
     nav.menu = map.get("menu").and_then(serde_json::Value::as_i64);
-    nav.fallback_cb = if text("fallback_cb") == "wp_page_menu" { "wp_page_menu" } else { "" };
+    nav.fallback_cb = if text("fallback_cb") == "wp_page_menu" {
+        "wp_page_menu"
+    } else {
+        ""
+    };
     nav.customize = ctx.q.customize.clone().filter(|p| p.menus_previewed());
     let id = match nav.menu {
         Some(id) => Some(id),
         None => menu::menu_location(&ctx.mods, &location),
     };
-    let Some(id) = id else { return Ok(Some(String::new())) };
-    let Some(mut found) = menu::load_menu(ctx.site, preview(ctx), id).await? else { return Ok(Some(String::new())) };
+    let Some(id) = id else {
+        return Ok(Some(String::new()));
+    };
+    let Some(mut found) = menu::load_menu(ctx.site, preview(ctx), id).await? else {
+        return Ok(Some(String::new()));
+    };
     let uri = ctx.request_uri();
     menu::classes_by_context(ctx.site, ctx.q, &uri, &mut found.items).await?;
     nav.use_ids_once(&ctx.env, &found.items);
     let link_after = nav.link_after.clone();
     let title_hook = |title: &str, item: &MenuItem, _depth: usize| {
-        if location == "top" && item.classes.iter().any(|c| c == "menu-item-has-children" || c == "page_item_has_children") { format!("{title}{}", svg("angle-down", false)) } else { title.to_owned() }
+        if location == "top"
+            && item
+                .classes
+                .iter()
+                .any(|c| c == "menu-item-has-children" || c == "page_item_has_children")
+        {
+            format!("{title}{}", svg("angle-down", false))
+        } else {
+            title.to_owned()
+        }
     };
-    let link_hook = |link: String, _: &MenuItem, _: usize| match SOCIAL_ICONS.iter().find(|(address, _)| location == "social" && link.contains(address)) {
+    let link_hook = |link: String, _: &MenuItem, _: usize| match SOCIAL_ICONS
+        .iter()
+        .find(|(address, _)| location == "social" && link.contains(address))
+    {
         Some((_, icon)) => link.replace(&link_after, &format!("</span>{}", svg(icon, false))),
         None => link,
     };
-    Ok(Some(menu::wp_nav_menu(ctx.site, &found, &found.items, &nav, &title_hook, &link_hook)))
+    Ok(Some(menu::wp_nav_menu(
+        ctx.site,
+        &found,
+        &found.items,
+        &nav,
+        &title_hook,
+        &link_hook,
+    )))
 }
 
 /// `twentyseventeen_body_classes()`.
@@ -1689,7 +2702,13 @@ pub(super) async fn add_body_classes(ctx: &Ctx<'_>, classes: &mut Vec<String>) -
         classes.push("has-sidebar".into());
     }
     if q.flags.is_page || q.flags.is_archive {
-        classes.push(if ctx.mod_str("page_layout").as_deref() == Some("one-column") { "page-one-column".into() } else { "page-two-column".into() });
+        classes.push(
+            if ctx.mod_str("page_layout").as_deref() == Some("one-column") {
+                "page-one-column".into()
+            } else {
+                "page-two-column".into()
+            },
+        );
     }
     if ctx.mod_str("header_textcolor").as_deref() == Some("blank") {
         classes.push("title-tagline-hidden".into());
@@ -1704,14 +2723,26 @@ pub(super) async fn add_body_classes(ctx: &Ctx<'_>, classes: &mut Vec<String>) -
 }
 
 /// `WP_REST_Widget_Types_Controller::render_legacy_widget_preview_iframe()`.
-pub async fn legacy_widget_preview(ctx: &Ctx<'_>, registry: &Registry, id_base: &str, instance: Option<&Value>) -> Result<String> {
+pub async fn legacy_widget_preview(
+    ctx: &Ctx<'_>,
+    registry: &Registry,
+    id_base: &str,
+    instance: Option<&Value>,
+) -> Result<String> {
     let site = ctx.site;
     let mut classes = body_classes(ctx.theme, site, ctx.q).await?;
     add_body_classes(ctx, &mut classes).await?;
     // `render_block_core_legacy_widget()`: without a signed instance the widget has empty settings.
     let empty = Value::Array(Vec::new());
     let search = || search_form_markup(site, ctx.q, &ctx.env);
-    let services = widgets::Services { site, q: ctx.q, env: &ctx.env, stylesheet: &ctx.theme.stylesheet, request_uri: "", search_form: &search };
+    let services = widgets::Services {
+        site,
+        q: ctx.q,
+        env: &ctx.env,
+        stylesheet: &ctx.theme.stylesheet,
+        request_uri: "",
+        search_form: &search,
+    };
     let widget = widgets::the_widget(&services, id_base, instance.unwrap_or(&empty)).await?;
     let state = ctx.env.take_state();
     let (head_html, _, plugin_footer) = head(ctx, &state, registry).await?;
@@ -1724,7 +2755,11 @@ pub async fn legacy_widget_preview(ctx: &Ctx<'_>, registry: &Registry, id_base: 
     ))
 }
 
-pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document::Extras) -> Result<Document> {
+pub async fn render(
+    ctx: &Ctx<'_>,
+    registry: &Registry,
+    extras: &crate::document::Extras,
+) -> Result<Document> {
     let site = ctx.site;
     let q = ctx.q;
     // Body classes: core's, then the theme's (`twentyseventeen_body_classes()`).
@@ -1733,16 +2768,26 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
 
     let content_width = content_width(ctx);
     ctx.env.with_state(|s| s.content_width = content_width);
-    let toolbar_on = ctx.q.viewer.as_ref().is_some_and(|viewer| viewer.show_admin_bar);
+    let toolbar_on = ctx
+        .q
+        .viewer
+        .as_ref()
+        .is_some_and(|viewer| viewer.show_admin_bar);
     // The toolbar has no template to edit in a classic theme.
     let bar = match (&extras.toolbar, toolbar_on) {
         // Between `get_header` and the loop images count as being in the viewport: the avatars are not lazy.
-        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo { template_slug: "", query: ctx.q, site }).replace(" loading='lazy'", ""),
+        (Some(toolbar), true) => toolbar(&crate::document::ToolbarInfo {
+            template_slug: "",
+            query: ctx.q,
+            site,
+        })
+        .replace(" loading='lazy'", ""),
         _ => String::new(),
     };
     let mut body = header(ctx, &classes, &bar).await?;
     // `wp_body_open` comes right after the toolbar.
-    let body_open_at = format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))).len() + bar.len();
+    let body_open_at =
+        format!("<body class=\"{}\">\n", esc_attr(&classes.join(" "))).len() + bar.len();
     body.push_str(&main_template(ctx).await?);
     body.push_str(&footer(ctx).await?);
     let state = ctx.env.take_state();
@@ -1754,5 +2799,8 @@ pub async fn render(ctx: &Ctx<'_>, registry: &Registry, extras: &crate::document
         if site.is_rtl() { "dir=\"rtl\" " } else { "" },
         esc_attr(&site.language_tag()),
     );
-    Ok(Document { status: q.status(), html })
+    Ok(Document {
+        status: q.status(),
+        html,
+    })
 }

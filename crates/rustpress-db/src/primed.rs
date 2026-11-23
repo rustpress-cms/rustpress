@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-
 use crate::models::{Comment, Post, PostMeta, User};
 use crate::{Db, PostQuery, Result};
 
@@ -22,7 +21,10 @@ tokio::task_local! {
 
 /// A user from the request's cache: `Some(None)` is a user known to be missing.
 pub(crate) fn primed_user(id: u64) -> Option<Option<User>> {
-    PRIMED_USERS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
+    PRIMED_USERS
+        .try_with(|cache| cache.borrow().get(&id).cloned())
+        .ok()
+        .flatten()
 }
 
 pub(crate) fn remember_user(id: u64, user: Option<User>) {
@@ -35,8 +37,12 @@ pub(crate) fn forget_users() {
 }
 
 /// The meta of a user from the request's cache, if it was read already. `Err`: there is no cache.
-pub(crate) fn primed_user_meta(user_id: u64) -> std::result::Result<Option<Vec<(String, Option<String>)>>, ()> {
-    PRIMED_USER_META.try_with(|cache| cache.borrow().get(&user_id).cloned()).map_err(|_| ())
+pub(crate) fn primed_user_meta(
+    user_id: u64,
+) -> std::result::Result<Option<Vec<(String, Option<String>)>>, ()> {
+    PRIMED_USER_META
+        .try_with(|cache| cache.borrow().get(&user_id).cloned())
+        .map_err(|_| ())
 }
 
 pub(crate) fn remember_user_meta(user_id: u64, rows: Vec<(String, Option<String>)>) {
@@ -49,15 +55,24 @@ pub(crate) fn forget_user_meta() {
 }
 
 pub(crate) fn primed_comment(id: u64) -> Option<Option<Comment>> {
-    PRIMED_COMMENTS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
+    PRIMED_COMMENTS
+        .try_with(|cache| cache.borrow().get(&id).cloned())
+        .ok()
+        .flatten()
 }
 
 pub(crate) fn primed_approved(post_id: u64) -> Option<Vec<Comment>> {
-    PRIMED_APPROVED.try_with(|cache| cache.borrow().get(&post_id).cloned()).ok().flatten()
+    PRIMED_APPROVED
+        .try_with(|cache| cache.borrow().get(&post_id).cloned())
+        .ok()
+        .flatten()
 }
 
 pub(crate) fn primed_meta(post_id: u64) -> Option<Vec<PostMeta>> {
-    PRIMED_META.try_with(|cache| cache.borrow().get(&post_id).cloned()).ok().flatten()
+    PRIMED_META
+        .try_with(|cache| cache.borrow().get(&post_id).cloned())
+        .ok()
+        .flatten()
 }
 
 /// Keeps the meta rows of a post read outside a list (`update_meta_cache()` at the first `get_post_meta()`).
@@ -80,7 +95,10 @@ pub(crate) fn forget_posts() {
 }
 
 pub(crate) fn primed_post(id: u64) -> Option<Option<Post>> {
-    PRIMED_POSTS.try_with(|cache| cache.borrow().get(&id).cloned()).ok().flatten()
+    PRIMED_POSTS
+        .try_with(|cache| cache.borrow().get(&id).cloned())
+        .ok()
+        .flatten()
 }
 
 impl Db {
@@ -99,15 +117,23 @@ impl Db {
     pub async fn prime_post_meta(&self, post_ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_META.try_with(|cache| {
             let cache = cache.borrow();
-            post_ids.iter().copied().filter(|id| !cache.contains_key(id)).collect::<Vec<u64>>()
+            post_ids
+                .iter()
+                .copied()
+                .filter(|id| !cache.contains_key(id))
+                .collect::<Vec<u64>>()
         }) else {
             return Ok(());
         };
         if missing.is_empty() {
             return Ok(());
         }
-        let mut sql = crate::sql::Sql::new(format!("SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id IN (", self.prefix.table("postmeta")));
-        sql.push_list(missing.iter().copied()).push(") ORDER BY meta_id");
+        let mut sql = crate::sql::Sql::new(format!(
+            "SELECT meta_id, post_id, meta_key, meta_value FROM {} WHERE post_id IN (",
+            self.prefix.table("postmeta")
+        ));
+        sql.push_list(missing.iter().copied())
+            .push(") ORDER BY meta_id");
         let rows: Vec<PostMeta> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_META.try_with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -125,7 +151,11 @@ impl Db {
     pub async fn prime_users(&self, ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_USERS.try_with(|cache| {
             let cache = cache.borrow();
-            let mut missing: Vec<u64> = ids.iter().copied().filter(|id| *id != 0 && !cache.contains_key(id)).collect();
+            let mut missing: Vec<u64> = ids
+                .iter()
+                .copied()
+                .filter(|id| *id != 0 && !cache.contains_key(id))
+                .collect();
             missing.sort_unstable();
             missing.dedup();
             missing
@@ -146,14 +176,22 @@ impl Db {
     pub async fn prime_posts(&self, ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_POSTS.try_with(|cache| {
             let cache = cache.borrow();
-            ids.iter().copied().filter(|id| *id != 0 && !cache.contains_key(id)).collect::<Vec<u64>>()
+            ids.iter()
+                .copied()
+                .filter(|id| *id != 0 && !cache.contains_key(id))
+                .collect::<Vec<u64>>()
         }) else {
             return Ok(());
         };
         if missing.is_empty() {
             return Ok(());
         }
-        let query = PostQuery { ids: missing.clone(), post_types: Vec::new(), statuses: Vec::new(), ..PostQuery::default() };
+        let query = PostQuery {
+            ids: missing.clone(),
+            post_types: Vec::new(),
+            statuses: Vec::new(),
+            ..PostQuery::default()
+        };
         let rows = self.posts(&query).await?;
         let _ = PRIMED_POSTS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -168,7 +206,10 @@ impl Db {
     pub async fn prime_comments(&self, ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_COMMENTS.try_with(|cache| {
             let cache = cache.borrow();
-            ids.iter().copied().filter(|id| *id != 0 && !cache.contains_key(id)).collect::<Vec<u64>>()
+            ids.iter()
+                .copied()
+                .filter(|id| *id != 0 && !cache.contains_key(id))
+                .collect::<Vec<u64>>()
         }) else {
             return Ok(());
         };
@@ -176,7 +217,13 @@ impl Db {
             return Ok(());
         }
         // `get_comment()` knows every comment: any status, type and post.
-        let query = crate::CommentQuery { ids: missing.clone(), types: Vec::new(), statuses: vec!["any".into()], public_posts: false, ..Default::default() };
+        let query = crate::CommentQuery {
+            ids: missing.clone(),
+            types: Vec::new(),
+            statuses: vec!["any".into()],
+            public_posts: false,
+            ..Default::default()
+        };
         let rows = self.comments_query(&query).await?;
         let _ = PRIMED_COMMENTS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -219,7 +266,12 @@ impl Db {
         let thumbnails: Vec<u64> = ids
             .iter()
             .filter_map(|id| primed_meta(*id))
-            .filter_map(|meta| meta.into_iter().find(|m| m.meta_key.as_deref() == Some("_thumbnail_id")).and_then(|m| m.meta_value).and_then(|v| v.trim().parse::<u64>().ok()))
+            .filter_map(|meta| {
+                meta.into_iter()
+                    .find(|m| m.meta_key.as_deref() == Some("_thumbnail_id"))
+                    .and_then(|m| m.meta_value)
+                    .and_then(|v| v.trim().parse::<u64>().ok())
+            })
             .filter(|id| *id != 0)
             .collect();
         self.prime_posts(&thumbnails).await?;

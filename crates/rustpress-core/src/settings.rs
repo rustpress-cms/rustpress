@@ -28,7 +28,14 @@ impl Settings {
     pub fn from_options(options: &Options) -> Self {
         let sticky_posts = options
             .value("sticky_posts")
-            .and_then(|v| v.as_array().map(|items| items.iter().filter_map(|(_, v)| v.as_i64()).collect::<Vec<_>>()))
+            .and_then(|v| {
+                v.as_array().map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|(_, v)| v.as_i64())
+                        .collect::<Vec<_>>()
+                })
+            })
             .unwrap_or_default()
             .into_iter()
             .filter_map(|id| u64::try_from(id).ok())
@@ -57,7 +64,10 @@ impl Settings {
 
     /// Path part of the `home` URL (`/blog` for `https://example.com/blog`).
     pub fn home_path(&self) -> String {
-        let rest = self.home.split_once("://").map_or(self.home.as_str(), |(_, rest)| rest);
+        let rest = self
+            .home
+            .split_once("://")
+            .map_or(self.home.as_str(), |(_, rest)| rest);
         match rest.find('/') {
             Some(i) => rest[i..].trim_end_matches('/').to_owned(),
             None => String::new(),
@@ -71,7 +81,8 @@ mod tests {
 
     #[test]
     fn home_path_is_taken_from_the_home_url() {
-        let at = |home: &str| Settings::from_options(&Options::from_pairs([("home", home)])).home_path();
+        let at =
+            |home: &str| Settings::from_options(&Options::from_pairs([("home", home)])).home_path();
         assert_eq!(at("http://localhost:8080"), "");
         assert_eq!(at("https://example.com/"), "");
         assert_eq!(at("https://example.com/blog/"), "/blog");

@@ -8,7 +8,12 @@ use super::{AdminResponse, Ctx, die};
 
 /// `wp_die()` with the 403 of a missing capability.
 pub fn forbidden(ctx: &Ctx<'_>, message: &str) -> AdminResponse {
-    die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", ctx.tr(message)))
+    die(
+        ctx.env,
+        403,
+        "WordPress &rsaquo; Error",
+        &format!("<p>{}</p>", ctx.tr(message)),
+    )
 }
 
 /// `wp_die( $message )`: a plain message and the status 500 of a call without one.
@@ -23,12 +28,26 @@ pub fn die_plain_html(ctx: &Ctx<'_>, html: &str) -> AdminResponse {
 
 /// `wp_die()` with the 403 and the heading of `You need a higher level of permission.`
 pub fn forbidden_heading(ctx: &Ctx<'_>, message: &str) -> AdminResponse {
-    die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr(message)))
+    die(
+        ctx.env,
+        403,
+        "WordPress &rsaquo; Error",
+        &format!(
+            "<h1>{}</h1><p>{}</p>",
+            ctx.tr("You need a higher level of permission."),
+            ctx.tr(message)
+        ),
+    )
 }
 
 /// `wp_die()` for a request without write access.
 pub fn read_only(ctx: &Ctx<'_>) -> AdminResponse {
-    die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>")
+    die(
+        ctx.env,
+        403,
+        "WordPress &rsaquo; Error",
+        "<p>RustPress was started without write access.</p>",
+    )
 }
 
 /// `checked( $a, $b )`, with the leading space of the markup WordPress prints.
@@ -50,14 +69,30 @@ pub async fn settings_errors(ctx: &Ctx<'_>) -> String {
     if ctx.request.get("settings-updated").is_none() {
         return String::new();
     }
-    let Ok(Some(raw)) = ctx.env.db.option("_transient_settings_errors").await else { return String::new() };
-    let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else { return String::new() };
-    let Some(items) = value.as_array() else { return String::new() };
+    let Ok(Some(raw)) = ctx.env.db.option("_transient_settings_errors").await else {
+        return String::new();
+    };
+    let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+        return String::new();
+    };
+    let Some(items) = value.as_array() else {
+        return String::new();
+    };
     let errors: Vec<SettingsError> = items
         .iter()
         .map(|(_, e)| {
-            let field = |n: &str| e.get(n).and_then(|v| v.as_str()).unwrap_or_default().to_owned();
-            SettingsError { setting: field("setting"), code: field("code"), message: field("message"), kind: field("type") }
+            let field = |n: &str| {
+                e.get(n)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            SettingsError {
+                setting: field("setting"),
+                code: field("code"),
+                message: field("message"),
+                kind: field("type"),
+            }
         })
         .collect();
     notices::render_settings_errors(&errors, false)
@@ -65,13 +100,25 @@ pub async fn settings_errors(ctx: &Ctx<'_>) -> String {
 
 /// The submit button of a settings form (`submit_button()`).
 pub fn submit(ctx: &Ctx<'_>) -> String {
-    format!("<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>", esc_attr(&ctx.tr("Save Changes")))
+    format!(
+        "<p class=\"submit\"><input type=\"submit\" name=\"submit\" id=\"submit\" class=\"button button-primary\" value=\"{}\"  /></p>",
+        esc_attr(&ctx.tr("Save Changes"))
+    )
 }
 
 /// The terms of a taxonomy as a tree: `(term, depth)` in the order of `wp_dropdown_categories()` (by name).
 pub fn term_tree(terms: &[Term], exclude: &[u64]) -> Vec<(Term, usize)> {
-    fn walk(terms: &[Term], parent: u64, level: usize, exclude: &[u64], out: &mut Vec<(Term, usize)>) {
-        let mut children: Vec<&Term> = terms.iter().filter(|t| t.parent == parent && !exclude.contains(&t.term_id)).collect();
+    fn walk(
+        terms: &[Term],
+        parent: u64,
+        level: usize,
+        exclude: &[u64],
+        out: &mut Vec<(Term, usize)>,
+    ) {
+        let mut children: Vec<&Term> = terms
+            .iter()
+            .filter(|t| t.parent == parent && !exclude.contains(&t.term_id))
+            .collect();
         children.sort_by_key(|t| (t.name.to_lowercase(), t.term_id));
         for term in children {
             out.push((term.clone(), level));
@@ -81,42 +128,113 @@ pub fn term_tree(terms: &[Term], exclude: &[u64]) -> Vec<(Term, usize)> {
     let mut out = Vec::new();
     // Terms whose parent is not in the list are shown at the top.
     let ids: Vec<u64> = terms.iter().map(|t| t.term_id).collect();
-    let orphans: Vec<Term> = terms.iter().map(|t| if t.parent != 0 && !ids.contains(&t.parent) { Term { parent: 0, ..t.clone() } } else { t.clone() }).collect();
+    let orphans: Vec<Term> = terms
+        .iter()
+        .map(|t| {
+            if t.parent != 0 && !ids.contains(&t.parent) {
+                Term {
+                    parent: 0,
+                    ..t.clone()
+                }
+            } else {
+                t.clone()
+            }
+        })
+        .collect();
     walk(&orphans, 0, 0, exclude, &mut out);
     out
 }
 
 /// `wp_dropdown_categories( [ 'hide_empty' => 0, 'hierarchical' => 1, ... ] )` for an arbitrary taxonomy.
-pub async fn dropdown_terms(ctx: &Ctx<'_>, taxonomy: &str, name: &str, id: &str, selected_id: u64, class: &str, none: Option<(&str, &str)>, exclude: &[u64]) -> String {
+pub async fn dropdown_terms(
+    ctx: &Ctx<'_>,
+    taxonomy: &str,
+    name: &str,
+    id: &str,
+    selected_id: u64,
+    class: &str,
+    none: Option<(&str, &str)>,
+    exclude: &[u64],
+) -> String {
     let terms = ctx.env.db.terms(taxonomy).await.unwrap_or_default();
     let mut out = format!("<select  name='{name}' id='{id}' class='{class}'>\n");
     let tree = term_tree(&terms, exclude);
     // Without terms to list the "none" option is the selected one.
     if let Some((value, label)) = none {
-        out.push_str(&format!("\t<option value='{}'{}>{label}</option>\n", esc_attr(value), if tree.is_empty() { " selected='selected'" } else { "" }));
+        out.push_str(&format!(
+            "\t<option value='{}'{}>{label}</option>\n",
+            esc_attr(value),
+            if tree.is_empty() {
+                " selected='selected'"
+            } else {
+                ""
+            }
+        ));
     }
     for (term, level) in tree {
         let pad = "&nbsp;".repeat(level * 3);
-        let sel = if term.term_id == selected_id { " selected=\"selected\"" } else { "" };
-        out.push_str(&format!("\t<option class=\"level-{level}\" value=\"{}\"{sel}>{pad}{}</option>\n", term.term_id, esc_html(&term.name)));
+        let sel = if term.term_id == selected_id {
+            " selected=\"selected\""
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "\t<option class=\"level-{level}\" value=\"{}\"{sel}>{pad}{}</option>\n",
+            term.term_id,
+            esc_html(&term.name)
+        ));
     }
     out.push_str("</select>\n");
     out
 }
 
 /// `wp_dropdown_pages()` for the published pages: `<select name id>` with the pages in a tree sorted by title.
-pub async fn dropdown_pages(ctx: &Ctx<'_>, name: &str, id: &str, selected_id: u64, none: Option<&str>) -> String {
-    let query = PostQuery { post_types: vec!["page".into()], statuses: vec!["publish".into()], order_by: OrderBy::Title, order: Order::Asc, ..Default::default() };
+pub async fn dropdown_pages(
+    ctx: &Ctx<'_>,
+    name: &str,
+    id: &str,
+    selected_id: u64,
+    none: Option<&str>,
+) -> String {
+    let query = PostQuery {
+        post_types: vec!["page".into()],
+        statuses: vec!["publish".into()],
+        order_by: OrderBy::Title,
+        order: Order::Asc,
+        ..Default::default()
+    };
     let pages = ctx.env.db.posts(&query).await.unwrap_or_default();
-    fn walk(pages: &[rustpress_db::Post], ids: &[u64], parent: u64, level: usize, selected: u64, out: &mut String) {
-        for page in pages.iter().filter(|p| p.post_parent == parent || (parent == 0 && !ids.contains(&p.post_parent))) {
+    fn walk(
+        pages: &[rustpress_db::Post],
+        ids: &[u64],
+        parent: u64,
+        level: usize,
+        selected: u64,
+        out: &mut String,
+    ) {
+        for page in pages
+            .iter()
+            .filter(|p| p.post_parent == parent || (parent == 0 && !ids.contains(&p.post_parent)))
+        {
             if parent != 0 && page.post_parent != parent {
                 continue;
             }
-            let title = if page.post_title.is_empty() { format!("#{} (no title)", page.id) } else { page.post_title.clone() };
+            let title = if page.post_title.is_empty() {
+                format!("#{} (no title)", page.id)
+            } else {
+                page.post_title.clone()
+            };
             let pad = "&nbsp;".repeat(level * 3);
-            let sel = if page.id == selected { " selected=\"selected\"" } else { "" };
-            out.push_str(&format!("\t<option class=\"level-{level}\" value=\"{}\"{sel}>{pad}{}</option>\n", page.id, esc_html(&title)));
+            let sel = if page.id == selected {
+                " selected=\"selected\""
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "\t<option class=\"level-{level}\" value=\"{}\"{sel}>{pad}{}</option>\n",
+                page.id,
+                esc_html(&title)
+            ));
             walk(pages, ids, page.id, level + 1, selected, out);
         }
     }
@@ -134,7 +252,11 @@ pub async fn dropdown_pages(ctx: &Ctx<'_>, name: &str, id: &str, selected_id: u6
 /// (`wp_validate_redirect()`).
 pub fn wp_get_referer(ctx: &Ctx<'_>) -> Option<String> {
     // `wp_get_raw_referer()`: the form field, else the `Referer` header.
-    let raw = ctx.request.request("_wp_http_referer").filter(|r| !r.is_empty()).or_else(|| ctx.request.referer.as_deref().filter(|r| !r.is_empty()))?;
+    let raw = ctx
+        .request
+        .request("_wp_http_referer")
+        .filter(|r| !r.is_empty())
+        .or_else(|| ctx.request.referer.as_deref().filter(|r| !r.is_empty()))?;
     let uri = &ctx.request.request_uri;
     if raw == uri || raw == format!("{}{uri}", ctx.site().settings.home.trim_end_matches('/')) {
         return None;
@@ -144,27 +266,61 @@ pub fn wp_get_referer(ctx: &Ctx<'_>) -> Option<String> {
 
 /// The list tables: a page past the last one goes to the last one
 /// (`if ( $pagenum > $total_pages && $total_pages > 0 ) wp_redirect( add_query_arg( 'paged', $total_pages ) )`).
-pub fn past_last_page(ctx: &Ctx<'_>, paged: u64, total_items: u64, per_page: u64) -> Option<AdminResponse> {
+pub fn past_last_page(
+    ctx: &Ctx<'_>,
+    paged: u64,
+    total_items: u64,
+    per_page: u64,
+) -> Option<AdminResponse> {
     let total_pages = total_items.div_ceil(per_page.max(1));
-    (paged > total_pages && total_pages > 0).then(|| super::redirect(&rustpress_core::urls::add_query_arg(&ctx.request.request_uri, "paged", &total_pages.to_string())))
+    (paged > total_pages && total_pages > 0).then(|| {
+        super::redirect(&rustpress_core::urls::add_query_arg(
+            &ctx.request.request_uri,
+            "paged",
+            &total_pages.to_string(),
+        ))
+    })
 }
 
 /// `get_all_user_settings()`: the `wp-settings-{id}` cookie, or the stored `user-settings` without one.
 pub async fn user_settings(ctx: &Ctx<'_>) -> Vec<(String, String)> {
     let raw = match ctx.request.cookie(&format!("wp-settings-{}", ctx.user.id)) {
-        Some(cookie) => cookie.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '=' | '&' | '_' | '-')).collect::<String>(),
-        None => ctx.env.db.user_meta(ctx.user.id, &format!("{}user-settings", ctx.env.db.table_prefix())).await.ok().flatten().unwrap_or_default(),
+        Some(cookie) => cookie
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '=' | '&' | '_' | '-'))
+            .collect::<String>(),
+        None => ctx
+            .env
+            .db
+            .user_meta(
+                ctx.user.id,
+                &format!("{}user-settings", ctx.env.db.table_prefix()),
+            )
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
     };
     // `parse_str()` only when there is a `=` after the first character.
     if raw.find('=').is_none_or(|i| i == 0) {
         return Vec::new();
     }
-    raw.split('&').filter_map(|pair| pair.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned()))).filter(|(k, _)| !k.is_empty()).collect()
+    raw.split('&')
+        .filter_map(|pair| {
+            pair.split_once('=')
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        })
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
 }
 
 /// `get_user_setting( $name )`.
 pub async fn user_setting(ctx: &Ctx<'_>, name: &str) -> Option<String> {
-    user_settings(ctx).await.into_iter().find(|(k, _)| k == name).map(|(_, v)| v)
+    user_settings(ctx)
+        .await
+        .into_iter()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v)
 }
 
 /// `set_user_setting( $name, $value )`: stored as the `user-settings` option with its time; the cookies follow with
@@ -176,17 +332,40 @@ pub async fn set_user_setting(ctx: &Ctx<'_>, name: &str, value: &str) {
         Some(entry) => entry.1 = value.to_owned(),
         None => all.push((name.to_owned(), value.to_owned())),
     }
-    let clean = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect::<String>();
-    let settings = all.iter().map(|(k, v)| (clean(k), clean(v))).filter(|(k, _)| !k.is_empty()).map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+    let clean = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            .collect::<String>()
+    };
+    let settings = all
+        .iter()
+        .map(|(k, v)| (clean(k), clean(v)))
+        .filter(|(k, _)| !k.is_empty())
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("&");
     let prefix = ctx.env.db.table_prefix();
     use rustpress_core::OrLog;
-    writer.update_user_meta(ctx.user.id, &format!("{prefix}user-settings"), &settings).await.or_log();
-    writer.update_user_meta(ctx.user.id, &format!("{prefix}user-settings-time"), &ctx.env.now.to_string()).await.or_log();
+    writer
+        .update_user_meta(ctx.user.id, &format!("{prefix}user-settings"), &settings)
+        .await
+        .or_log();
+    writer
+        .update_user_meta(
+            ctx.user.id,
+            &format!("{prefix}user-settings-time"),
+            &ctx.env.now.to_string(),
+        )
+        .await
+        .or_log();
 }
 
 /// The view mode of the list tables (`get_user_setting( 'posts_list_mode', 'list' )`).
 pub async fn list_mode(ctx: &Ctx<'_>) -> String {
-    user_setting(ctx, "posts_list_mode").await.filter(|m| !m.is_empty()).unwrap_or_else(|| "list".to_owned())
+    user_setting(ctx, "posts_list_mode")
+        .await
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| "list".to_owned())
 }
 
 /// `$mode` of the posts and comments lists: `?mode=` is stored for the user (`set_user_setting( 'posts_list_mode' )`),
@@ -194,7 +373,11 @@ pub async fn list_mode(ctx: &Ctx<'_>) -> String {
 pub async fn request_list_mode(ctx: &Ctx<'_>) -> String {
     match ctx.request.request("mode").filter(|m| !m.is_empty()) {
         Some(requested) => {
-            let mode = if requested == "excerpt" { "excerpt" } else { "list" };
+            let mode = if requested == "excerpt" {
+                "excerpt"
+            } else {
+                "list"
+            };
             set_user_setting(ctx, "posts_list_mode", mode).await;
             mode.to_owned()
         }
@@ -205,7 +388,10 @@ pub async fn request_list_mode(ctx: &Ctx<'_>) -> String {
 /// `get_user_option( $option )`: the meta with the blog prefix first, then the plain one.
 pub async fn user_option(ctx: &Ctx<'_>, name: &str) -> Option<String> {
     let db = ctx.env.db;
-    if let Ok(Some(value)) = db.user_meta(ctx.user.id, &format!("{}{name}", db.table_prefix())).await {
+    if let Ok(Some(value)) = db
+        .user_meta(ctx.user.id, &format!("{}{name}", db.table_prefix()))
+        .await
+    {
         return Some(value);
     }
     db.user_meta(ctx.user.id, name).await.ok().flatten()
@@ -214,12 +400,30 @@ pub async fn user_option(ctx: &Ctx<'_>, name: &str) -> Option<String> {
 /// `get_hidden_meta_boxes( $screen )` of an edit screen (`post` base): the boxes the user hid, or the ones WordPress hides
 /// by default.
 pub async fn hidden_meta_boxes(ctx: &Ctx<'_>, screen_id: &str, post_type: &str) -> Vec<String> {
-    let stored = user_option(ctx, &format!("metaboxhidden_{screen_id}")).await.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok()).filter(|v| v.as_array().is_some());
+    let stored = user_option(ctx, &format!("metaboxhidden_{screen_id}"))
+        .await
+        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+        .filter(|v| v.as_array().is_some());
     match stored {
-        Some(value) => value.as_array().unwrap_or_default().iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
-        None if matches!(post_type, "post" | "page" | "attachment") => {
-            ["slugdiv", "trackbacksdiv", "postcustom", "postexcerpt", "commentstatusdiv", "commentsdiv", "authordiv", "revisionsdiv"].iter().map(|s| (*s).to_owned()).collect()
-        }
+        Some(value) => value
+            .as_array()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+            .collect(),
+        None if matches!(post_type, "post" | "page" | "attachment") => [
+            "slugdiv",
+            "trackbacksdiv",
+            "postcustom",
+            "postexcerpt",
+            "commentstatusdiv",
+            "commentsdiv",
+            "authordiv",
+            "revisionsdiv",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect(),
         None => vec!["slugdiv".to_owned()],
     }
 }
@@ -227,7 +431,17 @@ pub async fn hidden_meta_boxes(ctx: &Ctx<'_>, screen_id: &str, post_type: &str) 
 /// `wp_is_mobile()` from the user agent of the request.
 pub fn wp_is_mobile(ctx: &Ctx<'_>) -> bool {
     let agent = ctx.request.user_agent.as_deref().unwrap_or_default();
-    ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m))
+    [
+        "Mobile",
+        "Android",
+        "Silk/",
+        "Kindle",
+        "BlackBerry",
+        "Opera Mini",
+        "Opera Mobi",
+    ]
+    .iter()
+    .any(|m| agent.contains(m))
 }
 
 /// `WP_Screen::get_columns()` of a screen with the `layout_columns` option: the user's choice, else the default.
@@ -241,14 +455,23 @@ pub async fn layout_columns(ctx: &Ctx<'_>, screen_id: &str, default: u32) -> u32
             return columns;
         }
     }
-    user_option(ctx, &format!("screen_layout_{screen_id}")).await.and_then(|v| v.trim().parse::<u32>().ok()).filter(|n| *n != 0).unwrap_or(default)
+    user_option(ctx, &format!("screen_layout_{screen_id}"))
+        .await
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|n| *n != 0)
+        .unwrap_or(default)
 }
 
 /// `get_hidden_columns( $screen )`: the columns the user hid (`manage{screen}columnshidden`).
 pub async fn hidden_columns(ctx: &Ctx<'_>, screen_id: &str) -> Vec<String> {
-    let Some(raw) = user_option(ctx, &format!("manage{screen_id}columnshidden")).await else { return Vec::new() };
+    let Some(raw) = user_option(ctx, &format!("manage{screen_id}columnshidden")).await else {
+        return Vec::new();
+    };
     match rustpress_phpser::unserialize(raw.as_bytes()) {
-        Ok(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        Ok(rustpress_phpser::Value::Array(items)) => items
+            .iter()
+            .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -256,14 +479,26 @@ pub async fn hidden_columns(ctx: &Ctx<'_>, screen_id: &str) -> Vec<String> {
 /// The items per page of a list screen: the user's `$option` between 1 and 999, else `default`
 /// (`render_per_page_options()`, `get_items_per_page()`).
 pub async fn items_per_page(ctx: &Ctx<'_>, option: &str, default: u64) -> u64 {
-    user_option(ctx, option).await.and_then(|v| v.trim().parse::<i64>().ok()).filter(|v| *v >= 1).map_or(default, |v| v as u64)
+    user_option(ctx, option)
+        .await
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|v| *v >= 1)
+        .map_or(default, |v| v as u64)
 }
 
 /// The "Screen Options" of a list table: the hideable columns (`render_list_table_columns_preferences()`) marked
 /// hidden in `columns`, the items per page and, for the posts and comments lists, the view mode.
-pub async fn list_screen_options(ctx: &Ctx<'_>, screen_id: &str, columns: &mut [crate::list_table::Column], per_page: (&str, u64), view_mode: Option<String>) -> crate::chrome::ScreenOptions {
+pub async fn list_screen_options(
+    ctx: &Ctx<'_>,
+    screen_id: &str,
+    columns: &mut [crate::list_table::Column],
+    per_page: (&str, u64),
+    view_mode: Option<String>,
+) -> crate::chrome::ScreenOptions {
     let hidden = hidden_columns(ctx, screen_id).await;
-    const SPECIAL: [&str; 8] = ["_title", "cb", "comment", "media", "name", "title", "username", "blogname"];
+    const SPECIAL: [&str; 8] = [
+        "_title", "cb", "comment", "media", "name", "title", "username", "blogname",
+    ];
     let mut toggles = Vec::new();
     for column in columns.iter_mut() {
         column.hidden = hidden.contains(&column.key);
@@ -272,7 +507,12 @@ pub async fn list_screen_options(ctx: &Ctx<'_>, screen_id: &str, columns: &mut [
         }
         toggles.push((column.key.clone(), column.label.clone(), column.hidden));
     }
-    crate::chrome::ScreenOptions { columns: toggles, per_page: Some((per_page.0.to_owned(), per_page.1)), view_mode, ..Default::default() }
+    crate::chrome::ScreenOptions {
+        columns: toggles,
+        per_page: Some((per_page.0.to_owned(), per_page.1)),
+        view_mode,
+        ..Default::default()
+    }
 }
 
 /// `set_screen_options()`: a POST of the Screen Options stores "Number of items per page" for the user and goes
@@ -280,17 +520,44 @@ pub async fn list_screen_options(ctx: &Ctx<'_>, screen_id: &str, columns: &mut [
 /// RustPress does not have, so they are not stored and the page runs as usual.
 pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     let request = ctx.request;
-    if !request.post || !request.form.iter().any(|(k, _)| k.starts_with("wp_screen_options[")) {
+    if !request.post
+        || !request
+            .form
+            .iter()
+            .any(|(k, _)| k.starts_with("wp_screen_options["))
+    {
         return None;
     }
     let tr = |s: &str| ctx.tr(s);
     let nonce = request.request("screenoptionnonce").unwrap_or_default();
-    if ctx.env.auth.verify_nonce(nonce, "screen-options-nonce", ctx.user.id, &ctx.token, ctx.env.now).is_none() {
-        return Some(die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired.")));
+    if ctx
+        .env
+        .auth
+        .verify_nonce(
+            nonce,
+            "screen-options-nonce",
+            ctx.user.id,
+            &ctx.token,
+            ctx.env.now,
+        )
+        .is_none()
+    {
+        return Some(die(
+            ctx.env,
+            403,
+            &tr("An error occurred."),
+            &tr("The link you followed has expired."),
+        ));
     }
     let option = request.post_field("wp_screen_options[option]")?;
-    let value = request.post_field("wp_screen_options[value]").unwrap_or_default();
-    let sanitized: String = option.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-')).collect();
+    let value = request
+        .post_field("wp_screen_options[value]")
+        .unwrap_or_default();
+    let sanitized: String = option
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-'))
+        .collect();
     if sanitized != option {
         return None;
     }
@@ -303,19 +570,37 @@ pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
     } else {
         option
     };
-    const PER_PAGE: [&str; 8] = ["edit_per_page", "users_per_page", "edit_comments_per_page", "upload_per_page", "edit_tags_per_page", "plugins_per_page", "export_personal_data_requests_per_page", "remove_personal_data_requests_per_page"];
+    const PER_PAGE: [&str; 8] = [
+        "edit_per_page",
+        "users_per_page",
+        "edit_comments_per_page",
+        "upload_per_page",
+        "edit_tags_per_page",
+        "plugins_per_page",
+        "export_personal_data_requests_per_page",
+        "remove_personal_data_requests_per_page",
+    ];
     if !PER_PAGE.contains(&map_option) && !ctx.site().plugins.stores_screen_option(option) {
         return None;
     }
     // `(int) $value` between 1 and 999.
-    let digits: String = value.trim_start().chars().enumerate().take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && matches!(c, '-' | '+'))).map(|(_, c)| c).collect();
+    let digits: String = value
+        .trim_start()
+        .chars()
+        .enumerate()
+        .take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && matches!(c, '-' | '+')))
+        .map(|(_, c)| c)
+        .collect();
     let number = digits.parse::<i64>().unwrap_or(0);
     if !(1..=999).contains(&number) {
         return None;
     }
     if let Some(writer) = ctx.env.writer {
         use rustpress_core::OrLog;
-        writer.update_user_meta(ctx.user.id, option, &number.to_string()).await.or_log();
+        writer
+            .update_user_meta(ctx.user.id, option, &number.to_string())
+            .await
+            .or_log();
     }
     let mut url = wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
     for arg in ["pagenum", "apage", "paged"] {
@@ -329,54 +614,110 @@ pub async fn set_screen_options(ctx: &Ctx<'_>) -> Option<AdminResponse> {
 
 /// `get_preview_post_link()` of an unpublished post: `add_query_arg( 'preview', 'true', get_permalink( $post ) )`.
 pub fn preview_url(permalink: &str) -> String {
-    format!("{permalink}{}preview=true", if permalink.contains('?') { "&" } else { "?" })
+    format!(
+        "{permalink}{}preview=true",
+        if permalink.contains('?') { "&" } else { "?" }
+    )
 }
 
 /// `get_sample_permalink_html( $post, $new_title, $new_slug )` for someone who may edit the post (and so read it). The
 /// sample address is the post's as if it were published, with the unique slug `wp_unique_post_slug()` makes (when
 /// writing is allowed).
-pub async fn sample_permalink_html(site: &rustpress_core::Site, content: Option<&crate::content::Content<'_>>, can_manage_options: bool, post: &rustpress_db::Post, new_title: Option<&str>, new_slug: Option<&str>, tr: &(dyn Fn(&str) -> String + Sync)) -> String {
+pub async fn sample_permalink_html(
+    site: &rustpress_core::Site,
+    content: Option<&crate::content::Content<'_>>,
+    can_manage_options: bool,
+    post: &rustpress_db::Post,
+    new_title: Option<&str>,
+    new_slug: Option<&str>,
+    tr: &(dyn Fn(&str) -> String + Sync),
+) -> String {
     use rustpress_core::formatting::esc_url;
     use rustpress_core::slug::sanitize_title_save;
     // `sanitize_title( $title, $post->ID )`: an empty slug falls back to the ID.
     let sanitize = |title: &str| {
         let slug = sanitize_title_save(title, &site.locale());
-        if slug.is_empty() { post.id.to_string() } else { slug }
+        if slug.is_empty() {
+            post.id.to_string()
+        } else {
+            slug
+        }
     };
     let mut sample = post.clone();
-    if matches!(post.post_status.as_str(), "auto-draft" | "draft" | "pending" | "future") {
+    if matches!(
+        post.post_status.as_str(),
+        "auto-draft" | "draft" | "pending" | "future"
+    ) {
         sample.post_status = "publish".into();
-        sample.post_name = sanitize(if post.post_name.is_empty() { &post.post_title } else { &post.post_name });
+        sample.post_name = sanitize(if post.post_name.is_empty() {
+            &post.post_title
+        } else {
+            &post.post_name
+        });
     }
     if let Some(slug) = new_slug {
-        sample.post_name = sanitize(if slug.is_empty() { new_title.unwrap_or_default() } else { slug });
+        sample.post_name = sanitize(if slug.is_empty() {
+            new_title.unwrap_or_default()
+        } else {
+            slug
+        });
     }
     if let Some(content) = content {
-        sample.post_name = content.unique_post_slug(&sample.post_name, sample.id, &sample.post_status, &sample.post_type, sample.post_parent).await.unwrap_or(sample.post_name.clone());
+        sample.post_name = content
+            .unique_post_slug(
+                &sample.post_name,
+                sample.id,
+                &sample.post_status,
+                &sample.post_type,
+                sample.post_parent,
+            )
+            .await
+            .unwrap_or(sample.post_name.clone());
     }
-    let decode = |text: &str| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(text.as_bytes())).into_owned();
+    let decode = |text: &str| {
+        String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(text.as_bytes())).into_owned()
+    };
     let name = sample.post_name.clone();
     let permalink = site.permalink(&sample).await.unwrap_or_default();
     // `%postname%`/`%pagename%`: the address has the slug as its last segment. `get_attachment_link()` leaves it out of a file
     // that is not attached to anything.
     let unattached = post.post_type == "attachment" && post.post_parent == 0;
-    let pretty = !unattached && !site.options.string("permalink_structure", "").is_empty() && !permalink.contains('?') && !name.is_empty() && permalink.contains(&format!("/{name}/"));
+    let pretty = !unattached
+        && !site.options.string("permalink_structure", "").is_empty()
+        && !permalink.contains('?')
+        && !name.is_empty()
+        && permalink.contains(&format!("/{name}/"));
     let (view_link, target) = if post.post_status == "draft" || post.post_name.is_empty() {
-        (preview_url(&site.permalink(post).await.unwrap_or_default()), format!(" target='wp-preview-{}'", post.id))
+        (
+            preview_url(&site.permalink(post).await.unwrap_or_default()),
+            format!(" target='wp-preview-{}'", post.id),
+        )
     } else if post.post_status == "publish" || post.post_type == "attachment" {
-        (site.permalink(post).await.unwrap_or_default(), String::new())
+        (
+            site.permalink(post).await.unwrap_or_default(),
+            String::new(),
+        )
     } else {
         // Private and scheduled posts can be viewed at their pretty address.
         let mut named = sample.clone();
         named.post_name = post.post_name.clone();
-        (site.permalink(&named).await.unwrap_or_default(), String::new())
+        (
+            site.permalink(&named).await.unwrap_or_default(),
+            String::new(),
+        )
     };
     let mut out = format!("<strong>{}</strong>\n", tr("Permalink:"));
     if !pretty {
         let display = decode(&view_link);
-        out.push_str(&format!("<a id=\"sample-permalink\" href=\"{}\"{target}>{}</a>\n", esc_url(&view_link), esc_html(&display)));
-        let front = site.options.string("show_on_front", "") == "page" && site.options.u64("page_on_front", 0) == post.id;
-        if site.options.string("permalink_structure", "").is_empty() && can_manage_options && !front {
+        out.push_str(&format!(
+            "<a id=\"sample-permalink\" href=\"{}\"{target}>{}</a>\n",
+            esc_url(&view_link),
+            esc_html(&display)
+        ));
+        let front = site.options.string("show_on_front", "") == "page"
+            && site.options.u64("page_on_front", 0) == post.id;
+        if site.options.string("permalink_structure", "").is_empty() && can_manage_options && !front
+        {
             out.push_str(&format!("<span id=\"change-permalinks\"><a href=\"options-permalink.php\" class=\"button button-small\">{}</a></span>\n", tr("Change Permalink Structure")));
         }
         return out;
@@ -384,14 +725,30 @@ pub async fn sample_permalink_html(site: &rustpress_core::Site, content: Option<
     // `editable_slug` decodes the slug.
     let name = decode(&name);
     let chars: Vec<char> = name.chars().collect();
-    let abridged = if chars.len() > 34 { format!("{}&hellip;{}", chars[..16].iter().collect::<String>(), chars[chars.len() - 16..].iter().collect::<String>()) } else { name.clone() };
+    let abridged = if chars.len() > 34 {
+        format!(
+            "{}&hellip;{}",
+            chars[..16].iter().collect::<String>(),
+            chars[chars.len() - 16..].iter().collect::<String>()
+        )
+    } else {
+        name.clone()
+    };
     let escaped = esc_html(&decode(&permalink));
     let slot = format!("/{}/", esc_html(&name));
     let display = match escaped.rfind(&slot) {
-        Some(at) => format!("{}/<span id=\"editable-post-name\">{}</span>/{}", &escaped[..at], esc_html(&abridged), &escaped[at + slot.len()..]),
+        Some(at) => format!(
+            "{}/<span id=\"editable-post-name\">{}</span>/{}",
+            &escaped[..at],
+            esc_html(&abridged),
+            &escaped[at + slot.len()..]
+        ),
         None => escaped.clone(),
     };
-    out.push_str(&format!("<span id=\"sample-permalink\"><a href=\"{}\"{target}>{display}</a></span>\n", esc_url(&view_link)));
+    out.push_str(&format!(
+        "<span id=\"sample-permalink\"><a href=\"{}\"{target}>{display}</a></span>\n",
+        esc_url(&view_link)
+    ));
     out.push_str(&format!(
         "&lrm;<span id=\"edit-slug-buttons\"><button type=\"button\" class=\"edit-slug button button-small hide-if-no-js\" aria-label=\"{}\">{}</button></span>\n<span id=\"editable-post-name-full\">{}</span>\n",
         tr("Edit permalink"),
@@ -404,14 +761,21 @@ pub async fn sample_permalink_html(site: &rustpress_core::Site, content: Option<
 /// `get_edit_post_link( $post, $context )` for someone who may edit the post: `post.php?post=ID&action=edit`, with
 /// `&amp;` in the `display` context, as the plugins' `get_edit_post_link` filter leaves it.
 pub async fn edit_post_link(ctx: &Ctx<'_>, post_id: u64, display: bool) -> String {
-    let link = ctx.admin_url(&format!("post.php?post={post_id}{}action=edit", if display { "&amp;" } else { "&" }));
+    let link = ctx.admin_url(&format!(
+        "post.php?post={post_id}{}action=edit",
+        if display { "&amp;" } else { "&" }
+    ));
     if ctx.site().plugins.is_empty() {
         return link;
     }
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, "");
-    ctx.site().plugins.get_edit_post_link(&plugin_ctx, post_id, link.clone()).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin get_edit_post_link failed");
-        link
-    })
+    ctx.site()
+        .plugins
+        .get_edit_post_link(&plugin_ctx, post_id, link.clone())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin get_edit_post_link failed");
+            link
+        })
 }

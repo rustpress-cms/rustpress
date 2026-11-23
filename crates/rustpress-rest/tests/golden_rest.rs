@@ -171,14 +171,30 @@ struct Reply {
 fn fetch(path_and_query: &str) -> std::io::Result<Reply> {
     let mut stream = TcpStream::connect("127.0.0.1:8080")?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    write!(stream, "GET /wp-json{path_and_query} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "GET /wp-json{path_and_query} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n"
+    )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     let text = String::from_utf8_lossy(&raw).into_owned();
     let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-    let status = head.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let headers = head.lines().skip(1).filter_map(|l| l.split_once(": ")).map(|(k, v)| (k.to_ascii_lowercase(), v.trim().to_owned())).collect();
-    Ok(Reply { status, headers, body: body.to_owned() })
+    let status = head
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let headers = head
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split_once(": "))
+        .map(|(k, v)| (k.to_ascii_lowercase(), v.trim().to_owned()))
+        .collect();
+    Ok(Reply {
+        status,
+        headers,
+        body: body.to_owned(),
+    })
 }
 
 /// The path of the first member where two JSON documents differ.
@@ -187,15 +203,21 @@ fn first_json_difference(path: &str, ours: &Value, theirs: &Value) -> Option<Str
         (Value::Object(a), Value::Object(b)) => {
             let (ak, bk): (Vec<_>, Vec<_>) = (a.keys().collect(), b.keys().collect());
             if ak != bk {
-                return Some(format!("{path}: keys\n      ours: {ak:?}\n      wp:   {bk:?}"));
+                return Some(format!(
+                    "{path}: keys\n      ours: {ak:?}\n      wp:   {bk:?}"
+                ));
             }
-            a.iter().find_map(|(k, v)| first_json_difference(&format!("{path}.{k}"), v, &b[k]))
+            a.iter()
+                .find_map(|(k, v)| first_json_difference(&format!("{path}.{k}"), v, &b[k]))
         }
         (Value::Array(a), Value::Array(b)) => {
             if a.len() != b.len() {
                 return Some(format!("{path}: {} items, wp has {}", a.len(), b.len()));
             }
-            a.iter().zip(b).enumerate().find_map(|(i, (x, y))| first_json_difference(&format!("{path}[{i}]"), x, y))
+            a.iter()
+                .zip(b)
+                .enumerate()
+                .find_map(|(i, (x, y))| first_json_difference(&format!("{path}[{i}]"), x, y))
         }
         _ if ours == theirs => None,
         _ => Some(format!("{path}:\n      ours: {ours}\n      wp:   {theirs}")),
@@ -204,16 +226,27 @@ fn first_json_difference(path: &str, ours: &Value, theirs: &Value) -> Option<Str
 
 #[tokio::test]
 async fn rest_matches_wordpress() {
-    let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
-    let (Ok(db), true) = (Db::connect(&url, "wp_").await, root.join("wp-includes").is_dir()) else {
+    let root =
+        PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let (Ok(db), true) = (
+        Db::connect(&url, "wp_").await,
+        root.join("wp-includes").is_dir(),
+    ) else {
         eprintln!("reference stack not available, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
     if fetch("/").is_err() {
         eprintln!("WordPress not reachable, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     }
     let site = Site::load_at(db, &root).await.unwrap();
@@ -223,7 +256,10 @@ async fn rest_matches_wordpress() {
 
     let only = std::env::var("RUSTPRESS_ONLY").ok();
     let mut problems = Vec::new();
-    for route in ROUTES.iter().filter(|r| only.as_deref().is_none_or(|o| o == **r)) {
+    for route in ROUTES
+        .iter()
+        .filter(|r| only.as_deref().is_none_or(|o| o == **r))
+    {
         let theirs = fetch(route).unwrap();
         let (path, query) = route.split_once('?').unwrap_or((route, ""));
         let ours = rest.handle(path, query).await.unwrap();
@@ -232,23 +268,46 @@ async fn rest_matches_wordpress() {
             found.push(format!("status {} != {}", ours.status, theirs.status));
         }
         if ours.body != theirs.body {
-            let detail = match (serde_json::from_str::<Value>(&ours.body), serde_json::from_str::<Value>(&theirs.body)) {
-                (Ok(a), Ok(b)) => first_json_difference("$", &a, &b).unwrap_or_else(|| "same JSON, different text (number/escape format)".into()),
+            let detail = match (
+                serde_json::from_str::<Value>(&ours.body),
+                serde_json::from_str::<Value>(&theirs.body),
+            ) {
+                (Ok(a), Ok(b)) => first_json_difference("$", &a, &b)
+                    .unwrap_or_else(|| "same JSON, different text (number/escape format)".into()),
                 _ => "body is not JSON".into(),
             };
             found.push(format!("body differs at {detail}"));
         }
         for name in ["x-wp-total", "x-wp-totalpages", "link", "content-type"] {
-            let ours_value = ours.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str());
-            let theirs_value = theirs.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+            let ours_value = ours
+                .headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| v.as_str());
+            let theirs_value = theirs
+                .headers
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.as_str());
             if ours_value != theirs_value {
-                found.push(format!("header {name}: ours {ours_value:?}, wp {theirs_value:?}"));
+                found.push(format!(
+                    "header {name}: ours {ours_value:?}, wp {theirs_value:?}"
+                ));
             }
         }
         if !found.is_empty() {
-            let short: Vec<String> = found.iter().map(|f| f.chars().take(700).collect()).collect();
+            let short: Vec<String> = found
+                .iter()
+                .map(|f| f.chars().take(700).collect())
+                .collect();
             problems.push(format!("{route}\n    {}", short.join("\n    ")));
         }
     }
-    assert!(problems.is_empty(), "{} of {} routes differ:\n{}", problems.len(), ROUTES.len(), problems.join("\n"));
+    assert!(
+        problems.is_empty(),
+        "{} of {} routes differ:\n{}",
+        problems.len(),
+        ROUTES.len(),
+        problems.join("\n")
+    );
 }

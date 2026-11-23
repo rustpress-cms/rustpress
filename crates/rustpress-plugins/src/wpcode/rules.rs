@@ -11,36 +11,67 @@ pub(super) fn shows(page: &Page<'_>, snippet: &Snippet) -> bool {
     if !snippet.use_rules {
         return true;
     }
-    let Some(show) = snippet.rules.get("show").filter(|v| !matches!(v, Value::Null)) else { return false };
+    let Some(show) = snippet
+        .rules
+        .get("show")
+        .filter(|v| !matches!(v, Value::Null))
+    else {
+        return false;
+    };
     let show = show.as_bytes() == Some(b"show".as_slice());
     are_met(page, &snippet.rules) == show
 }
 
 /// `are_snippet_rules_met()`: no groups, or one group whose rows all match.
 pub(super) fn are_met(page: &Page<'_>, rules: &Value) -> bool {
-    let Some(groups) = rules.as_array().and_then(|_| rules.get("groups")).filter(|g| php::truthy(Some(g))) else { return true };
-    let Some(groups) = groups.as_array() else { return false };
-    groups.iter().any(|(_, group)| group.as_array().is_none_or(|rows| rows.iter().all(|(_, row)| row_matches(page, row))))
+    let Some(groups) = rules
+        .as_array()
+        .and_then(|_| rules.get("groups"))
+        .filter(|g| php::truthy(Some(g)))
+    else {
+        return true;
+    };
+    let Some(groups) = groups.as_array() else {
+        return false;
+    };
+    groups.iter().any(|(_, group)| {
+        group
+            .as_array()
+            .is_none_or(|rows| rows.iter().all(|(_, row)| row_matches(page, row)))
+    })
 }
 
 /// `are_group_rules_met()` for one row: rows of an unknown type are skipped.
 fn row_matches(page: &Page<'_>, row: &Value) -> bool {
-    let Some(kind) = row.get("type").filter(|v| !matches!(v, Value::Null)) else { return true };
+    let Some(kind) = row.get("type").filter(|v| !matches!(v, Value::Null)) else {
+        return true;
+    };
     let option = php::strval(row.get("option"));
     let relation = php::strval(row.get("relation"));
     let expected = row.get("value").cloned().unwrap_or(Value::Null);
     let actual = match php::strval(Some(kind)).as_str() {
         "user" => match option.as_str() {
             "logged_in" => Some(Value::Bool(page.query.viewer.is_some())),
-            "user_role" => Some(Value::Array(page.roles.iter().enumerate().map(|(i, r)| (rustpress_phpser::Key::Int(i as i64), php::string(r))).collect())),
+            "user_role" => Some(Value::Array(
+                page.roles
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| (rustpress_phpser::Key::Int(i as i64), php::string(r)))
+                    .collect(),
+            )),
             // A Pro option: it has no callback.
             "user_meta" => None,
             _ => return true,
         },
         "page" => match option.as_str() {
             "type_of_page" => Some(php::string(type_of_page(&page.query.flags))),
-            "post_type" => Some(page.post.map_or(Value::Bool(false), |p| php::string(&p.post_type))),
-            "referrer" => Some(php::string(page.query.referer.as_deref().unwrap_or_default())),
+            "post_type" => Some(
+                page.post
+                    .map_or(Value::Bool(false), |p| php::string(&p.post_type)),
+            ),
+            "referrer" => Some(php::string(
+                page.query.referer.as_deref().unwrap_or_default(),
+            )),
             "taxonomy_page" => Some(php::string(match &page.query.queried {
                 Queried::Term(term) => &term.taxonomy,
                 _ => "",
@@ -52,13 +83,26 @@ fn row_matches(page: &Page<'_>, row: &Value) -> bool {
         },
         // The types of WPCode Pro that Lite lists with an upgrade notice: their options have no callback, other options
         // pass.
-        "device" if ["device_type", "browser", "os", "cookie_name", "cookie_value"].contains(&option.as_str()) => None,
+        "device"
+            if [
+                "device_type",
+                "browser",
+                "os",
+                "cookie_name",
+                "cookie_value",
+            ]
+            .contains(&option.as_str()) =>
+        {
+            None
+        }
         "location" if ["country", "continent"].contains(&option.as_str()) => None,
         "schedule" if ["date_is", "time_is", "weekday", "time"].contains(&option.as_str()) => None,
         "snippet" if ["snippet_loaded"].contains(&option.as_str()) => None,
         "woocommerce" if ["wc_page", "wc_cart"].contains(&option.as_str()) => None,
         "edd" if ["edd_page"].contains(&option.as_str()) => None,
-        "memberpress" if ["memberpress_page", "memberpress_user"].contains(&option.as_str()) => None,
+        "memberpress" if ["memberpress_page", "memberpress_user"].contains(&option.as_str()) => {
+            None
+        }
         _ => return true,
     };
     let Some(actual) = actual else { return false };
@@ -87,7 +131,13 @@ fn type_of_page(flags: &rustpress_core::query::Flags) -> &'static str {
 }
 
 fn ids(terms: &[u64]) -> Value {
-    Value::Array(terms.iter().enumerate().map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), Value::Int(*id as i64))).collect())
+    Value::Array(
+        terms
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), Value::Int(*id as i64)))
+            .collect(),
+    )
 }
 
 /// `get_page_url()` on the website: `trailingslashit( home_url( $wp->request ) )` (`$wp->request` is only set with
@@ -98,14 +148,27 @@ fn page_url(page: &Page<'_>) -> String {
     let mut url = if site.settings.permalink_structure.is_empty() {
         String::new()
     } else {
-        let home_path = site.settings.home.split_once("://").and_then(|(_, rest)| rest.find('/').map(|i| &rest[i..])).unwrap_or("").trim_matches('/');
+        let home_path = site
+            .settings
+            .home
+            .split_once("://")
+            .and_then(|(_, rest)| rest.find('/').map(|i| &rest[i..]))
+            .unwrap_or("")
+            .trim_matches('/');
         let request = page.query.url_path.trim_matches('/');
-        let request = request.strip_prefix(home_path).unwrap_or(request).trim_matches('/');
+        let request = request
+            .strip_prefix(home_path)
+            .unwrap_or(request)
+            .trim_matches('/');
         rustpress_core::urls::trailingslashit(&site.home_url(request))
     };
     for (key, value) in rustpress_core::canonical::parse_qs(&page.query.raw_query) {
         let key = rustpress_content::sanitize::key(&key);
-        url = rustpress_core::urls::add_query_arg(&url, &key, &rustpress_content::sanitize::text_field(&value));
+        url = rustpress_core::urls::add_query_arg(
+            &url,
+            &key,
+            &rustpress_content::sanitize::text_field(&value),
+        );
     }
     url
 }
@@ -122,12 +185,17 @@ fn compare(actual: &Value, expected: &Value, relation: &str) -> bool {
 }
 
 fn items(value: &Value) -> Option<Vec<&Value>> {
-    value.as_array().map(|items| items.iter().map(|(_, v)| v).collect())
+    value
+        .as_array()
+        .map(|items| items.iter().map(|(_, v)| v).collect())
 }
 
 /// `array_intersect()` compares the string forms.
 fn intersects(a: &[&Value], b: &[&Value]) -> bool {
-    a.iter().any(|x| b.iter().any(|y| php::strval(Some(x)) == php::strval(Some(y))))
+    a.iter().any(|x| {
+        b.iter()
+            .any(|y| php::strval(Some(x)) == php::strval(Some(y)))
+    })
 }
 
 /// `in_array()` with loose comparison.
@@ -176,8 +244,14 @@ mod tests {
         assert!(!equals(&Value::Bool(false), &Value::Bool(true)));
         // `true == "false"` in PHP.
         assert!(equals(&Value::Bool(true), &php::string("false")));
-        assert!(contains(&php::string("https://example.org/?ref=news"), &php::string("ref=")));
+        assert!(contains(
+            &php::string("https://example.org/?ref=news"),
+            &php::string("ref=")
+        ));
         assert!(!contains(&php::string("abc"), &php::string("")));
-        assert!(equals(&ids(&[3, 7]), &Value::Array(vec![(rustpress_phpser::Key::Int(0), php::string("7"))])));
+        assert!(equals(
+            &ids(&[3, 7]),
+            &Value::Array(vec![(rustpress_phpser::Key::Int(0), php::string("7"))])
+        ));
     }
 }

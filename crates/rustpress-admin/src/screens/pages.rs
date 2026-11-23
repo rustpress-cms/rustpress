@@ -43,14 +43,27 @@ pub fn load(ctx: &Ctx<'_>, name: &str) -> Baked {
     let translate = |v: &Value| super::template_text::translate(ctx.site(), &text(v));
     let tabs = data["help"]["tabs"]
         .as_array()
-        .map(|tabs| tabs.iter().map(|t| HelpTab { id: text(&t["id"]), title: translate(&t["title"]), content: translate(&t["content"]) }).collect())
+        .map(|tabs| {
+            tabs.iter()
+                .map(|t| HelpTab {
+                    id: text(&t["id"]),
+                    title: translate(&t["title"]),
+                    content: translate(&t["content"]),
+                })
+                .collect()
+        })
         .unwrap_or_default();
-    let help = Help { tabs, sidebar: translate(&data["help"]["sidebar"]) };
+    let help = Help {
+        tabs,
+        sidebar: translate(&data["help"]["sidebar"]),
+    };
     let site = ctx.site().settings.siteurl.trim_end_matches('/').to_owned();
     let mut content = translate(&data["content"]).replace("{{site}}", &site);
     // `{{nonce:action}}`
     while let Some(start) = content.find("{{nonce:") {
-        let Some(end) = content[start..].find("}}") else { break };
+        let Some(end) = content[start..].find("}}") else {
+            break;
+        };
         let action = content[start + 8..start + end].to_owned();
         content.replace_range(start..start + end + 2, &ctx.create_nonce(&action));
     }
@@ -66,18 +79,41 @@ pub fn load(ctx: &Ctx<'_>, name: &str) -> Baked {
 }
 
 /// A screen that is only its baked content.
-pub async fn simple(ctx: &Ctx<'_>, file: &str, name: &str, title: &str, parent: &str, assets: Assets) -> AdminResponse {
+pub async fn simple(
+    ctx: &Ctx<'_>,
+    file: &str,
+    name: &str,
+    title: &str,
+    parent: &str,
+    assets: Assets,
+) -> AdminResponse {
     let baked = load(ctx, name);
     // `tools.php` closes its PHP block right before the page.
     let content_inline = file == "tools.php";
-    let screen = Screen { file: file.to_owned(), parent_file: parent.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.tr(title), help: Some(baked.help), content_inline, ..Default::default() };
+    let screen = Screen {
+        file: file.to_owned(),
+        parent_file: parent.to_owned(),
+        submenu_file: Some(file.to_owned()),
+        title: ctx.tr(title),
+        help: Some(baked.help),
+        content_inline,
+        ..Default::default()
+    };
     render(ctx, &screen, &baked.content, &assets).await
 }
 
 /// `tools.php`.
 pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
     if ctx.can("import") {
-        return simple(ctx, "tools.php", "tools", "Tools", "tools.php", Assets::default()).await;
+        return simple(
+            ctx,
+            "tools.php",
+            "tools",
+            "Tools",
+            "tools.php",
+            Assets::default(),
+        )
+        .await;
     }
     // The converter of categories and tags belongs to those who may import.
     let baked = load(ctx, "tools");
@@ -85,13 +121,33 @@ pub async fn tools(ctx: &Ctx<'_>) -> AdminResponse {
         Some(start) => format!("{}</div>\n", &baked.content[..start]),
         None => baked.content.clone(),
     };
-    let screen = Screen { file: "tools.php".to_owned(), content_inline: true, parent_file: "tools.php".to_owned(), submenu_file: Some("tools.php".to_owned()), title: ctx.tr("Tools"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen {
+        file: "tools.php".to_owned(),
+        content_inline: true,
+        parent_file: "tools.php".to_owned(),
+        submenu_file: Some("tools.php".to_owned()),
+        title: ctx.tr("Tools"),
+        help: Some(baked.help),
+        ..Default::default()
+    };
     render(ctx, &screen, &content, &Assets::default()).await
 }
 
 /// `import.php`.
 pub async fn import(ctx: &Ctx<'_>) -> AdminResponse {
-    simple(ctx, "import.php", "import", "Import", "tools.php", Assets { scripts: vec!["thickbox".into(), "plugin-install".into(), "updates".into()], styles: vec!["thickbox".into()], ..Default::default() }).await
+    simple(
+        ctx,
+        "import.php",
+        "import",
+        "Import",
+        "tools.php",
+        Assets {
+            scripts: vec!["thickbox".into(), "plugin-install".into(), "updates".into()],
+            styles: vec!["thickbox".into()],
+            ..Default::default()
+        },
+    )
+    .await
 }
 
 /// `about.php`, `credits.php`, `freedoms.php` and `contribute.php`: the pages about the release.
@@ -99,7 +155,14 @@ pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
     if file == "about.php" {
         // `_x( 'About', 'page title' )`, and an empty line between the footer and the strings it keeps for translators.
         let baked = load(ctx, "about");
-        let screen = Screen { file: file.to_owned(), parent_file: file.to_owned(), submenu_file: Some(file.to_owned()), title: ctx.site().trx("About", "page title"), help: Some(baked.help), ..Default::default() };
+        let screen = Screen {
+            file: file.to_owned(),
+            parent_file: file.to_owned(),
+            submenu_file: Some(file.to_owned()),
+            title: ctx.site().trx("About", "page title"),
+            help: Some(baked.help),
+            ..Default::default()
+        };
         let mut response = render(ctx, &screen, &baked.content, &Assets::default()).await;
         response.body.push('\n');
         return response;
@@ -113,9 +176,23 @@ pub async fn about(ctx: &Ctx<'_>, file: &str) -> AdminResponse {
     let mut response = simple(ctx, file, name, title, file, Assets::default()).await;
     // `freedoms.php`: the directories of WordPress.org for whoever cannot manage plugins or themes here.
     if file == "freedoms.php" {
-        for (screen, cap, directory) in [("plugins.php", "activate_plugins", "https://wordpress.org/plugins/"), ("themes.php", "switch_themes", "https://wordpress.org/themes/")] {
+        for (screen, cap, directory) in [
+            (
+                "plugins.php",
+                "activate_plugins",
+                "https://wordpress.org/plugins/",
+            ),
+            (
+                "themes.php",
+                "switch_themes",
+                "https://wordpress.org/themes/",
+            ),
+        ] {
             if !ctx.can(cap) {
-                response.body = response.body.replace(&format!("href=\"{}\"", ctx.admin_url(screen)), &format!("href=\"{}\"", ctx.tr(directory)));
+                response.body = response.body.replace(
+                    &format!("href=\"{}\"", ctx.admin_url(screen)),
+                    &format!("href=\"{}\"", ctx.tr(directory)),
+                );
             }
         }
     }

@@ -100,7 +100,17 @@ impl Dependencies {
     }
 
     pub fn new(kind: Kind) -> Self {
-        Self { kind, registered: Vec::new(), index: HashMap::new(), queue: Vec::new(), to_do: Vec::new(), done: Vec::new(), args: HashMap::new(), groups: HashMap::new(), queued_before_register: Vec::new() }
+        Self {
+            kind,
+            registered: Vec::new(),
+            index: HashMap::new(),
+            queue: Vec::new(),
+            to_do: Vec::new(),
+            done: Vec::new(),
+            args: HashMap::new(),
+            groups: HashMap::new(),
+            queued_before_register: Vec::new(),
+        }
     }
 
     pub fn registered(&self) -> &[Dependency] {
@@ -121,13 +131,33 @@ impl Dependencies {
     }
 
     /// `add()`: the first registration of a handle wins.
-    pub fn add(&mut self, handle: &str, src: Option<String>, deps: Vec<String>, ver: Ver, args: Option<Arg>) -> bool {
+    pub fn add(
+        &mut self,
+        handle: &str,
+        src: Option<String>,
+        deps: Vec<String>,
+        ver: Ver,
+        args: Option<Arg>,
+    ) -> bool {
         if self.is_registered(handle) {
             return false;
         }
         self.index.insert(handle.to_owned(), self.registered.len());
-        self.registered.push(Dependency { handle: handle.to_owned(), src, deps, ver, args, extra: HashMap::new(), textdomain: None, translations_path: None });
-        if let Some(position) = self.queued_before_register.iter().position(|(h, _)| h == handle) {
+        self.registered.push(Dependency {
+            handle: handle.to_owned(),
+            src,
+            deps,
+            ver,
+            args,
+            extra: HashMap::new(),
+            textdomain: None,
+            translations_path: None,
+        });
+        if let Some(position) = self
+            .queued_before_register
+            .iter()
+            .position(|(h, _)| h == handle)
+        {
             let (_, args) = self.queued_before_register.remove(position);
             match args {
                 Some(args) => self.enqueue(&format!("{handle}?{args}")),
@@ -154,7 +184,9 @@ impl Dependencies {
 
     pub fn add_data(&mut self, handle: &str, key: &str, value: Extra) -> bool {
         let kind = self.kind;
-        let Some(dep) = self.get_mut(handle) else { return false };
+        let Some(dep) = self.get_mut(handle) else {
+            return false;
+        };
         if key == "conditional" {
             dep.deps.clear();
         }
@@ -189,7 +221,12 @@ impl Dependencies {
     pub fn remove(&mut self, handle: &str) {
         if let Some(i) = self.index.remove(handle) {
             self.registered.remove(i);
-            self.index = self.registered.iter().enumerate().map(|(i, d)| (d.handle.clone(), i)).collect();
+            self.index = self
+                .registered
+                .iter()
+                .enumerate()
+                .map(|(i, d)| (d.handle.clone(), i))
+                .collect();
         }
     }
 
@@ -208,7 +245,8 @@ impl Dependencies {
             }
         } else {
             self.queued_before_register.retain(|(h, _)| h != name);
-            self.queued_before_register.push((name.to_owned(), args.map(str::to_owned)));
+            self.queued_before_register
+                .push((name.to_owned(), args.map(str::to_owned)));
         }
     }
 
@@ -339,7 +377,11 @@ impl Dependencies {
 
     /// `get_dependents()`: the registered handles that list `handle` as a dependency.
     pub fn dependents(&self, handle: &str) -> Vec<String> {
-        self.registered.iter().filter(|d| d.deps.iter().any(|x| x == handle)).map(|d| d.handle.clone()).collect()
+        self.registered
+            .iter()
+            .filter(|d| d.deps.iter().any(|x| x == handle))
+            .map(|d| d.handle.clone())
+            .collect()
     }
 }
 
@@ -354,10 +396,34 @@ mod tests {
 
     fn scripts() -> Dependencies {
         let mut d = Dependencies::new(Kind::Scripts);
-        d.add("jquery-core", Some("/core.js".into()), vec![], Ver::Value("3".into()), Some(Arg::Int(1)));
-        d.add("jquery", None, vec!["jquery-core".into(), "jquery-migrate".into()], Ver::Value("3".into()), None);
-        d.add("jquery-migrate", Some("/migrate.js".into()), vec![], Ver::Default, None);
-        d.add("common", Some("/common.js".into()), vec!["jquery".into()], Ver::Default, Some(Arg::Int(1)));
+        d.add(
+            "jquery-core",
+            Some("/core.js".into()),
+            vec![],
+            Ver::Value("3".into()),
+            Some(Arg::Int(1)),
+        );
+        d.add(
+            "jquery",
+            None,
+            vec!["jquery-core".into(), "jquery-migrate".into()],
+            Ver::Value("3".into()),
+            None,
+        );
+        d.add(
+            "jquery-migrate",
+            Some("/migrate.js".into()),
+            vec![],
+            Ver::Default,
+            None,
+        );
+        d.add(
+            "common",
+            Some("/common.js".into()),
+            vec!["jquery".into()],
+            Ver::Default,
+            Some(Arg::Int(1)),
+        );
         d
     }
 
@@ -367,13 +433,22 @@ mod tests {
         d.enqueue("common");
         let queue = d.queue.clone();
         assert!(d.all_deps(&queue, false, None));
-        assert_eq!(d.to_do, ["jquery-core", "jquery-migrate", "jquery", "common"]);
+        assert_eq!(
+            d.to_do,
+            ["jquery-core", "jquery-migrate", "jquery", "common"]
+        );
     }
 
     #[test]
     fn a_footer_script_pulls_its_dependencies_into_the_footer_but_not_the_other_way() {
         let mut d = scripts();
-        d.add("head", Some("/head.js".into()), vec!["jquery-core".into()], Ver::Default, None);
+        d.add(
+            "head",
+            Some("/head.js".into()),
+            vec!["jquery-core".into()],
+            Ver::Default,
+            None,
+        );
         d.enqueue("common");
         d.enqueue("head");
         let queue = d.queue.clone();
@@ -386,7 +461,13 @@ mod tests {
     #[test]
     fn missing_dependencies_drop_the_handle() {
         let mut d = scripts();
-        d.add("broken", Some("/b.js".into()), vec!["nope".into()], Ver::Default, None);
+        d.add(
+            "broken",
+            Some("/b.js".into()),
+            vec!["nope".into()],
+            Ver::Default,
+            None,
+        );
         d.enqueue("broken");
         let queue = d.queue.clone();
         d.all_deps(&queue, false, None);
@@ -405,7 +486,13 @@ mod tests {
     #[test]
     fn first_registration_wins() {
         let mut d = scripts();
-        assert!(!d.add("common", Some("/other.js".into()), vec![], Ver::Default, None));
+        assert!(!d.add(
+            "common",
+            Some("/other.js".into()),
+            vec![],
+            Ver::Default,
+            None
+        ));
         assert_eq!(d.get("common").unwrap().src.as_deref(), Some("/common.js"));
     }
 }

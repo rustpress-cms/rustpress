@@ -66,8 +66,15 @@ pub struct Prefix(String);
 impl Prefix {
     pub fn new(prefix: impl Into<String>) -> Result<Self> {
         let prefix = prefix.into();
-        let ok = prefix.len() <= 32 && prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if ok { Ok(Self(prefix)) } else { Err(Error::InvalidPrefix(prefix)) }
+        let ok = prefix.len() <= 32
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if ok {
+            Ok(Self(prefix))
+        } else {
+            Err(Error::InvalidPrefix(prefix))
+        }
     }
 
     /// `prefix.table("posts")` is `wp_posts` for the default prefix.
@@ -119,7 +126,9 @@ impl Db {
     /// Like [Db::connect], but connects on first use. Handy for tests that never query.
     pub fn connect_lazy(url: &str, prefix: &str) -> Result<Self> {
         let prefix = Prefix::new(prefix)?;
-        let pool = MySqlPoolOptions::new().max_connections(8).connect_lazy(url)?;
+        let pool = MySqlPoolOptions::new()
+            .max_connections(8)
+            .connect_lazy(url)?;
         Ok(Self { pool, prefix })
     }
 

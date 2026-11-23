@@ -31,7 +31,11 @@ pub fn strval(value: Option<&Value>) -> String {
 
 /// A float as PHP 8 prints it (`serialize_precision` -1).
 pub fn float_string(f: f64) -> String {
-    if f.fract() == 0.0 && f.abs() < 1e15 { format!("{}", f as i64) } else { format!("{f}") }
+    if f.fract() == 0.0 && f.abs() < 1e15 {
+        format!("{}", f as i64)
+    } else {
+        format!("{f}")
+    }
 }
 
 /// `(int) $value`.
@@ -65,7 +69,9 @@ pub fn numval(value: &Value) -> Value {
             let integral = !t.contains(['.', 'e', 'E']);
             match t.parse::<i64>() {
                 Ok(i) if integral => Value::Int(i),
-                _ => t.parse::<f64>().map_or_else(|_| value.clone(), Value::Float),
+                _ => t
+                    .parse::<f64>()
+                    .map_or_else(|_| value.clone(), Value::Float),
             }
         }
         other => other.clone(),
@@ -104,7 +110,10 @@ pub fn key_eq(a: &Key, b: &Key) -> bool {
 
 fn normalize(k: &Key) -> Key {
     match k {
-        Key::Str(s) => match std::str::from_utf8(s).ok().and_then(|t| t.parse::<i64>().ok().filter(|i| i.to_string() == t)) {
+        Key::Str(s) => match std::str::from_utf8(s)
+            .ok()
+            .and_then(|t| t.parse::<i64>().ok().filter(|i| i.to_string() == t))
+        {
             Some(i) => Key::Int(i),
             None => k.clone(),
         },
@@ -132,14 +141,18 @@ pub fn wp_unslash(value: Value) -> Value {
             }
             Value::Str(out)
         }
-        Value::Array(items) => Value::Array(items.into_iter().map(|(k, v)| (k, wp_unslash(v))).collect()),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(|(k, v)| (k, wp_unslash(v))).collect())
+        }
         other => other,
     }
 }
 
 /// `wp_parse_args( $args, $defaults )`: the defaults with the given values over them, keys of the defaults first.
 pub fn parse_args(args: &Value, defaults: Value) -> Value {
-    let Value::Array(mut out) = defaults else { return args.clone() };
+    let Value::Array(mut out) = defaults else {
+        return args.clone();
+    };
     if let Value::Array(items) = args {
         for (k, v) in items {
             match out.iter_mut().find(|(existing, _)| key_eq(existing, k)) {
@@ -159,8 +172,11 @@ pub fn loose_eq(a: &Value, b: &Value) -> bool {
         (Value::Null, Value::Str(s)) | (Value::Str(s), Value::Null) => s.is_empty(),
         (Value::Null, other) | (other, Value::Null) => !truthy(Some(other)),
         (Value::Int(x), Value::Int(y)) => x == y,
-        (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => as_f64(a) == as_f64(b),
-        (Value::Int(_) | Value::Float(_), Value::Str(s)) | (Value::Str(s), Value::Int(_) | Value::Float(_)) => {
+        (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
+            as_f64(a) == as_f64(b)
+        }
+        (Value::Int(_) | Value::Float(_), Value::Str(s))
+        | (Value::Str(s), Value::Int(_) | Value::Float(_)) => {
             let number = if matches!(a, Value::Str(_)) { b } else { a };
             if is_numeric(&Value::Str(s.clone())) {
                 as_f64(number) == as_f64(&numval(&Value::Str(s.clone())))
@@ -171,9 +187,17 @@ pub fn loose_eq(a: &Value, b: &Value) -> bool {
         }
         (Value::Str(x), Value::Str(y)) => {
             let (vx, vy) = (Value::Str(x.clone()), Value::Str(y.clone()));
-            if is_numeric(&vx) && is_numeric(&vy) { as_f64(&numval(&vx)) == as_f64(&numval(&vy)) } else { x == y }
+            if is_numeric(&vx) && is_numeric(&vy) {
+                as_f64(&numval(&vx)) == as_f64(&numval(&vy))
+            } else {
+                x == y
+            }
         }
-        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.iter().any(|(k2, v2)| key_eq(k, k2) && loose_eq(v, v2))),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.iter().any(|(k2, v2)| key_eq(k, k2) && loose_eq(v, v2)))
+        }
         _ => false,
     }
 }

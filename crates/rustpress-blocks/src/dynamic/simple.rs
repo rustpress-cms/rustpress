@@ -25,11 +25,20 @@ pub(super) fn add_class_to_first(content: &str, names: &[&str], class: &str) -> 
 }
 
 fn text_align_class(bc: &BlockCtx<'_>) -> String {
-    bc.attr_str("textAlign").filter(|a| !a.is_empty()).map(|a| format!("has-text-align-{a}")).unwrap_or_default()
+    bc.attr_str("textAlign")
+        .filter(|a| !a.is_empty())
+        .map(|a| format!("has-text-align-{a}"))
+        .unwrap_or_default()
 }
 
 fn has_link_color(bc: &BlockCtx<'_>) -> bool {
-    bc.attrs.get("style").and_then(|s| s.get("elements")).and_then(|e| e.get("link")).and_then(|l| l.get("color")).and_then(|c| c.get("text")).is_some_and(|v| !v.is_null())
+    bc.attrs
+        .get("style")
+        .and_then(|s| s.get("elements"))
+        .and_then(|e| e.get("link"))
+        .and_then(|l| l.get("color"))
+        .and_then(|c| c.get("text"))
+        .is_some_and(|v| !v.is_null())
 }
 
 pub(super) fn site_title(bc: &BlockCtx<'_>) -> Result<String> {
@@ -47,9 +56,18 @@ pub(super) fn site_title(bc: &BlockCtx<'_>) -> Result<String> {
         let q = bc.env.query;
         let queried_id = q.queried_object_id();
         let settings = &bc.env.site.settings;
-        let current = !q.flags.is_paged && (q.flags.is_front_page || (q.flags.is_home && settings.page_for_posts != queried_id));
-        let aria = if current { " aria-current=\"page\"" } else { "" };
-        let target = bc.attr_str("linkTarget").filter(|t| !t.is_empty()).unwrap_or("_self");
+        let current = !q.flags.is_paged
+            && (q.flags.is_front_page
+                || (q.flags.is_home && settings.page_for_posts != queried_id));
+        let aria = if current {
+            " aria-current=\"page\""
+        } else {
+            ""
+        };
+        let target = bc
+            .attr_str("linkTarget")
+            .filter(|t| !t.is_empty())
+            .unwrap_or("_self");
         format!(
             "<a href=\"{}\" target=\"{}\" rel=\"home\"{aria}>{}</a>",
             esc_url(&bc.env.site.home_url("")),
@@ -82,9 +100,26 @@ mod tests {
 
     #[test]
     fn class_goes_to_the_first_matching_tag() {
-        assert_eq!(add_class_to_first("\n<h3 class=\"a\">T</h3>\n", &["h1", "h2", "h3"], "wp-block-heading"), "\n<h3 class=\"a wp-block-heading\">T</h3>\n");
-        assert_eq!(add_class_to_first("<div><ul><li>x</li></ul></div>", &["ul", "ol"], "wp-block-list"), "<div><ul class=\"wp-block-list\"><li>x</li></ul></div>");
-        assert_eq!(add_class_to_first("<span>x</span>", &["p"], "c"), "<span>x</span>");
+        assert_eq!(
+            add_class_to_first(
+                "\n<h3 class=\"a\">T</h3>\n",
+                &["h1", "h2", "h3"],
+                "wp-block-heading"
+            ),
+            "\n<h3 class=\"a wp-block-heading\">T</h3>\n"
+        );
+        assert_eq!(
+            add_class_to_first(
+                "<div><ul><li>x</li></ul></div>",
+                &["ul", "ol"],
+                "wp-block-list"
+            ),
+            "<div><ul class=\"wp-block-list\"><li>x</li></ul></div>"
+        );
+        assert_eq!(
+            add_class_to_first("<span>x</span>", &["p"], "c"),
+            "<span>x</span>"
+        );
         assert_eq!(add_class_to_first("", &["p"], "c"), "");
     }
 }

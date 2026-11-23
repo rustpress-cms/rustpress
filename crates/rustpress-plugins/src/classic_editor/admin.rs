@@ -25,7 +25,11 @@ fn trx(site: &Site, text: &str, context: &str) -> String {
 
 /// `get_user_option( $option, $user_id )`: the meta with the table prefix first, then the plain one.
 async fn user_option(site: &Site, user: u64, name: &str) -> Result<Option<String>> {
-    if let Some(value) = site.db.user_meta(user, &format!("{}{name}", site.db.table_prefix())).await? {
+    if let Some(value) = site
+        .db
+        .user_meta(user, &format!("{}{name}", site.db.table_prefix()))
+        .await?
+    {
         return Ok(Some(value));
     }
     Ok(site.db.user_meta(user, name).await?)
@@ -36,7 +40,12 @@ async fn user_option(site: &Site, user: u64, name: &str) -> Result<Option<String
 pub async fn settings(ctx: &AdminContext<'_>, user: u64) -> (bool, bool) {
     let (mut classic, allow_users) = site_settings(ctx.site);
     if allow_users && ctx.hook_suffix != "options-writing.php" {
-        match user_option(ctx.site, user, "classic-editor-settings").await.ok().flatten().as_deref() {
+        match user_option(ctx.site, user, "classic-editor-settings")
+            .await
+            .ok()
+            .flatten()
+            .as_deref()
+        {
             Some("block") => classic = false,
             Some("classic") => classic = true,
             _ => {}
@@ -47,7 +56,11 @@ pub async fn settings(ctx: &AdminContext<'_>, user: u64) -> (bool, bool) {
 
 /// `post_type_supports( $post_type, 'editor' )`.
 fn supports_editor(site: &Site, post_type: &str) -> bool {
-    matches!(post_type, "post" | "page") || site.types.post_type(post_type).is_some_and(|t| t.supports("editor"))
+    matches!(post_type, "post" | "page")
+        || site
+            .types
+            .post_type(post_type)
+            .is_some_and(|t| t.supports("editor"))
 }
 
 /// `use_block_editor_for_post_type( $post_type )` (`can_edit_post_type()`). `rp-classic` stands for the must-use
@@ -59,9 +72,15 @@ fn block_editor_for_post_type(ctx: &AdminContext<'_>, post_type: &str) -> bool {
     }
     let supported = match post_type {
         "post" | "page" => true,
-        other => site.types.post_type(other).is_some_and(|t| t.show_in_rest && t.supports("editor")),
+        other => site
+            .types
+            .post_type(other)
+            .is_some_and(|t| t.show_in_rest && t.supports("editor")),
     };
-    supported && site.plugins.use_block_editor_for_post_type(site, post_type, true)
+    supported
+        && site
+            .plugins
+            .use_block_editor_for_post_type(site, post_type, true)
 }
 
 /// `get_enabled_editors_for_post()`: `(classic editor, block editor)`.
@@ -69,7 +88,10 @@ pub fn enabled_editors(ctx: &AdminContext<'_>, post: &Post) -> (bool, bool) {
     if post.post_type.is_empty() {
         return (false, false);
     }
-    (supports_editor(ctx.site, &post.post_type), block_editor_for_post_type(ctx, &post.post_type))
+    (
+        supports_editor(ctx.site, &post.post_type),
+        block_editor_for_post_type(ctx, &post.post_type),
+    )
 }
 
 /// `has_blocks()` of the plugin: the content has `<!-- wp:`.
@@ -83,7 +105,14 @@ fn query_has(ctx: &AdminContext<'_>, key: &str) -> bool {
 
 /// `get_post_meta( $post_id, 'classic-editor-remember', true )`.
 pub async fn remembered(site: &Site, post_id: u64) -> Result<String> {
-    Ok(site.db.post_meta(post_id).await?.into_iter().find(|m| m.meta_key.as_deref() == Some("classic-editor-remember")).and_then(|m| m.meta_value).unwrap_or_default())
+    Ok(site
+        .db
+        .post_meta(post_id)
+        .await?
+        .into_iter()
+        .find(|m| m.meta_key.as_deref() == Some("classic-editor-remember"))
+        .and_then(|m| m.meta_value)
+        .unwrap_or_default())
 }
 
 /// `is_classic( $post_id )` while users may switch.
@@ -100,7 +129,11 @@ async fn is_classic(ctx: &AdminContext<'_>, post: &Post) -> Result<bool> {
 }
 
 /// `choose_editor()` on `use_block_editor_for_post` (priority 100), while users may switch.
-pub async fn choose_editor(ctx: &AdminContext<'_>, post: &Post, mut use_block_editor: bool) -> Result<bool> {
+pub async fn choose_editor(
+    ctx: &AdminContext<'_>,
+    post: &Post,
+    mut use_block_editor: bool,
+) -> Result<bool> {
     let (classic, allow_users) = settings(ctx, ctx.user).await;
     if !allow_users {
         return Ok(use_block_editor);
@@ -159,7 +192,13 @@ pub fn settings_fields(ctx: &AdminContext<'_>) -> Vec<(String, String)> {
         if allow_users { "" } else { " checked" },
         tr(site, "No"),
     );
-    vec![(tr(site, "Default editor for all users"), editor_choice(site, classic)), (tr(site, "Allow users to switch editors"), crlf(&allow))]
+    vec![
+        (
+            tr(site, "Default editor for all users"),
+            editor_choice(site, classic),
+        ),
+        (tr(site, "Allow users to switch editors"), crlf(&allow)),
+    ]
 }
 
 /// `enqueue_block_editor_scripts()`: the "Switch to classic editor" item of the block editor's menu, while users may
@@ -169,21 +208,54 @@ pub fn block_editor_assets(ctx: &AdminContext<'_>, assets: &mut Assets) {
     if !site_settings(ctx.site).1 || !enabled_editors(ctx, post).0 {
         return;
     }
-    let src = ctx.site.site_url("wp-content/plugins/classic-editor/js/block-editor-plugin.js");
-    let script = assets.script("classic-editor-plugin", src, &["wp-element", "wp-components", "lodash"], VERSION, true);
+    let src = ctx
+        .site
+        .site_url("wp-content/plugins/classic-editor/js/block-editor-plugin.js");
+    let script = assets.script(
+        "classic-editor-plugin",
+        src,
+        &["wp-element", "wp-components", "lodash"],
+        VERSION,
+        true,
+    );
     let l10n = serde_json::json!({"linkText": tr(ctx.site, "Switch to classic editor")});
-    let json = php_json::encode_with(&l10n, php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+    let json = php_json::encode_with(
+        &l10n,
+        php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    )
+    .replace('<', "\\u003C")
+    .replace('>', "\\u003E");
     script.extra = Some(format!("var classicEditorPluginL10n = {json};"));
 }
 
 /// `get_edited_post_id()`: the post of `post.php?post=...&action=edit`.
 fn edited_post_id(ctx: &AdminContext<'_>) -> u64 {
-    let get = |key: &str| ctx.query.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str()).unwrap_or_default();
-    if ctx.hook_suffix != "post.php" || get("action") != "edit" || get("post").is_empty() || get("post") == "0" {
+    let get = |key: &str| {
+        ctx.query
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+            .unwrap_or_default()
+    };
+    if ctx.hook_suffix != "post.php"
+        || get("action") != "edit"
+        || get("post").is_empty()
+        || get("post") == "0"
+    {
         return 0;
     }
     // `(int) $_GET['post']`: the leading digits.
-    get("post").trim_start().chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)
+    get("post")
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap_or(0)
 }
 
 /// What the plugin adds to the classic edit form.
@@ -196,7 +268,9 @@ pub async fn post_meta_boxes(ctx: &AdminContext<'_>, post: &Post) -> Result<Post
     }
     // `on_admin_init()`: the notice of the privacy policy page moves under the title.
     let post_id = edited_post_id(ctx);
-    if post_id != 0 && (classic || (allow_users && post.id == post_id && is_classic(ctx, post).await?)) {
+    if post_id != 0
+        && (classic || (allow_users && post.id == post_id && is_classic(ctx, post).await?))
+    {
         boxes.privacy_notice_after_title = true;
     }
     if allow_users && let Some(meta_box) = switch_box(ctx, post).await? {
@@ -222,28 +296,49 @@ pub async fn edit_post_link(ctx: &AdminContext<'_>, link: String) -> Result<Stri
 
 /// The raw edit link of `post` as the plugin's own filter makes it.
 async fn raw_edit_link(ctx: &AdminContext<'_>, post_id: u64) -> Result<String> {
-    edit_post_link(ctx, ctx.site.site_url(&format!("wp-admin/post.php?post={post_id}&action=edit"))).await
+    edit_post_link(
+        ctx,
+        ctx.site
+            .site_url(&format!("wp-admin/post.php?post={post_id}&action=edit")),
+    )
+    .await
 }
 
 /// `redirect_location()` on `redirect_post_location`: the classic editor comes back after saving.
 pub fn redirect_location(ctx: &AdminContext<'_>, location: String) -> String {
-    let referer = ctx.form.iter().rev().find(|(k, _)| k == "_wp_http_referer").map(|(_, v)| v.as_str());
-    if request_has(ctx, "classic-editor") || referer.is_some_and(|r| r.contains("&classic-editor")) {
+    let referer = ctx
+        .form
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "_wp_http_referer")
+        .map(|(_, v)| v.as_str());
+    if request_has(ctx, "classic-editor") || referer.is_some_and(|r| r.contains("&classic-editor"))
+    {
         return add_query_arg(&location, "classic-editor", "");
     }
     location
 }
 
 /// `add_post_state()` on `display_post_states`: the editor a post opens in.
-pub async fn post_states(ctx: &AdminContext<'_>, post: &Post, mut states: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+pub async fn post_states(
+    ctx: &AdminContext<'_>,
+    post: &Post,
+    mut states: Vec<(String, String)>,
+) -> Result<Vec<(String, String)>> {
     if post.post_status == "trash" {
         return Ok(states);
     }
     let site = ctx.site;
     let state = match enabled_editors(ctx, post) {
         (false, false) => return Ok(states),
-        (true, false) => format!("<span class=\"classic-editor-forced-state\">{}</span>", trx(site, "classic editor", "Editor Name")),
-        (false, true) => format!("<span class=\"classic-editor-forced-state\">{}</span>", trx(site, "block editor", "Editor Name")),
+        (true, false) => format!(
+            "<span class=\"classic-editor-forced-state\">{}</span>",
+            trx(site, "classic editor", "Editor Name")
+        ),
+        (false, true) => format!(
+            "<span class=\"classic-editor-forced-state\">{}</span>",
+            trx(site, "block editor", "Editor Name")
+        ),
         (true, true) => {
             let last = remembered(site, post.id).await?;
             let is_classic = if !last.is_empty() {
@@ -253,10 +348,17 @@ pub async fn post_states(ctx: &AdminContext<'_>, post: &Post, mut states: Vec<(S
             } else {
                 settings(ctx, ctx.user).await.0
             };
-            if is_classic { trx(site, "Classic editor", "Editor Name") } else { trx(site, "Block editor", "Editor Name") }
+            if is_classic {
+                trx(site, "Classic editor", "Editor Name")
+            } else {
+                trx(site, "Block editor", "Editor Name")
+            }
         }
     };
-    match states.iter_mut().find(|(key, _)| key == "classic-editor-plugin") {
+    match states
+        .iter_mut()
+        .find(|(key, _)| key == "classic-editor-plugin")
+    {
         Some(entry) => entry.1 = state,
         None => states.push(("classic-editor-plugin".into(), state)),
     }
@@ -264,22 +366,59 @@ pub async fn post_states(ctx: &AdminContext<'_>, post: &Post, mut states: Vec<(S
 }
 
 /// `add_edit_links()` on `post_row_actions`/`page_row_actions` (priority 15): "Edit" becomes a link to each editor.
-pub async fn row_actions(ctx: &AdminContext<'_>, post: &Post, mut actions: Vec<(String, String)>) -> Result<Vec<(String, String)>> {
+pub async fn row_actions(
+    ctx: &AdminContext<'_>,
+    post: &Post,
+    mut actions: Vec<(String, String)>,
+) -> Result<Vec<(String, String)>> {
     actions.retain(|(key, _)| key != "classic");
-    let Some(edit_at) = actions.iter().position(|(key, _)| key == "edit") else { return Ok(actions) };
+    let Some(edit_at) = actions.iter().position(|(key, _)| key == "edit") else {
+        return Ok(actions);
+    };
     let site = ctx.site;
     if enabled_editors(ctx, post) != (true, true) {
         return Ok(actions);
     }
-    let edit_url = add_query_arg(&raw_edit_link(ctx, post.id).await?, "classic-editor__forget", "");
+    let edit_url = add_query_arg(
+        &raw_edit_link(ctx, post.id).await?,
+        "classic-editor__forget",
+        "",
+    );
     // `_draft_or_post_title()`.
     let title = rustpress_blocks::content::the_title_in_admin(site, post);
-    let title = esc_html(&if title.is_empty() { site.tr("(no title)") } else { title });
-    let link = |url: &str, label: String, text: String| format!("<a href=\"{}\" aria-label=\"{}\">{text}</a>", esc_url(url), esc_attr(&label));
-    let block = link(&remove_query_arg(&edit_url, "classic-editor"), sprintf(&tr(site, "Edit &#8220;%s&#8221; in the block editor"), &[&title]), trx(site, "Edit (block editor)", "Editor Name"));
-    let classic = link(&add_query_arg(&edit_url, "classic-editor", ""), sprintf(&tr(site, "Edit &#8220;%s&#8221; in the classic editor"), &[&title]), trx(site, "Edit (classic editor)", "Editor Name"));
+    let title = esc_html(&if title.is_empty() {
+        site.tr("(no title)")
+    } else {
+        title
+    });
+    let link = |url: &str, label: String, text: String| {
+        format!(
+            "<a href=\"{}\" aria-label=\"{}\">{text}</a>",
+            esc_url(url),
+            esc_attr(&label)
+        )
+    };
+    let block = link(
+        &remove_query_arg(&edit_url, "classic-editor"),
+        sprintf(
+            &tr(site, "Edit &#8220;%s&#8221; in the block editor"),
+            &[&title],
+        ),
+        trx(site, "Edit (block editor)", "Editor Name"),
+    );
+    let classic = link(
+        &add_query_arg(&edit_url, "classic-editor", ""),
+        sprintf(
+            &tr(site, "Edit &#8220;%s&#8221; in the classic editor"),
+            &[&title],
+        ),
+        trx(site, "Edit (classic editor)", "Editor Name"),
+    );
     // `array_splice()` numbers what it inserts, and renumbers the other numeric keys.
-    actions.splice(edit_at..=edit_at, [("block".to_owned(), block), ("classic".to_owned(), classic)]);
+    actions.splice(
+        edit_at..=edit_at,
+        [("block".to_owned(), block), ("classic".to_owned(), classic)],
+    );
     let mut number = 0;
     for (key, _) in &mut actions {
         if key == "block" || key == "classic" || key.parse::<u64>().is_ok() {
@@ -295,7 +434,9 @@ async fn remember(ctx: &AdminContext<'_>, post_id: u64, editor: &str) -> Result<
     if let Some(writer) = ctx.writer
         && remembered(ctx.site, post_id).await? != editor
     {
-        writer.update_post_meta(post_id, "classic-editor-remember", editor).await?;
+        writer
+            .update_post_meta(post_id, "classic-editor-remember", editor)
+            .await?;
     }
     Ok(())
 }
@@ -308,7 +449,9 @@ pub async fn edit_form_top(ctx: &AdminContext<'_>, post: &Post) -> Result<String
     if supports_editor(ctx.site, &post.post_type) {
         remember(ctx, post.id, "classic-editor").await?;
     }
-    Ok(crlf("\t\t<input type=\"hidden\" name=\"classic-editor\" value=\"\" />\n\t\t"))
+    Ok(crlf(
+        "\t\t<input type=\"hidden\" name=\"classic-editor\" value=\"\" />\n\t\t",
+    ))
 }
 
 /// `remember_block_editor()` on `block_editor_settings_all`.
@@ -324,7 +467,9 @@ pub fn admin_head(ctx: &AdminContext<'_>) -> String {
     if ctx.hook_suffix != "edit.php" || !site_settings(ctx.site).1 {
         return String::new();
     }
-    crlf("\t\t<style>\n\t\t.classic-editor-forced-state {\n\t\t\tfont-style: italic;\n\t\t\tfont-weight: 400;\n\t\t\tcolor: #72777c;\n\t\t\tfont-size: small;\n\t\t}\n\t\t</style>\n\t\t")
+    crlf(
+        "\t\t<style>\n\t\t.classic-editor-forced-state {\n\t\t\tfont-style: italic;\n\t\t\tfont-weight: 400;\n\t\t\tcolor: #72777c;\n\t\t\tfont-size: small;\n\t\t}\n\t\t</style>\n\t\t",
+    )
 }
 
 /// `user_settings()` on `profile_personal_options` and `edit_user_profile`: the user's default editor.
@@ -342,9 +487,14 @@ pub async fn user_settings(ctx: &AdminContext<'_>, user_id: u64) -> Result<Strin
     );
     Ok(format!(
         "{}\t\t\t\t{}{}",
-        crlf(&format!("\t\t<table class=\"form-table\">\n\t\t\t<tr class=\"classic-editor-user-options\">\n\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t<td>\n\t\t\t\t{nonce}", tr(ctx.site, "Default Editor"))),
+        crlf(&format!(
+            "\t\t<table class=\"form-table\">\n\t\t\t<tr class=\"classic-editor-user-options\">\n\t\t\t\t<th scope=\"row\">{}</th>\n\t\t\t\t<td>\n\t\t\t\t{nonce}",
+            tr(ctx.site, "Default Editor")
+        )),
         editor_choice(ctx.site, classic),
-        crlf("\t\t\t\t</td>\n\t\t\t</tr>\n\t\t</table>\n\t\t<script>jQuery( 'tr.user-rich-editing-wrap' ).before( jQuery( 'tr.classic-editor-user-options' ) );</script>\n\t\t")
+        crlf(
+            "\t\t\t\t</td>\n\t\t\t</tr>\n\t\t</table>\n\t\t<script>jQuery( 'tr.user-rich-editing-wrap' ).before( jQuery( 'tr.classic-editor-user-options' ) );</script>\n\t\t"
+        )
     ))
 }
 
@@ -354,14 +504,38 @@ pub async fn save_user_settings(saved: &UserSaved<'_>) -> Result<()> {
     if saved.created || !site_settings(ctx.site).1 {
         return Ok(());
     }
-    let field = |key: &str| ctx.form.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
-    let (Some(nonce), Some(editor)) = (field("classic-editor-user-settings"), field("classic-editor-replace")) else { return Ok(()) };
-    if !(ctx.verify_nonce)(nonce, "allow-user-settings") || (saved.user_id != ctx.user && !(ctx.can)("edit_users")) {
+    let field = |key: &str| {
+        ctx.form
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    let (Some(nonce), Some(editor)) = (
+        field("classic-editor-user-settings"),
+        field("classic-editor-replace"),
+    ) else {
+        return Ok(());
+    };
+    if !(ctx.verify_nonce)(nonce, "allow-user-settings")
+        || (saved.user_id != ctx.user && !(ctx.can)("edit_users"))
+    {
         return Ok(());
     }
     // `update_user_option()`: the meta of the site's table prefix.
     let key = format!("{}classic-editor-settings", ctx.site.db.table_prefix());
-    saved.writer.update_user_meta(saved.user_id, &key, if editor == "block" { "block" } else { "classic" }).await?;
+    saved
+        .writer
+        .update_user_meta(
+            saved.user_id,
+            &key,
+            if editor == "block" {
+                "block"
+            } else {
+                "classic"
+            },
+        )
+        .await?;
     Ok(())
 }
 
@@ -370,7 +544,21 @@ pub async fn switch_box(ctx: &AdminContext<'_>, post: &Post) -> Result<Option<Pl
     if ctx.block_editor || enabled_editors(ctx, post) != (true, true) {
         return Ok(None);
     }
-    let url = add_query_arg(&remove_query_arg(&raw_edit_link(ctx, post.id).await?, "classic-editor"), "classic-editor__forget", "");
-    let html = crlf(&format!("\t\t<p style=\"margin: 1em 0;\">\n\t\t\t<a href=\"{}\">{}</a>\n\t\t</p>\n\t\t", esc_url(&url), tr(ctx.site, "Switch to block editor")));
-    Ok(Some(PluginMetaBox { id: "classic-editor-switch-editor".into(), title: tr(ctx.site, "Editor"), context: "side".into(), priority: "default".into(), html }))
+    let url = add_query_arg(
+        &remove_query_arg(&raw_edit_link(ctx, post.id).await?, "classic-editor"),
+        "classic-editor__forget",
+        "",
+    );
+    let html = crlf(&format!(
+        "\t\t<p style=\"margin: 1em 0;\">\n\t\t\t<a href=\"{}\">{}</a>\n\t\t</p>\n\t\t",
+        esc_url(&url),
+        tr(ctx.site, "Switch to block editor")
+    ));
+    Ok(Some(PluginMetaBox {
+        id: "classic-editor-switch-editor".into(),
+        title: tr(ctx.site, "Editor"),
+        context: "side".into(),
+        priority: "default".into(),
+        html,
+    }))
 }

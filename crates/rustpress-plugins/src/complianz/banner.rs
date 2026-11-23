@@ -7,7 +7,7 @@
 
 use rustpress_phpser::{Key, Value};
 
-use super::options::{php_string, s, truthy, Options};
+use super::options::{Options, php_string, s, truthy};
 
 /// `cookiebanner/templates/cookiebanner.php` as `cmplz_get_template()` renders it in English, with `{consent_type}` left in.
 const BANNER_TEMPLATE: &str = include_str!("cookiebanner.html");
@@ -54,9 +54,30 @@ const FIELDS: &[(&str, Field)] = &[
     ("use_box_shadow", Field::Checkbox(true)),
     ("header_footer_shadow", Field::Checkbox(false)),
     ("soft_cookiewall", Field::Checkbox(false)),
-    ("colorpalette_border_radius", Field::Array(&[("top", "12"), ("right", "12"), ("bottom", "12"), ("left", "12"), ("type", "px")])),
-    ("border_width", Field::Array(&[("top", "0"), ("right", "0"), ("bottom", "0"), ("left", "0")])),
-    ("buttons_border_radius", Field::Array(&[("top", "6"), ("right", "6"), ("bottom", "6"), ("left", "6"), ("type", "px")])),
+    (
+        "colorpalette_border_radius",
+        Field::Array(&[
+            ("top", "12"),
+            ("right", "12"),
+            ("bottom", "12"),
+            ("left", "12"),
+            ("type", "px"),
+        ]),
+    ),
+    (
+        "border_width",
+        Field::Array(&[("top", "0"), ("right", "0"), ("bottom", "0"), ("left", "0")]),
+    ),
+    (
+        "buttons_border_radius",
+        Field::Array(&[
+            ("top", "6"),
+            ("right", "6"),
+            ("bottom", "6"),
+            ("left", "6"),
+            ("type", "px"),
+        ]),
+    ),
     ("font_size", Field::Number(12)),
     ("custom_css", Field::Css),
     ("revoke", Field::TextT("Manage consent")),
@@ -68,19 +89,47 @@ const FIELDS: &[(&str, Field)] = &[
     ("save_preferences", Field::TextT("Save preferences")),
     ("message_optin", Field::Editor(MESSAGE)),
     ("category_functional", Field::TextT("Functional")),
-    ("functional_text", Field::TextCheckbox("The technical storage or access is strictly necessary for the legitimate purpose of enabling the use of a specific service explicitly requested by the subscriber or user, or for the sole purpose of carrying out the transmission of a communication over an electronic communications network.")),
+    (
+        "functional_text",
+        Field::TextCheckbox(
+            "The technical storage or access is strictly necessary for the legitimate purpose of enabling the use of a specific service explicitly requested by the subscriber or user, or for the sole purpose of carrying out the transmission of a communication over an electronic communications network.",
+        ),
+    ),
     ("category_prefs", Field::TextCheckbox("Preferences")),
-    ("preferences_text", Field::TextCheckbox("The technical storage or access is necessary for the legitimate purpose of storing preferences that are not requested by the subscriber or user.")),
+    (
+        "preferences_text",
+        Field::TextCheckbox(
+            "The technical storage or access is necessary for the legitimate purpose of storing preferences that are not requested by the subscriber or user.",
+        ),
+    ),
     ("category_stats", Field::TextCheckbox("Statistics")),
-    ("statistics_text", Field::TextCheckbox("The technical storage or access that is used exclusively for statistical purposes.")),
-    ("statistics_text_anonymous", Field::TextCheckbox("The technical storage or access that is used exclusively for anonymous statistical purposes. Without a subpoena, voluntary compliance on the part of your Internet Service Provider, or additional records from a third party, information stored or retrieved for this purpose alone cannot usually be used to identify you.")),
+    (
+        "statistics_text",
+        Field::TextCheckbox(
+            "The technical storage or access that is used exclusively for statistical purposes.",
+        ),
+    ),
+    (
+        "statistics_text_anonymous",
+        Field::TextCheckbox(
+            "The technical storage or access that is used exclusively for anonymous statistical purposes. Without a subpoena, voluntary compliance on the part of your Internet Service Provider, or additional records from a third party, information stored or retrieved for this purpose alone cannot usually be used to identify you.",
+        ),
+    ),
     ("category_all", Field::TextCheckbox("Marketing")),
-    ("marketing_text", Field::TextCheckbox("The technical storage or access is required to create user profiles to send advertising, or to track the user on a website or across several websites for similar marketing purposes.")),
+    (
+        "marketing_text",
+        Field::TextCheckbox(
+            "The technical storage or access is required to create user profiles to send advertising, or to track the user on a website or across several websites for similar marketing purposes.",
+        ),
+    ),
     ("message_optout", Field::Editor(MESSAGE)),
 ];
 
 fn field(name: &str) -> Field {
-    FIELDS.iter().find(|(n, _)| *n == name).map_or(Field::Other, |(_, f)| *f)
+    FIELDS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map_or(Field::Other, |(_, f)| *f)
 }
 
 /// PHP's `empty()`.
@@ -89,13 +138,23 @@ fn empty(value: &Value) -> bool {
 }
 
 fn array(items: Vec<(&str, Value)>) -> Value {
-    Value::Array(items.into_iter().map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v)).collect())
+    Value::Array(
+        items
+            .into_iter()
+            .map(|(k, v)| (Key::Str(k.as_bytes().to_vec()), v))
+            .collect(),
+    )
 }
 
 /// `is_serialized()` + `unserialize()` of a column.
 fn unserialized(value: &Value) -> Option<Value> {
     let text = value.as_str()?.trim();
-    if text.len() < 4 || !matches!(text.as_bytes()[0], b'a' | b's' | b'i' | b'b' | b'd' | b'O' | b'N') {
+    if text.len() < 4
+        || !matches!(
+            text.as_bytes()[0],
+            b'a' | b's' | b'i' | b'b' | b'd' | b'O' | b'N'
+        )
+    {
         return None;
     }
     rustpress_phpser::unserialize(text.as_bytes()).ok()
@@ -111,7 +170,11 @@ pub struct Banner {
 impl Banner {
     /// `new CMPLZ_COOKIEBANNER( $id )` from the row of the table.
     pub fn from_row(row: &[(String, Option<String>)], options: &Options) -> Self {
-        let mut banner = Banner { id: String::new(), banner_version: "0".into(), values: Vec::new() };
+        let mut banner = Banner {
+            id: String::new(),
+            banner_version: "0".into(),
+            values: Vec::new(),
+        };
         for (column, value) in row {
             let value = value.as_ref().map_or(Value::Null, |v| s(v));
             match column.as_str() {
@@ -132,7 +195,10 @@ impl Banner {
 
     /// `new CMPLZ_COOKIEBANNER( 0 )`, the banner without a row: every field at its default.
     pub fn defaults(options: &Options) -> Self {
-        let row: Vec<(String, Option<String>)> = FIELDS.iter().map(|(name, _)| ((*name).to_owned(), None)).collect();
+        let row: Vec<(String, Option<String>)> = FIELDS
+            .iter()
+            .map(|(name, _)| ((*name).to_owned(), None))
+            .collect();
         Self::from_row(&row, options)
     }
 
@@ -144,7 +210,10 @@ impl Banner {
     }
 
     pub fn value(&self, name: &str) -> Value {
-        self.values.iter().find(|(n, _)| n == name).map_or(Value::Null, |(_, v)| v.clone())
+        self.values
+            .iter()
+            .find(|(n, _)| n == name)
+            .map_or(Value::Null, |(_, v)| v.clone())
     }
 
     pub fn string(&self, name: &str) -> String {
@@ -154,7 +223,10 @@ impl Banner {
     /// `get_banner_logo()`: the logo of the site and an image of the media library are not ported (empty).
     fn logo(&self, plugin_dir: &std::path::Path) -> String {
         match self.string("use_logo").as_str() {
-            "complianz" => std::fs::read_to_string(plugin_dir.join("assets/images/poweredbycomplianz.svg")).unwrap_or_default(),
+            "complianz" => {
+                std::fs::read_to_string(plugin_dir.join("assets/images/poweredbycomplianz.svg"))
+                    .unwrap_or_default()
+            }
             _ => String::new(),
         }
     }
@@ -193,7 +265,14 @@ impl Banner {
             ("use_categories", "use_categories"),
             ("", ""),
         ];
-        let mut out = vec![("id", self.id.clone()), ("title_class", rustpress_core::slug::sanitize_title(&self.string("title"))), ("logo", self.logo(plugin_dir))];
+        let mut out = vec![
+            ("id", self.id.clone()),
+            (
+                "title_class",
+                rustpress_core::slug::sanitize_title(&self.string("title")),
+            ),
+            ("logo", self.logo(plugin_dir)),
+        ];
         for (key, name) in fields.into_iter().filter(|(k, _)| !k.is_empty()) {
             if let Some(value) = text(name) {
                 out.push((key, value));
@@ -203,12 +282,21 @@ impl Banner {
     }
 
     /// The banner and the manage consent button of one consent type (the loop of `cookiebanner_html()`).
-    pub fn html(&self, consent_type: &str, options: &Options, plugin_dir: &std::path::Path) -> (String, String) {
+    pub fn html(
+        &self,
+        consent_type: &str,
+        options: &Options,
+        plugin_dir: &std::path::Path,
+    ) -> (String, String) {
         let mut banner = translated_template(options).replace("{consent_type}", consent_type);
         let mut manage = MANAGE_CONSENT_TEMPLATE.to_owned();
         for (field, value) in self.html_settings(plugin_dir) {
             let key = format!("{{{field}}}");
-            let value = if field == "logo" { value } else { nl2br(&value) };
+            let value = if field == "logo" {
+                value
+            } else {
+                nl2br(&value)
+            };
             banner = banner.replace(&key, &value);
             manage = manage.replace(&key, &value);
         }
@@ -219,11 +307,20 @@ impl Banner {
 impl Banner {
     /// The categories of the banner for `cmplz_rest_api_manage_consent_html()`: the part between
     /// `<!-- categories start -->` and `<!-- categories end -->`, with the settings put in (without `nl2br()`).
-    pub fn categories_html(&self, consent_type: &str, options: &Options, plugin_dir: &std::path::Path) -> String {
+    pub fn categories_html(
+        &self,
+        consent_type: &str,
+        options: &Options,
+        plugin_dir: &std::path::Path,
+    ) -> String {
         let template = translated_template(options).replace("{consent_type}", consent_type);
         let (start, end) = ("<!-- categories start -->", "<!-- categories end -->");
-        let Some(from) = template.find(start) else { return String::new() };
-        let Some(to) = template[from..].find(end) else { return String::new() };
+        let Some(from) = template.find(start) else {
+            return String::new();
+        };
+        let Some(to) = template[from..].find(end) else {
+            return String::new();
+        };
         let mut html = template[from..from + to + end.len()].to_owned();
         for (field, value) in self.html_settings(plugin_dir) {
             html = html.replace(&format!("{{{field}}}"), &value);
@@ -236,15 +333,44 @@ impl Banner {
 fn translated_template(options: &Options) -> String {
     let esc_attr = |t: &str| rustpress_core::formatting::esc_attr(&options.tr(t));
     let esc_html = |t: &str| rustpress_core::formatting::esc_html(&options.tr(t));
-    let vendors = rustpress_core::formatting::esc_html(&options.tr("Manage %s vendors").replacen("%s", "{vendor_count}", 1).replace("%1$s", "{vendor_count}"));
+    let vendors = rustpress_core::formatting::esc_html(
+        &options
+            .tr("Manage %s vendors")
+            .replacen("%s", "{vendor_count}", 1)
+            .replace("%1$s", "{vendor_count}"),
+    );
     BANNER_TEMPLATE
-        .replace("aria-label=\"Close dialog\"", &format!("aria-label=\"{}\"", esc_attr("Close dialog")))
-        .replace("\t\t\t\t\t\tAlways active\t", &format!("\t\t\t\t\t\t{}\t", esc_html("Always active")))
-        .replace(">Manage options</a>", &format!(">{}</a>", esc_html("Manage options")))
-        .replace(">Manage services</a>", &format!(">{}</a>", esc_html("Manage services")))
-        .replace(">Manage {vendor_count} vendors</a>", &format!(">{vendors}</a>"))
-        .replace("aria-label=\"Read more about TCF purposes on Cookie Database\"", &format!("aria-label=\"{}\"", esc_attr("Read more about TCF purposes on Cookie Database")))
-        .replace(">Read more about these purposes</a>", &format!(">{}</a>", esc_html("Read more about these purposes")))
+        .replace(
+            "aria-label=\"Close dialog\"",
+            &format!("aria-label=\"{}\"", esc_attr("Close dialog")),
+        )
+        .replace(
+            "\t\t\t\t\t\tAlways active\t",
+            &format!("\t\t\t\t\t\t{}\t", esc_html("Always active")),
+        )
+        .replace(
+            ">Manage options</a>",
+            &format!(">{}</a>", esc_html("Manage options")),
+        )
+        .replace(
+            ">Manage services</a>",
+            &format!(">{}</a>", esc_html("Manage services")),
+        )
+        .replace(
+            ">Manage {vendor_count} vendors</a>",
+            &format!(">{vendors}</a>"),
+        )
+        .replace(
+            "aria-label=\"Read more about TCF purposes on Cookie Database\"",
+            &format!(
+                "aria-label=\"{}\"",
+                esc_attr("Read more about TCF purposes on Cookie Database")
+            ),
+        )
+        .replace(
+            ">Read more about these purposes</a>",
+            &format!(">{}</a>", esc_html("Read more about these purposes")),
+        )
 }
 
 /// `CMPLZ_COOKIEBANNER::parse_value()` with `set_defaults` on.
@@ -260,9 +386,12 @@ fn parse_value(name: &str, value: Value, options: &Options) -> Value {
         Field::TextT(default) => {
             let mut value = value;
             if name == "revoke"
-                && let Some(old) = unserialized(&value) {
-                    value = super::options::item(&old, "text").cloned().unwrap_or_else(|| s(&options.tr(default)));
-                }
+                && let Some(old) = unserialized(&value)
+            {
+                value = super::options::item(&old, "text")
+                    .cloned()
+                    .unwrap_or_else(|| s(&options.tr(default)));
+            }
             if empty(&value) {
                 s(&options.tr(default))
             } else {
@@ -277,23 +406,45 @@ fn parse_value(name: &str, value: Value, options: &Options) -> Value {
             if empty(&value) {
                 Value::Int(default)
             } else {
-                Value::Int(php_string(&value).trim().parse::<f64>().map_or(0, |f| f as i64))
+                Value::Int(
+                    php_string(&value)
+                        .trim()
+                        .parse::<f64>()
+                        .map_or(0, |f| f as i64),
+                )
             }
         }
         Field::NumberStr(default) => {
             if empty(&value) {
                 s(default)
             } else {
-                Value::Int(php_string(&value).trim().parse::<f64>().map_or(0, |f| f as i64))
+                Value::Int(
+                    php_string(&value)
+                        .trim()
+                        .parse::<f64>()
+                        .map_or(0, |f| f as i64),
+                )
             }
         }
         Field::TextCheckbox(default) => {
-            let defaults = vec![("text", s(&options.tr(default))), ("show", Value::Bool(true))];
+            let defaults = vec![
+                ("text", s(&options.tr(default))),
+                ("show", Value::Bool(true)),
+            ];
             merge(name, value, defaults, false)
         }
-        Field::Array(defaults) => merge(name, value, defaults.iter().map(|(k, v)| (*k, s(v))).collect(), true),
+        Field::Array(defaults) => merge(
+            name,
+            value,
+            defaults.iter().map(|(k, v)| (*k, s(v))).collect(),
+            true,
+        ),
         Field::Css => {
-            let text = if empty(&value) { String::new() } else { rustpress_core::formatting::html_entity_decode(&php_string(&value)) };
+            let text = if empty(&value) {
+                String::new()
+            } else {
+                rustpress_core::formatting::html_entity_decode(&php_string(&value))
+            };
             if text.is_empty() || text == "0" {
                 s("")
             } else {
@@ -309,15 +460,19 @@ fn parse_value(name: &str, value: Value, options: &Options) -> Value {
 fn merge(_name: &str, value: Value, defaults: Vec<(&str, Value)>, filter: bool) -> Value {
     let mut value = unserialized(&value).unwrap_or(value);
     if let Value::Array(items) = &value
-        && items.iter().any(|(_, v)| unserialized(v).is_some()) {
-            value = array(defaults.clone());
-        }
+        && items.iter().any(|(_, v)| unserialized(v).is_some())
+    {
+        value = array(defaults.clone());
+    }
     let mut items: Vec<(Key, Value)> = match value {
         Value::Array(items) => items,
         _ => Vec::new(),
     };
     if filter {
-        items.retain(|(_, v)| !matches!(v, Value::Null | Value::Bool(false)) && !matches!(v, Value::Str(b) if b.is_empty()));
+        items.retain(|(_, v)| {
+            !matches!(v, Value::Null | Value::Bool(false))
+                && !matches!(v, Value::Str(b) if b.is_empty())
+        });
     }
     for (key, default) in defaults {
         let k = Key::Str(key.as_bytes().to_vec());
@@ -343,7 +498,9 @@ fn nl2br(text: &str) -> String {
         if b == b'\n' || b == b'\r' {
             out.push_str(&text[start..i]);
             out.push_str("<br />");
-            let pair = bytes.get(i + 1).is_some_and(|&n| (n == b'\n' || n == b'\r') && n != b);
+            let pair = bytes
+                .get(i + 1)
+                .is_some_and(|&n| (n == b'\n' || n == b'\r') && n != b);
             let end = if pair { i + 2 } else { i + 1 };
             out.push_str(&text[i..end]);
             i = end;

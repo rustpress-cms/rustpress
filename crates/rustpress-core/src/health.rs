@@ -17,7 +17,9 @@ pub fn size_format(site: &Site, bytes: u64, decimals: usize) -> String {
         let factor = 10f64.powi(decimals as i32);
         let rounded = (value * factor).round() / factor;
         let text = format!("{rounded:.decimals$}");
-        let (whole, fraction) = text.split_once('.').map_or((text.as_str(), ""), |(w, f)| (w, f));
+        let (whole, fraction) = text
+            .split_once('.')
+            .map_or((text.as_str(), ""), |(w, f)| (w, f));
         let mut out = String::new();
         for (i, c) in whole.chars().enumerate() {
             if i > 0 && (whole.len() - i) % 3 == 0 {
@@ -34,7 +36,13 @@ pub fn size_format(site: &Site, bytes: u64, decimals: usize) -> String {
     if bytes == 0 {
         return format!("{} B", number(0.0));
     }
-    const UNITS: [(&str, u64); 5] = [("TB", 1 << 40), ("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10), ("B", 1)];
+    const UNITS: [(&str, u64); 5] = [
+        ("TB", 1 << 40),
+        ("GB", 1 << 30),
+        ("MB", 1 << 20),
+        ("KB", 1 << 10),
+        ("B", 1),
+    ];
     for (unit, magnitude) in UNITS {
         if bytes >= magnitude {
             return format!("{} {unit}", number(bytes as f64 / magnitude as f64));
@@ -45,21 +53,31 @@ pub fn size_format(site: &Site, bytes: u64, decimals: usize) -> String {
 
 /// `recurse_dirsize()`: the size of a directory with everything below it.
 pub fn dir_size(path: &Path) -> u64 {
-    let Ok(meta) = std::fs::symlink_metadata(path) else { return 0 };
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
     if meta.is_file() {
         return meta.len();
     }
     if !meta.is_dir() {
         return 0;
     }
-    std::fs::read_dir(path).map(|entries| entries.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
+    std::fs::read_dir(path)
+        .map(|entries| entries.flatten().map(|e| dir_size(&e.path())).sum())
+        .unwrap_or(0)
 }
 
 /// `WP_Debug_Data::get_sizes()` as `WP_REST_Site_Health_Controller::get_directory_sizes()` answers it.
 pub async fn directory_sizes(site: &Site, root: &Path) -> Value {
     let content = root.join("wp-content");
     let configured = site.options.string("upload_path", "");
-    let uploads = if configured.is_empty() { content.join("uploads") } else if Path::new(&configured).is_absolute() { configured.into() } else { root.join(configured) };
+    let uploads = if configured.is_empty() {
+        content.join("uploads")
+    } else if Path::new(&configured).is_absolute() {
+        configured.into()
+    } else {
+        root.join(configured)
+    };
     let fonts = uploads.join("fonts");
     let themes = content.join("themes");
     let plugins = content.join("plugins");
@@ -68,9 +86,15 @@ pub async fn directory_sizes(site: &Site, root: &Path) -> Value {
         let root = root.to_path_buf();
         tokio::task::spawn_blocking(move || {
             let size = |path: &Path| path.is_dir().then(|| dir_size(path));
-            let inside: u64 = [&themes, &plugins, &uploads].iter().map(|p| dir_size(p)).sum();
+            let inside: u64 = [&themes, &plugins, &uploads]
+                .iter()
+                .map(|p| dir_size(p))
+                .sum();
             vec![
-                ("wordpress_size", size(&root).map(|all| all.saturating_sub(inside))),
+                (
+                    "wordpress_size",
+                    size(&root).map(|all| all.saturating_sub(inside)),
+                ),
                 ("themes_size", size(&themes)),
                 ("plugins_size", size(&plugins)),
                 ("uploads_size", size(&uploads)),
@@ -85,7 +109,10 @@ pub async fn directory_sizes(site: &Site, root: &Path) -> Value {
     let mut total = 0u64;
     for (name, bytes) in sizes {
         let Some(bytes) = bytes else {
-            out.insert(name.into(), json!({"size": site.tr("The directory does not exist.")}));
+            out.insert(
+                name.into(),
+                json!({"size": site.tr("The directory does not exist.")}),
+            );
             continue;
         };
         total += bytes;
@@ -133,7 +160,12 @@ fn external(site: &Site, url: &str, label: &str) -> String {
 /// `WP_Site_Health::get_test_https_status()`. RustPress does not probe whether HTTPS would work.
 pub fn https_status(site: &Site, is_ssl: bool) -> Value {
     let using_https = |url: &str| url.starts_with("https://");
-    let admin = |anchor: &str| esc_url(&format!("{}/wp-admin/options-general.php#{anchor}", site.settings.siteurl.trim_end_matches('/')));
+    let admin = |anchor: &str| {
+        esc_url(&format!(
+            "{}/wp-admin/options-general.php#{anchor}",
+            site.settings.siteurl.trim_end_matches('/')
+        ))
+    };
     let mut result = json!({
         "label": site.tr("Your website is using an active HTTPS connection"),
         "status": "good",
@@ -149,7 +181,10 @@ pub fn https_status(site: &Site, is_ssl: bool) -> Value {
         if is_ssl {
             sprintf(&site.tr("You are accessing this website using HTTPS, but your <a href=\"%s\">Site Address</a> is not set up to use HTTPS by default."), &[&admin("home")])
         } else {
-            sprintf(&site.tr("Your <a href=\"%s\">Site Address</a> is not set up to use HTTPS."), &[&admin("home")])
+            sprintf(
+                &site.tr("Your <a href=\"%s\">Site Address</a> is not set up to use HTTPS."),
+                &[&admin("home")],
+            )
         }
     } else if is_ssl {
         sprintf(&site.tr("You are accessing this website using HTTPS, but your <a href=\"%1$s\">WordPress Address</a> and <a href=\"%2$s\">Site Address</a> are not set up to use HTTPS by default."), &[&admin("siteurl"), &admin("home")])
@@ -158,7 +193,10 @@ pub fn https_status(site: &Site, is_ssl: bool) -> Value {
     };
     result["status"] = json!("recommended");
     result["label"] = json!(site.tr("Your website does not use HTTPS"));
-    result["description"] = json!(format!("<p>{description}</p><p>{}</p>", site.tr("Talk to your web host about supporting HTTPS for your website.")));
+    result["description"] = json!(format!(
+        "<p>{description}</p><p>{}</p>",
+        site.tr("Talk to your web host about supporting HTTPS for your website.")
+    ));
     result
 }
 
@@ -269,9 +307,19 @@ pub fn page_cache(site: &Site, response_time: u64, headers: &[String]) -> Value 
         PAGE_CACHE_HEADERS.join("</code>, <code>")
     );
     let fast = response_time != 0 && response_time < threshold;
-    let status = if fast { if headers.is_empty() { "recommended" } else { "good" } } else { "critical" };
+    let status = if fast {
+        if headers.is_empty() {
+            "recommended"
+        } else {
+            "good"
+        }
+    } else {
+        "critical"
+    };
     let label = match (status, headers.is_empty()) {
-        ("recommended", _) => site.tr("Page cache is not detected but the server response time is OK"),
+        ("recommended", _) => {
+            site.tr("Page cache is not detected but the server response time is OK")
+        }
         ("good", _) => site.tr("Page cache is detected and the server response time is good"),
         (_, true) => site.tr("Page cache is not detected and the server response time is slow"),
         (_, false) => site.tr("Page cache is detected but the server response time is still slow"),
@@ -284,8 +332,14 @@ pub fn page_cache(site: &Site, response_time: u64, headers: &[String]) -> Value 
         format!("<span class=\"dashicons dashicons-warning\" aria-hidden=\"true\"></span> {}", sprintf(&site.tr("Median server response time was %1$s milliseconds. It should be less than the recommended %2$s milliseconds threshold."), &[&numbers[0], &numbers[1]]))
     });
     if headers.is_empty() {
-        summary.push(format!("<span class=\"dashicons dashicons-warning\" aria-hidden=\"true\"></span> {}", site.tr("No client caching response headers were detected.")));
-        summary.push(format!("<span class=\"dashicons dashicons-warning\" aria-hidden=\"true\"></span> {}", site.tr("A page cache plugin was not detected.")));
+        summary.push(format!(
+            "<span class=\"dashicons dashicons-warning\" aria-hidden=\"true\"></span> {}",
+            site.tr("No client caching response headers were detected.")
+        ));
+        summary.push(format!(
+            "<span class=\"dashicons dashicons-warning\" aria-hidden=\"true\"></span> {}",
+            site.tr("A page cache plugin was not detected.")
+        ));
     } else {
         let count = headers.len() as i64;
         summary.push(format!(
@@ -312,5 +366,9 @@ pub fn page_cache(site: &Site, response_time: u64, headers: &[String]) -> Value 
 
 /// The caching headers of a response, in the order of [`PAGE_CACHE_HEADERS`].
 pub fn caching_headers(names: &[String]) -> Vec<String> {
-    PAGE_CACHE_HEADERS.iter().filter(|h| names.iter().any(|n| n.eq_ignore_ascii_case(h))).map(|h| (*h).to_owned()).collect()
+    PAGE_CACHE_HEADERS
+        .iter()
+        .filter(|h| names.iter().any(|n| n.eq_ignore_ascii_case(h)))
+        .map(|h| (*h).to_owned())
+        .collect()
 }

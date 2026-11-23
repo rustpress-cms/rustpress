@@ -8,9 +8,25 @@ use super::{AdminResponse, Ctx, die, render};
 use crate::chrome::{Assets, Screen};
 
 /// The taxonomies WordPress knows itself (`_builtin`); their terms are not exported as custom terms.
-const BUILTIN_TAXONOMIES: &[&str] = &["category", "post_tag", "nav_menu", "link_category", "post_format", "wp_theme", "wp_template_part_area", "wp_pattern_category"];
+const BUILTIN_TAXONOMIES: &[&str] = &[
+    "category",
+    "post_tag",
+    "nav_menu",
+    "link_category",
+    "post_format",
+    "wp_theme",
+    "wp_template_part_area",
+    "wp_pattern_category",
+];
 /// Post types that cannot be exported.
-const NOT_EXPORTABLE: &[&str] = &["revision", "nav_menu_item", "oembed_cache", "user_request", "customize_changeset", "custom_css"];
+const NOT_EXPORTABLE: &[&str] = &[
+    "revision",
+    "nav_menu_item",
+    "oembed_cache",
+    "user_request",
+    "customize_changeset",
+    "custom_css",
+];
 
 /// `wxr_cdata()`.
 fn cdata(text: &str) -> String {
@@ -22,7 +38,11 @@ async fn exportable_types(ctx: &Ctx<'_>) -> Vec<String> {
     let mut types = ctx.env.db.used_post_types().await.unwrap_or_default();
     // `get_post_types()` knows the registered ones only; old rows of a removed plugin stay out.
     let site = ctx.site();
-    types.retain(|t| !NOT_EXPORTABLE.contains(&t.as_str()) && (site.types.post_type(t).is_some() || site.types.rewrite_post_types().iter().any(|r| &r.name == t)));
+    types.retain(|t| {
+        !NOT_EXPORTABLE.contains(&t.as_str())
+            && (site.types.post_type(t).is_some()
+                || site.types.rewrite_post_types().iter().any(|r| &r.name == t))
+    });
     types.sort();
     types
 }
@@ -70,7 +90,10 @@ fn sanitize_url(url: &str) -> String {
 async fn meta_pairs_xml(pairs: &[(Option<String>, Option<String>)], term: bool) -> String {
     let mut out = String::new();
     for (key, value) in pairs {
-        let (key, value) = (key.clone().unwrap_or_default(), value.clone().unwrap_or_default());
+        let (key, value) = (
+            key.clone().unwrap_or_default(),
+            value.clone().unwrap_or_default(),
+        );
         if term {
             out.push_str(&format!("\t\t<wp:termmeta>\n\t\t\t<wp:meta_key>{}</wp:meta_key>\n\t\t\t<wp:meta_value>{}</wp:meta_value>\n\t\t</wp:termmeta>\n", cdata(&key), cdata(&value)));
         }
@@ -98,23 +121,34 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
     if !sitename.is_empty() {
         sitename.push('.');
     }
-    let filename = format!("{sitename}WordPress.{}.xml", SiteTimezone::utc().format("Y-m-d", now));
+    let filename = format!(
+        "{sitename}WordPress.{}.xml",
+        SiteTimezone::utc().format("Y-m-d", now)
+    );
 
     let all_types = exportable_types(ctx).await;
     let content = args.content.as_str();
     let single = content != "all" && all_types.iter().any(|t| t == content);
-    let post_types: Vec<String> = if single { vec![content.to_owned()] } else { all_types.clone() };
+    let post_types: Vec<String> = if single {
+        vec![content.to_owned()]
+    } else {
+        all_types.clone()
+    };
 
-    let mut filter = ExportFilter { post_types, ..Default::default() };
+    let mut filter = ExportFilter {
+        post_types,
+        ..Default::default()
+    };
     if args.status.is_some() && (content == "post" || content == "page") {
         filter.status = args.status.clone();
     }
     let mut category_term: Option<Term> = None;
     if let (Some(cat), "post") = (args.category, content)
-        && let Ok(Some(term)) = db.term_by_id(Some("category"), cat).await {
-            filter.category = Some(term.term_taxonomy_id);
-            category_term = Some(term);
-        }
+        && let Ok(Some(term)) = db.term_by_id(Some("category"), cat).await
+    {
+        filter.category = Some(term.term_taxonomy_id);
+        category_term = Some(term);
+    }
     if matches!(content, "post" | "page" | "attachment") {
         filter.author = args.author;
         filter.start = args.start_date.as_deref().and_then(month_start);
@@ -145,9 +179,18 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
     if let Some(term) = category_term {
         cats.push(term);
     } else if content == "all" {
-        let mut categories = db.export_terms(&["category"], &[]).await.unwrap_or_default();
-        tags = db.export_terms(&["post_tag"], &[]).await.unwrap_or_default();
-        let mut custom = db.export_terms(&[], BUILTIN_TAXONOMIES).await.unwrap_or_default();
+        let mut categories = db
+            .export_terms(&["category"], &[])
+            .await
+            .unwrap_or_default();
+        tags = db
+            .export_terms(&["post_tag"], &[])
+            .await
+            .unwrap_or_default();
+        let mut custom = db
+            .export_terms(&[], BUILTIN_TAXONOMIES)
+            .await
+            .unwrap_or_default();
         // Parents come first.
         let mut guard = categories.len() * categories.len() + 1;
         while !categories.is_empty() && guard > 0 {
@@ -176,7 +219,10 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n");
     out.push_str("<!-- This is a WordPress eXtended RSS file generated by WordPress as an export of your site. -->\n<!-- It contains information about your site's posts, pages, comments, categories, and other content. -->\n<!-- You may use this file to transfer that content from one site to another. -->\n<!-- This file is not intended to serve as a complete backup of your site. -->\n\n<!-- To import this information into a WordPress site follow these steps: -->\n<!-- 1. Log in to that site as an administrator. -->\n<!-- 2. Go to Tools: Import in the WordPress admin panel. -->\n<!-- 3. Install the \"WordPress\" importer from the list. -->\n<!-- 4. Activate & Run Importer. -->\n<!-- 5. Upload this file using the form provided on that page. -->\n<!-- 6. You will first be asked to map the authors in this export file to users -->\n<!--    on the site. For each author, you may choose to map to an -->\n<!--    existing user on the site or to create a new user. -->\n<!-- 7. WordPress will then import each of the posts, pages, comments, categories, etc. -->\n<!--    contained in this file into your site. -->\n\n");
-    out.push_str(&format!("\t<!-- generator=\"WordPress/{version}\" created=\"{}\" -->\n", SiteTimezone::utc().format("Y-m-d H:i", now)));
+    out.push_str(&format!(
+        "\t<!-- generator=\"WordPress/{version}\" created=\"{}\" -->\n",
+        SiteTimezone::utc().format("Y-m-d H:i", now)
+    ));
     out.push_str("<rss version=\"2.0\"\n\txmlns:excerpt=\"http://wordpress.org/export/1.2/excerpt/\"\n\txmlns:content=\"http://purl.org/rss/1.0/modules/content/\"\n\txmlns:wfw=\"http://wellformedweb.org/CommentAPI/\"\n\txmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n\txmlns:wp=\"http://wordpress.org/export/1.2/\"\n>\n\n<channel>\n");
     let language = site.locale().replace('_', "-");
     out.push_str(&format!(
@@ -192,7 +238,9 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
     // Authors.
     let author_scope: &[u64] = if post_ids.is_empty() { &[] } else { &post_ids };
     for author_id in db.export_authors(author_scope).await.unwrap_or_default() {
-        let Ok(Some(user)) = db.user(author_id).await else { continue };
+        let Ok(Some(user)) = db.user(author_id).await else {
+            continue;
+        };
         let (first, last) = db.user_names(author_id).await.unwrap_or_default();
         out.push_str(&format!(
             "\t<wp:author><wp:author_id>{}</wp:author_id><wp:author_login>{}</wp:author_login><wp:author_email>{}</wp:author_email><wp:author_display_name>{}</wp:author_display_name><wp:author_first_name>{}</wp:author_first_name><wp:author_last_name>{}</wp:author_last_name></wp:author>\n",
@@ -207,53 +255,111 @@ pub async fn export_wp(ctx: &Ctx<'_>, args: &ExportArgs) -> (String, String) {
     out.push_str("\n\t");
 
     for c in &cats {
-        let parent = if c.parent != 0 { cats.iter().find(|p| p.term_id == c.parent).map(|p| p.slug.clone()).unwrap_or_default() } else { String::new() };
+        let parent = if c.parent != 0 {
+            cats.iter()
+                .find(|p| p.term_id == c.parent)
+                .map(|p| p.slug.clone())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         out.push_str(&format!("\t<wp:category>\n\t\t<wp:term_id>{}</wp:term_id>\n\t\t<wp:category_nicename>{}</wp:category_nicename>\n\t\t<wp:category_parent>{}</wp:category_parent>\n\t\t", c.term_id, cdata(&c.slug), cdata(&parent)));
         if !c.name.is_empty() {
             out.push_str(&format!("<wp:cat_name>{}</wp:cat_name>\n", cdata(&c.name)));
         }
         if !c.description.is_empty() {
-            out.push_str(&format!("<wp:category_description>{}</wp:category_description>\n", cdata(&c.description)));
+            out.push_str(&format!(
+                "<wp:category_description>{}</wp:category_description>\n",
+                cdata(&c.description)
+            ));
         }
-        out.push_str(&meta_pairs_xml(&db.term_meta_pairs(c.term_id).await.unwrap_or_default(), true).await);
+        out.push_str(
+            &meta_pairs_xml(
+                &db.term_meta_pairs(c.term_id).await.unwrap_or_default(),
+                true,
+            )
+            .await,
+        );
         out.push_str("\t</wp:category>\n\t");
     }
     out.push('\t');
     for t in &tags {
-        out.push_str(&format!("\t<wp:tag>\n\t\t<wp:term_id>{}</wp:term_id>\n\t\t<wp:tag_slug>{}</wp:tag_slug>\n\t\t", t.term_id, cdata(&t.slug)));
+        out.push_str(&format!(
+            "\t<wp:tag>\n\t\t<wp:term_id>{}</wp:term_id>\n\t\t<wp:tag_slug>{}</wp:tag_slug>\n\t\t",
+            t.term_id,
+            cdata(&t.slug)
+        ));
         if !t.name.is_empty() {
             out.push_str(&format!("<wp:tag_name>{}</wp:tag_name>\n", cdata(&t.name)));
         }
         if !t.description.is_empty() {
-            out.push_str(&format!("<wp:tag_description>{}</wp:tag_description>\n", cdata(&t.description)));
+            out.push_str(&format!(
+                "<wp:tag_description>{}</wp:tag_description>\n",
+                cdata(&t.description)
+            ));
         }
-        out.push_str(&meta_pairs_xml(&db.term_meta_pairs(t.term_id).await.unwrap_or_default(), true).await);
+        out.push_str(
+            &meta_pairs_xml(
+                &db.term_meta_pairs(t.term_id).await.unwrap_or_default(),
+                true,
+            )
+            .await,
+        );
         out.push_str("\t</wp:tag>\n\t");
     }
     out.push('\t');
     for t in &terms {
-        let parent = if t.parent != 0 { terms.iter().find(|p| p.term_id == t.parent).map(|p| p.slug.clone()).unwrap_or_default() } else { String::new() };
+        let parent = if t.parent != 0 {
+            terms
+                .iter()
+                .find(|p| p.term_id == t.parent)
+                .map(|p| p.slug.clone())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         out.push_str(&format!("\t<wp:term>\n\t\t<wp:term_id>{}</wp:term_id>\n\t\t<wp:term_taxonomy>{}</wp:term_taxonomy>\n\t\t<wp:term_slug>{}</wp:term_slug>\n\t\t<wp:term_parent>{}</wp:term_parent>\n\t\t", t.term_id, cdata(&t.taxonomy), cdata(&t.slug), cdata(&parent)));
         if !t.name.is_empty() {
-            out.push_str(&format!("<wp:term_name>{}</wp:term_name>\n", cdata(&t.name)));
+            out.push_str(&format!(
+                "<wp:term_name>{}</wp:term_name>\n",
+                cdata(&t.name)
+            ));
         }
         if !t.description.is_empty() {
-            out.push_str(&format!("\t\t<wp:term_description>{}</wp:term_description>\n", cdata(&t.description)));
+            out.push_str(&format!(
+                "\t\t<wp:term_description>{}</wp:term_description>\n",
+                cdata(&t.description)
+            ));
         }
-        out.push_str(&meta_pairs_xml(&db.term_meta_pairs(t.term_id).await.unwrap_or_default(), true).await);
+        out.push_str(
+            &meta_pairs_xml(
+                &db.term_meta_pairs(t.term_id).await.unwrap_or_default(),
+                true,
+            )
+            .await,
+        );
         out.push_str("\t</wp:term>\n\t");
     }
     out.push('\t');
     if content == "all" {
-        for menu in db.export_terms(&["nav_menu"], &[]).await.unwrap_or_default() {
+        for menu in db
+            .export_terms(&["nav_menu"], &[])
+            .await
+            .unwrap_or_default()
+        {
             out.push_str(&format!("\t<wp:term><wp:term_id>{}</wp:term_id><wp:term_taxonomy>nav_menu</wp:term_taxonomy><wp:term_slug>{}</wp:term_slug>", menu.term_id, cdata(&menu.slug)));
             if !menu.name.is_empty() {
-                out.push_str(&format!("<wp:term_name>{}</wp:term_name>\n", cdata(&menu.name)));
+                out.push_str(&format!(
+                    "<wp:term_name>{}</wp:term_name>\n",
+                    cdata(&menu.name)
+                ));
             }
             out.push_str("</wp:term>\n");
         }
     }
-    out.push_str(&format!("\n\t<generator>https://wordpress.org/?v={version}</generator>\n\n\t"));
+    out.push_str(&format!(
+        "\n\t<generator>https://wordpress.org/?v={version}</generator>\n\n\t"
+    ));
 
     if !post_ids.is_empty() {
         for chunk in post_ids.chunks(20) {
@@ -275,7 +381,13 @@ async fn item(ctx: &Ctx<'_>, post: &Post) -> String {
     let site = ctx.site();
     let db = ctx.env.db;
     let permalink = site.permalink(post).await.unwrap_or_default();
-    let creator = db.user(post.post_author).await.ok().flatten().map(|u| u.user_login).unwrap_or_default();
+    let creator = db
+        .user(post.post_author)
+        .await
+        .ok()
+        .flatten()
+        .map(|u| u.user_login)
+        .unwrap_or_default();
     let sticky = {
         let raw = site.options.string("sticky_posts", "");
         matches!(rustpress_phpser::unserialize(raw.as_bytes()), Ok(rustpress_phpser::Value::Array(items)) if items.iter().any(|(_, v)| v.as_i64() == Some(post.id as i64)))
@@ -307,14 +419,31 @@ async fn item(ctx: &Ctx<'_>, post: &Post) -> String {
     let metas = db.post_meta(post.id).await.unwrap_or_default();
     out.push_str("\t\t\t\t");
     if post.post_type == "attachment" {
-        let attached = metas.iter().find(|m| m.meta_key.as_deref() == Some("_wp_attached_file")).and_then(|m| m.meta_value.clone()).unwrap_or_default();
-        out.push_str(&format!("\t\t<wp:attachment_url>{}</wp:attachment_url>\n\t", cdata(&rustpress_blocks::images::attachment_url(site, &attached))));
+        let attached = metas
+            .iter()
+            .find(|m| m.meta_key.as_deref() == Some("_wp_attached_file"))
+            .and_then(|m| m.meta_value.clone())
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "\t\t<wp:attachment_url>{}</wp:attachment_url>\n\t",
+            cdata(&rustpress_blocks::images::attachment_url(site, &attached))
+        ));
     }
     out.push_str("\t\t\t\t");
     let mut terms = db.terms_for_post(post.id, None).await.unwrap_or_default();
-    terms.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(a.term_id.cmp(&b.term_id)));
+    terms.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.term_id.cmp(&b.term_id))
+    });
     for term in &terms {
-        out.push_str(&format!("\t\t<category domain=\"{}\" nicename=\"{}\">{}</category>\n", term.taxonomy, term.slug, cdata(&term.name)));
+        out.push_str(&format!(
+            "\t\t<category domain=\"{}\" nicename=\"{}\">{}</category>\n",
+            term.taxonomy,
+            term.slug,
+            cdata(&term.name)
+        ));
     }
     out.push_str("\t\t\t\t");
     for meta in &metas {
@@ -340,7 +469,11 @@ async fn item(ctx: &Ctx<'_>, post: &Post) -> String {
             c.comment_parent,
             c.user_id
         ));
-        for (key, value) in db.comment_meta_pairs(c.comment_id).await.unwrap_or_default() {
+        for (key, value) in db
+            .comment_meta_pairs(c.comment_id)
+            .await
+            .unwrap_or_default()
+        {
             out.push_str(&format!("\t<wp:commentmeta>\n\t<wp:meta_key>{}</wp:meta_key>\n\t\t\t<wp:meta_value>{}</wp:meta_value>\n\t\t\t</wp:commentmeta>\n\t\t\t\t\t", cdata(&key.unwrap_or_default()), cdata(&value.unwrap_or_default())));
         }
         out.push_str("\t\t</wp:comment>\n\t\t\t");
@@ -351,12 +484,22 @@ async fn item(ctx: &Ctx<'_>, post: &Post) -> String {
 
 /// A `<select>` of the months that have posts of the type (`export_date_options()`).
 async fn date_options(ctx: &Ctx<'_>, post_type: &str) -> String {
-    let months = ctx.env.db.export_months(post_type).await.unwrap_or_default();
+    let months = ctx
+        .env
+        .db
+        .export_months(post_type)
+        .await
+        .unwrap_or_default();
     let site = ctx.site();
     let mut out = String::new();
     for (year, month) in months {
-        let ts = SiteTimezone::utc().local_timestamp(&format!("{year:04}-{month:02}-01 00:00:00")).unwrap_or(0);
-        out.push_str(&format!("<option value=\"{year:04}-{month:02}\">{}</option>", esc_html(&site.date("F Y", ts))));
+        let ts = SiteTimezone::utc()
+            .local_timestamp(&format!("{year:04}-{month:02}-01 00:00:00"))
+            .unwrap_or(0);
+        out.push_str(&format!(
+            "<option value=\"{year:04}-{month:02}\">{}</option>",
+            esc_html(&site.date("F Y", ts))
+        ));
     }
     out
 }
@@ -364,9 +507,21 @@ async fn date_options(ctx: &Ctx<'_>, post_type: &str) -> String {
 /// `wp_dropdown_users()` for the authors of a type.
 async fn author_dropdown(ctx: &Ctx<'_>, post_type: &str, name: &str) -> String {
     let db = ctx.env.db;
-    let mut out = format!("<select name='{name}' class=''>\n\t<option value='0'>{}</option>\n", ctx.tr("All"));
-    for user in db.export_authors_of_type(post_type).await.unwrap_or_default() {
-        out.push_str(&format!("\t<option value='{}'>{} ({})</option>\n", user.id, esc_html(&user.display_name), esc_html(&user.user_login)));
+    let mut out = format!(
+        "<select name='{name}' class=''>\n\t<option value='0'>{}</option>\n",
+        ctx.tr("All")
+    );
+    for user in db
+        .export_authors_of_type(post_type)
+        .await
+        .unwrap_or_default()
+    {
+        out.push_str(&format!(
+            "\t<option value='{}'>{} ({})</option>\n",
+            user.id,
+            esc_html(&user.display_name),
+            esc_html(&user.user_login)
+        ));
     }
     out.push_str("</select>");
     out
@@ -377,9 +532,16 @@ async fn category_dropdown(ctx: &Ctx<'_>) -> String {
     let mut categories = ctx.env.db.terms("category").await.unwrap_or_default();
     categories.retain(|c| c.count > 0);
     categories.sort_by_key(|c| c.term_id);
-    let mut out = format!("<select  name='cat' id='cat' class='postform'>\n\t<option value='0' selected='selected'>{}</option>\n", ctx.tr("All"));
+    let mut out = format!(
+        "<select  name='cat' id='cat' class='postform'>\n\t<option value='0' selected='selected'>{}</option>\n",
+        ctx.tr("All")
+    );
     for t in &categories {
-        out.push_str(&format!("\t<option class=\"level-0\" value=\"{}\">{}</option>\n", t.term_id, esc_html(&t.name)));
+        out.push_str(&format!(
+            "\t<option class=\"level-0\" value=\"{}\">{}</option>\n",
+            t.term_id,
+            esc_html(&t.name)
+        ));
     }
     out.push_str("</select>");
     out
@@ -388,60 +550,164 @@ async fn category_dropdown(ctx: &Ctx<'_>) -> String {
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     if !ctx.can("export") {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", tr("You need a higher level of permission."), tr("Sorry, you are not allowed to export the content of this site.")));
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<h1>{}</h1><p>{}</p>",
+                tr("You need a higher level of permission."),
+                tr("Sorry, you are not allowed to export the content of this site.")
+            ),
+        );
     }
     let request = ctx.request;
     if request.get("download").is_some() {
-        let get = |name: &str| request.get(name).filter(|v| !v.is_empty() && *v != "0").map(str::to_owned);
-        let number = |name: &str| get(name).and_then(|v| v.parse::<u64>().ok()).filter(|v| *v > 0);
+        let get = |name: &str| {
+            request
+                .get(name)
+                .filter(|v| !v.is_empty() && *v != "0")
+                .map(str::to_owned)
+        };
+        let number = |name: &str| {
+            get(name)
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|v| *v > 0)
+        };
         let dates = |kind: &str| {
-            let (start, end) = (get(&format!("{kind}_start_date")), get(&format!("{kind}_end_date")));
-            if start.is_some() || end.is_some() { (start, end) } else { (None, None) }
+            let (start, end) = (
+                get(&format!("{kind}_start_date")),
+                get(&format!("{kind}_end_date")),
+            );
+            if start.is_some() || end.is_some() {
+                (start, end)
+            } else {
+                (None, None)
+            }
         };
         let args = match request.get("content").unwrap_or("all") {
-            "all" | "" => ExportArgs { content: "all".into(), ..Default::default() },
+            "all" | "" => ExportArgs {
+                content: "all".into(),
+                ..Default::default()
+            },
             "posts" => {
                 let (start_date, end_date) = dates("post");
-                ExportArgs { content: "post".into(), category: number("cat"), author: number("post_author"), start_date, end_date, status: get("post_status") }
+                ExportArgs {
+                    content: "post".into(),
+                    category: number("cat"),
+                    author: number("post_author"),
+                    start_date,
+                    end_date,
+                    status: get("post_status"),
+                }
             }
             "pages" => {
                 let (start_date, end_date) = dates("page");
-                ExportArgs { content: "page".into(), category: None, author: number("page_author"), start_date, end_date, status: get("page_status") }
+                ExportArgs {
+                    content: "page".into(),
+                    category: None,
+                    author: number("page_author"),
+                    start_date,
+                    end_date,
+                    status: get("page_status"),
+                }
             }
             "attachment" => {
                 let (start_date, end_date) = dates("attachment");
-                ExportArgs { content: "attachment".into(), start_date, end_date, ..Default::default() }
+                ExportArgs {
+                    content: "attachment".into(),
+                    start_date,
+                    end_date,
+                    ..Default::default()
+                }
             }
-            other => ExportArgs { content: other.to_owned(), ..Default::default() },
+            other => ExportArgs {
+                content: other.to_owned(),
+                ..Default::default()
+            },
         };
         let (filename, xml) = export_wp(ctx, &args).await;
         let mut response = super::ajax::text(200, &xml);
         response.headers = vec![
             ("Content-Description".into(), "File Transfer".into()),
-            ("Content-Disposition".into(), format!("attachment; filename={filename}")),
+            (
+                "Content-Disposition".into(),
+                format!("attachment; filename={filename}"),
+            ),
             ("Content-Type".into(), "text/xml; charset=UTF-8".into()),
         ];
-        response.headers.extend(super::page_headers().into_iter().filter(|(k, _)| !k.eq_ignore_ascii_case("content-type")));
+        response.headers.extend(
+            super::page_headers()
+                .into_iter()
+                .filter(|(k, _)| !k.eq_ignore_ascii_case("content-type")),
+        );
         return response;
     }
 
     let baked = super::pages::load(ctx, "export");
     let mut content = baked.content;
     content = content.replace("{{category_dropdown}}", &category_dropdown(ctx).await);
-    content = content.replace("{{authors:post}}", &author_dropdown(ctx, "post", "post_author").await);
-    content = content.replace("{{authors:page}}", &author_dropdown(ctx, "page", "page_author").await);
+    content = content.replace(
+        "{{authors:post}}",
+        &author_dropdown(ctx, "post", "post_author").await,
+    );
+    content = content.replace(
+        "{{authors:page}}",
+        &author_dropdown(ctx, "page", "page_author").await,
+    );
     for kind in ["post", "page", "attachment"] {
-        content = content.replace(&format!("{{{{months:{kind}}}}}"), &date_options(ctx, kind).await);
+        content = content.replace(
+            &format!("{{{{months:{kind}}}}}"),
+            &date_options(ctx, kind).await,
+        );
     }
     let mut custom = String::new();
-    const CORE_TYPES: &[&str] = &["post", "page", "attachment", "wp_block", "wp_template", "wp_template_part", "wp_navigation", "wp_global_styles", "wp_font_family", "wp_font_face"];
-    for name in exportable_types(ctx).await.iter().filter(|n| !CORE_TYPES.contains(&n.as_str())) {
-        let label = ctx.site().types.post_type(name).or_else(|| ctx.site().types.rewrite_post_types().iter().find(|t| &t.name == name)).and_then(|t| t.label.clone()).unwrap_or_else(|| name.clone());
-        custom.push_str(&format!("<p><label><input type=\"radio\" name=\"content\" value=\"{}\" /> {}</label></p>
-", esc_attr(name), esc_html(&label)));
+    const CORE_TYPES: &[&str] = &[
+        "post",
+        "page",
+        "attachment",
+        "wp_block",
+        "wp_template",
+        "wp_template_part",
+        "wp_navigation",
+        "wp_global_styles",
+        "wp_font_family",
+        "wp_font_face",
+    ];
+    for name in exportable_types(ctx)
+        .await
+        .iter()
+        .filter(|n| !CORE_TYPES.contains(&n.as_str()))
+    {
+        let label = ctx
+            .site()
+            .types
+            .post_type(name)
+            .or_else(|| {
+                ctx.site()
+                    .types
+                    .rewrite_post_types()
+                    .iter()
+                    .find(|t| &t.name == name)
+            })
+            .and_then(|t| t.label.clone())
+            .unwrap_or_else(|| name.clone());
+        custom.push_str(&format!(
+            "<p><label><input type=\"radio\" name=\"content\" value=\"{}\" /> {}</label></p>
+",
+            esc_attr(name),
+            esc_html(&label)
+        ));
     }
     let content = content.replace("{{custom_types}}\n", &custom);
-    let screen = Screen { file: "export.php".into(), parent_file: "tools.php".into(), submenu_file: Some("export.php".into()), title: tr("Export"), help: Some(baked.help), ..Default::default() };
+    let screen = Screen {
+        file: "export.php".into(),
+        parent_file: "tools.php".into(),
+        submenu_file: Some("export.php".into()),
+        title: tr("Export"),
+        help: Some(baked.help),
+        ..Default::default()
+    };
     let assets = Assets {
         head: "<script>\n\tjQuery( function($) {\n\t\tvar form = $('#export-filters'),\n\t\t\tfilters = form.find('.export-filters');\n\t\tfilters.hide();\n\t\tform.find('input:radio').on( 'change', function() {\n\t\t\tfilters.slideUp('fast');\n\t\t\tswitch ( $(this).val() ) {\n\t\t\t\tcase 'attachment': $('#attachment-filters').slideDown(); break;\n\t\t\t\tcase 'posts': $('#post-filters').slideDown(); break;\n\t\t\t\tcase 'pages': $('#page-filters').slideDown(); break;\n\t\t\t}\n\t\t});\n\t} );\n</script>\n".into(),
         ..Default::default()

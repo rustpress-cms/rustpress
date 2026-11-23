@@ -10,7 +10,16 @@ use crate::{Outcome, Resp, Rest};
 fn sanitize(svg: &str) -> String {
     fn allowed(tag: &str) -> Option<&'static [&'static str]> {
         match tag {
-            "svg" => Some(&["class", "xmlns", "width", "height", "viewbox", "aria-hidden", "role", "focusable"]),
+            "svg" => Some(&[
+                "class",
+                "xmlns",
+                "width",
+                "height",
+                "viewbox",
+                "aria-hidden",
+                "role",
+                "focusable",
+            ]),
             "path" => Some(&["fill", "fill-rule", "d", "transform"]),
             "polygon" => Some(&["fill", "fill-rule", "points", "transform", "focusable"]),
             _ => None,
@@ -20,7 +29,9 @@ fn sanitize(svg: &str) -> String {
     let mut rest = svg;
     while let Some(open) = rest.find('<') {
         out.push_str(&rest[..open]);
-        let Some(close) = rest[open..].find('>') else { break };
+        let Some(close) = rest[open..].find('>') else {
+            break;
+        };
         let inner = &rest[open + 1..open + close];
         rest = &rest[open + close + 1..];
         if let Some(name) = inner.strip_prefix('/') {
@@ -33,12 +44,16 @@ fn sanitize(svg: &str) -> String {
         let inner = inner.trim_end().trim_end_matches('/');
         let name_end = inner.find(char::is_whitespace).unwrap_or(inner.len());
         let name = inner[..name_end].to_ascii_lowercase();
-        let Some(attrs) = allowed(&name) else { continue };
+        let Some(attrs) = allowed(&name) else {
+            continue;
+        };
         out.push('<');
         out.push_str(&name);
         let mut tail = inner[name_end..].trim_start();
         while !tail.is_empty() {
-            let key_end = tail.find(|c: char| c == '=' || c.is_whitespace()).unwrap_or(tail.len());
+            let key_end = tail
+                .find(|c: char| c == '=' || c.is_whitespace())
+                .unwrap_or(tail.len());
             let key = tail[..key_end].to_ascii_lowercase();
             tail = tail[key_end..].trim_start();
             let mut value = String::new();
@@ -67,7 +82,12 @@ fn sanitize(svg: &str) -> String {
 impl Rest<'_> {
     /// The icons in manifest order, as `WP_REST_Icons_Controller` returns them.
     fn icons(&self) -> Vec<Value> {
-        let manifest = std::fs::read_to_string(self.theme.wp_root.join("wp-includes/assets/icon-library-manifest.php")).unwrap_or_default();
+        let manifest = std::fs::read_to_string(
+            self.theme
+                .wp_root
+                .join("wp-includes/assets/icon-library-manifest.php"),
+        )
+        .unwrap_or_default();
         let dir = self.theme.wp_root.join("wp-includes/images/icon-library");
         let mut out = Vec::new();
         let (mut name, mut label) = (String::new(), String::new());
@@ -81,7 +101,9 @@ impl Rest<'_> {
                 label = rest.split('\'').nth(1).unwrap_or_default().to_owned();
             } else if let Some(rest) = line.strip_prefix("'filePath'") {
                 let file = rest.split('\'').nth(1).unwrap_or_default();
-                let Ok(svg) = std::fs::read_to_string(dir.join(file)) else { continue };
+                let Ok(svg) = std::fs::read_to_string(dir.join(file)) else {
+                    continue;
+                };
                 out.push(json!({
                     "name": format!("core/{name}"),
                     "label": self.site.trx(&label, "icon label"),
@@ -95,7 +117,12 @@ impl Rest<'_> {
 
     pub(super) fn icons_route(&self, segments: &[&str], args: &Args) -> Outcome {
         if !self.can("edit_posts") {
-            return Err(self.forbidden("rest_cannot_view", &self.site.tr("Sorry, you are not allowed to view the registered icons.")));
+            return Err(self.forbidden(
+                "rest_cannot_view",
+                &self
+                    .site
+                    .tr("Sorry, you are not allowed to view the registered icons."),
+            ));
         }
         let icons = self.icons();
         match segments {
@@ -104,24 +131,56 @@ impl Rest<'_> {
                 if *slug == "core" {
                     Ok(Resp::item(self.icon_collection()))
                 } else {
-                    Err(RestError::new("rest_icon_collection_not_found", &self.site.tr("Icon collection not found: \"%s\".").replace("%s", slug), 404))
+                    Err(RestError::new(
+                        "rest_icon_collection_not_found",
+                        &self
+                            .site
+                            .tr("Icon collection not found: \"%s\".")
+                            .replace("%s", slug),
+                        404,
+                    ))
                 }
             }
-            ["wp", "v2", "icons"] => Ok(Resp::item(Value::Array(self.filter_icons(icons, None, args.str("search").as_deref())))),
+            ["wp", "v2", "icons"] => Ok(Resp::item(Value::Array(self.filter_icons(
+                icons,
+                None,
+                args.str("search").as_deref(),
+            )))),
             ["wp", "v2", "icons", collection] => {
                 if *collection != "core" {
-                    return Err(RestError::new("rest_icon_collection_not_found", &self.site.tr("Icon collection not found: \"%s\".").replace("%s", collection), 404));
+                    return Err(RestError::new(
+                        "rest_icon_collection_not_found",
+                        &self
+                            .site
+                            .tr("Icon collection not found: \"%s\".")
+                            .replace("%s", collection),
+                        404,
+                    ));
                 }
-                Ok(Resp::item(Value::Array(self.filter_icons(icons, Some(collection), args.str("search").as_deref()))))
+                Ok(Resp::item(Value::Array(self.filter_icons(
+                    icons,
+                    Some(collection),
+                    args.str("search").as_deref(),
+                ))))
             }
             ["wp", "v2", "icons", collection, name] => {
                 let full = format!("{collection}/{name}");
                 match icons.into_iter().find(|i| i["name"] == full) {
                     Some(icon) => Ok(Resp::item(icon)),
-                    None => Err(RestError::new("rest_icon_not_found", &self.site.tr("Icon not found: \"%s\".").replace("%s", &full), 404)),
+                    None => Err(RestError::new(
+                        "rest_icon_not_found",
+                        &self.site.tr("Icon not found: \"%s\".").replace("%s", &full),
+                        404,
+                    )),
                 }
             }
-            _ => Err(RestError::new("rest_no_route", &self.site.tr("No route was found matching the URL and request method."), 404)),
+            _ => Err(RestError::new(
+                "rest_no_route",
+                &self
+                    .site
+                    .tr("No route was found matching the URL and request method."),
+                404,
+            )),
         }
     }
 
@@ -129,12 +188,30 @@ impl Rest<'_> {
         json!({"slug": "core", "label": self.site.tr("WordPress"), "description": self.site.tr("Default icon collection.")})
     }
 
-    fn filter_icons(&self, icons: Vec<Value>, collection: Option<&str>, search: Option<&str>) -> Vec<Value> {
+    fn filter_icons(
+        &self,
+        icons: Vec<Value>,
+        collection: Option<&str>,
+        search: Option<&str>,
+    ) -> Vec<Value> {
         let search = search.map(str::to_lowercase).filter(|s| !s.is_empty());
         icons
             .into_iter()
             .filter(|i| collection.is_none_or(|c| i["collection"] == c))
-            .filter(|i| search.as_ref().is_none_or(|s| i["name"].as_str().unwrap_or_default().to_lowercase().contains(s) || i["label"].as_str().unwrap_or_default().to_lowercase().contains(s)))
+            .filter(|i| {
+                search.as_ref().is_none_or(|s| {
+                    i["name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(s)
+                        || i["label"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_lowercase()
+                            .contains(s)
+                })
+            })
             .collect()
     }
 }

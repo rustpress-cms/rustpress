@@ -34,10 +34,17 @@ fn message(site: &Site, body: &str) -> (String, Vec<String>, bool) {
     while let Some(start) = rest.find('⟪') {
         id.push_str(&rest[..start]);
         let inner = start + '⟪'.len_utf8();
-        let Some(end) = closing(rest, inner, '⟪', '⟫') else { break };
-        let (conversion, value) = rest[inner..end].split_once('¦').unwrap_or((&rest[inner..end], ""));
+        let Some(end) = closing(rest, inner, '⟪', '⟫') else {
+            break;
+        };
+        let (conversion, value) = rest[inner..end]
+            .split_once('¦')
+            .unwrap_or((&rest[inner..end], ""));
         // Without `printf()` the format stayed: `%%s` and `%s`, `%%%%` and `%%`.
-        match (conversion, conversion.strip_prefix('%').filter(|c| c.starts_with('%'))) {
+        match (
+            conversion,
+            conversion.strip_prefix('%').filter(|c| c.starts_with('%')),
+        ) {
             ("%%%%", _) => id.push_str("%%"),
             ("%%", _) => {
                 id.push_str(conversion);
@@ -47,7 +54,11 @@ fn message(site: &Site, body: &str) -> (String, Vec<String>, bool) {
             _ => {
                 id.push_str(conversion);
                 printed = true;
-                let index = conversion[1..].split('$').next().and_then(|n| n.parse().ok()).unwrap_or(values.len() + 1);
+                let index = conversion[1..]
+                    .split('$')
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(values.len() + 1);
                 values.push((index, translate(site, value)));
             }
         }
@@ -55,7 +66,11 @@ fn message(site: &Site, body: &str) -> (String, Vec<String>, bool) {
     }
     id.push_str(rest);
     values.sort_by_key(|(index, _)| *index);
-    (id, values.into_iter().map(|(_, value)| value).collect(), printed)
+    (
+        id,
+        values.into_iter().map(|(_, value)| value).collect(),
+        printed,
+    )
 }
 
 /// Prints a baked template in the language of `site`.
@@ -65,19 +80,41 @@ pub fn translate(site: &Site, template: &str) -> String {
     while let Some(start) = rest.find('⟦') {
         out.push_str(&rest[..start]);
         let inner = start + '⟦'.len_utf8();
-        let Some(end) = closing(rest, inner, '⟦', '⟧') else { break };
+        let Some(end) = closing(rest, inner, '⟦', '⟧') else {
+            break;
+        };
         let mut parts = rest[inner..end].splitn(3, '¦');
-        let (kind, context, body) = (parts.next().unwrap_or("r"), parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
+        let (kind, context, body) = (
+            parts.next().unwrap_or("r"),
+            parts.next().unwrap_or_default(),
+            parts.next().unwrap_or_default(),
+        );
         let (id, values, printed) = message(site, body);
         // An escaped mark holds the characters `esc_html()` encodes; other entities are part of the message.
-        let unescaped = |id: &str| if kind == "r" || kind == "n" { id.to_owned() } else { id.replace("&quot;", "\"").replace("&#039;", "'").replace("&lt;", "<").replace("&gt;", ">") };
+        let unescaped = |id: &str| {
+            if kind == "r" || kind == "n" {
+                id.to_owned()
+            } else {
+                id.replace("&quot;", "\"")
+                    .replace("&#039;", "'")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+            }
+        };
         let id = unescaped(&id);
         let mut plural = context.split('¶');
         let text = match (plural.next(), plural.next(), plural.next(), plural.next()) {
             (Some(context), Some(one), Some(many), Some(number)) => {
-                let (one, many) = (unescaped(&one.replace('％', "%")), unescaped(&many.replace('％', "%")));
+                let (one, many) = (
+                    unescaped(&one.replace('％', "%")),
+                    unescaped(&many.replace('％', "%")),
+                );
                 let number = number.parse().unwrap_or(0);
-                if context.is_empty() { site.trn(&one, &many, number) } else { site.trnx(&one, &many, number, context) }
+                if context.is_empty() {
+                    site.trn(&one, &many, number)
+                } else {
+                    site.trnx(&one, &many, number, context)
+                }
             }
             _ if context.is_empty() => site.tr(&id),
             _ => site.trx(&id, context),
@@ -85,8 +122,16 @@ pub fn translate(site: &Site, template: &str) -> String {
         // `esc_html()` encodes an ampersand, too, unless the message holds an entity already.
         let text = if text == id && kind != "r" && id.contains("&amp;") {
             let plain = id.replace("&amp;", "&");
-            let translated = if context.is_empty() { site.tr(&plain) } else { site.trx(&plain, context) };
-            if translated == plain { text } else { translated }
+            let translated = if context.is_empty() {
+                site.tr(&plain)
+            } else {
+                site.trx(&plain, context)
+            };
+            if translated == plain {
+                text
+            } else {
+                translated
+            }
         } else {
             text
         };
@@ -100,7 +145,13 @@ pub fn translate(site: &Site, template: &str) -> String {
             "h" | "N" => esc_html(&text),
             "a" | "A" => esc_attr(&text),
             // `wp_json_encode()`, quotes and all.
-            "j" => rustpress_blocks::php_json::encode_with(&serde_json::Value::String(text), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false }),
+            "j" => rustpress_blocks::php_json::encode_with(
+                &serde_json::Value::String(text),
+                rustpress_blocks::php_json::Flags {
+                    unescaped_slashes: false,
+                    unescaped_unicode: false,
+                },
+            ),
             _ => text,
         });
         rest = &rest[end + '⟧'.len_utf8()..];

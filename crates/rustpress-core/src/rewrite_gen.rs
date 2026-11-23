@@ -95,7 +95,11 @@ impl Tags {
             ("%pagename%", "([^/]+?)", "pagename="),
             ("%search%", "(.+)", "s="),
         ];
-        Self { code: pairs.iter().map(|p| p.0.to_owned()).collect(), replace: pairs.iter().map(|p| p.1.to_owned()).collect(), query: pairs.iter().map(|p| p.2.to_owned()).collect() }
+        Self {
+            code: pairs.iter().map(|p| p.0.to_owned()).collect(),
+            replace: pairs.iter().map(|p| p.1.to_owned()).collect(),
+            query: pairs.iter().map(|p| p.2.to_owned()).collect(),
+        }
     }
 
     /// `add_rewrite_tag()`.
@@ -130,7 +134,9 @@ fn tokens(text: &str) -> Vec<&str> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%'
-            && let Some(offset) = bytes.get(i + 2..).and_then(|rest| rest.iter().position(|&b| b == b'%'))
+            && let Some(offset) = bytes
+                .get(i + 2..)
+                .and_then(|rest| rest.iter().position(|&b| b == b'%'))
         {
             let end = i + 2 + offset;
             out.push(&text[i..=end]);
@@ -162,7 +168,15 @@ impl Generator<'_> {
     }
 
     /// `generate_rewrite_rules()` without endpoints (core registers none).
-    fn generate(&self, permalink_structure: &str, ep_mask: u32, paged: bool, feed: bool, for_comments: bool, walk_dirs: bool) -> Rules {
+    fn generate(
+        &self,
+        permalink_structure: &str,
+        ep_mask: u32,
+        paged: bool,
+        feed: bool,
+        for_comments: bool,
+        walk_dirs: bool,
+    ) -> Rules {
         let feedregex2 = Self::feed_regex2();
         let feedregex = format!("feed/{feedregex2}");
         let trackbackregex = "trackback/?$";
@@ -170,11 +184,17 @@ impl Generator<'_> {
         let commentregex = "comment-page-([0-9]{1,})/?$";
         let embedregex = "embed/?$";
 
-        let front = permalink_structure.find('%').map_or("", |at| &permalink_structure[..at]);
+        let front = permalink_structure
+            .find('%')
+            .map_or("", |at| &permalink_structure[..at]);
         let toks = tokens(permalink_structure);
         let mut queries: Vec<String> = Vec::new();
         for (i, token) in toks.iter().enumerate() {
-            let mut query = if i > 0 { format!("{}&", queries[i - 1]) } else { String::new() };
+            let mut query = if i > 0 {
+                format!("{}&", queries[i - 1])
+            } else {
+                String::new()
+            };
             query.push_str(&self.tags.replace_in(&self.tags.query, token));
             query.push_str(&preg_index(i + 1));
             queries.push(query);
@@ -184,7 +204,11 @@ impl Generator<'_> {
             structure = structure.replace(front, "");
         }
         let structure = structure.trim_matches('/').to_owned();
-        let dirs: Vec<&str> = if walk_dirs { structure.split('/').collect() } else { vec![structure.as_str()] };
+        let dirs: Vec<&str> = if walk_dirs {
+            structure.split('/').collect()
+        } else {
+            vec![structure.as_str()]
+        };
         let front = front.trim_start_matches('/');
 
         let mut post_rewrite = Rules::default();
@@ -196,13 +220,21 @@ impl Generator<'_> {
             struct_ = struct_trimmed;
             let m = self.tags.replace_in(&self.tags.replace, &struct_);
             let num_toks = tokens(&struct_).len();
-            let query = if num_toks > 0 { queries.get(num_toks - 1).cloned().unwrap_or_default() } else { String::new() };
+            let query = if num_toks > 0 {
+                queries.get(num_toks - 1).cloned().unwrap_or_default()
+            } else {
+                String::new()
+            };
 
             let pagematch = format!("{m}{pageregex}");
             let pagequery = format!("{INDEX}?{query}&paged={}", preg_index(num_toks + 1));
             let commentmatch = format!("{m}{commentregex}");
             let commentquery = format!("{INDEX}?{query}&cpage={}", preg_index(num_toks + 1));
-            let rootcommentquery = format!("{INDEX}?{query}&page_id={}&cpage={}", self.input.page_on_front, preg_index(num_toks + 1));
+            let rootcommentquery = format!(
+                "{INDEX}?{query}&page_id={}&cpage={}",
+                self.input.page_on_front,
+                preg_index(num_toks + 1)
+            );
             let mut feedquery = format!("{INDEX}?{query}&feed={}", preg_index(num_toks + 1));
             let mut feedquery2 = feedquery.clone();
             let feedmatch = format!("{m}{feedregex}");
@@ -216,7 +248,11 @@ impl Generator<'_> {
 
             let mut rewrite = Rules::default();
             if feed {
-                rewrite = Rules::of(&[(feedmatch, feedquery), (feedmatch2, feedquery2), (embedmatch, embedquery.clone())]);
+                rewrite = Rules::of(&[
+                    (feedmatch, feedquery),
+                    (feedmatch2, feedquery2),
+                    (embedmatch, embedquery.clone()),
+                ]);
             }
             if paged {
                 rewrite = rewrite.merge(Rules::of(&[(pagematch, pagequery)]));
@@ -224,20 +260,37 @@ impl Generator<'_> {
             if ep_mask & EP_PAGES != 0 || ep_mask & EP_PERMALINK != 0 {
                 rewrite = rewrite.merge(Rules::of(&[(commentmatch, commentquery)]));
             } else if ep_mask & EP_ROOT != 0 && self.input.page_on_front != 0 {
-                rewrite = rewrite.merge(Rules::of(&[(format!("{m}{commentregex}"), rootcommentquery)]));
+                rewrite = rewrite.merge(Rules::of(&[(
+                    format!("{m}{commentregex}"),
+                    rootcommentquery,
+                )]));
             }
 
             if num_toks > 0 {
                 let mut post = false;
                 let mut page = false;
                 let has = |tag: &str| struct_.contains(tag);
-                if has("%postname%") || has("%post_id%") || has("%pagename%") || (has("%year%") && has("%monthnum%") && has("%day%") && has("%hour%") && has("%minute%") && has("%second%")) {
+                if has("%postname%")
+                    || has("%post_id%")
+                    || has("%pagename%")
+                    || (has("%year%")
+                        && has("%monthnum%")
+                        && has("%day%")
+                        && has("%hour%")
+                        && has("%minute%")
+                        && has("%second%"))
+                {
                     post = true;
                     if has("%pagename%") {
                         page = true;
                     }
                 }
-                if !post && let Some((_, hierarchical)) = self.post_types.iter().find(|(name, _)| struct_.contains(&format!("%{name}%"))) {
+                if !post
+                    && let Some((_, hierarchical)) = self
+                        .post_types
+                        .iter()
+                        .find(|(name, _)| struct_.contains(&format!("%{name}%")))
+                {
                     post = true;
                     page = *hierarchical;
                 }
@@ -289,16 +342,35 @@ impl Generator<'_> {
 impl<'a> Generator<'a> {
     fn new(input: &'a RewriteInput<'a>) -> Self {
         let structure = input.permalink_structure;
-        let front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
+        let front = structure
+            .find('%')
+            .map_or("", |at| &structure[..at])
+            .to_owned();
         let using_index = structure.trim_start_matches('/').starts_with(INDEX);
-        let root = if using_index { format!("{INDEX}/") } else { String::new() };
-        let mut post_types: Vec<(String, bool)> = input.types.rewrite_types().into_iter().filter(|t| !t.taxonomy).map(|t| (t.name, t.hierarchical)).collect();
+        let root = if using_index {
+            format!("{INDEX}/")
+        } else {
+            String::new()
+        };
+        let mut post_types: Vec<(String, bool)> = input
+            .types
+            .rewrite_types()
+            .into_iter()
+            .filter(|t| !t.taxonomy)
+            .map(|t| (t.name, t.hierarchical))
+            .collect();
         for info in input.types.rewrite_post_types() {
             if !post_types.iter().any(|(name, _)| name == &info.name) {
                 post_types.push((info.name.clone(), info.hierarchical));
             }
         }
-        Self { input, tags: Tags::core(), front, root, post_types }
+        Self {
+            input,
+            tags: Tags::core(),
+            front,
+            root,
+            post_types,
+        }
     }
 
     fn using_index_permalinks(&self) -> bool {
@@ -311,8 +383,16 @@ impl<'a> Generator<'a> {
         if structure.is_empty() {
             return String::new();
         }
-        let endians = ["%year%/%monthnum%/%day%", "%day%/%monthnum%/%year%", "%monthnum%/%day%/%year%"];
-        let endian = endians.iter().find(|e| structure.contains(**e)).copied().unwrap_or(endians[0]);
+        let endians = [
+            "%year%/%monthnum%/%day%",
+            "%day%/%monthnum%/%year%",
+            "%monthnum%/%day%/%year%",
+        ];
+        let endian = endians
+            .iter()
+            .find(|e| structure.contains(**e))
+            .copied()
+            .unwrap_or(endians[0]);
         let mut front = self.front.clone();
         for (index, token) in tokens(structure).iter().enumerate() {
             if *token == "%post_id%" && index < 3 {
@@ -335,9 +415,20 @@ impl<'a> Generator<'a> {
     }
 
     /// `add_permastruct()` with `with_front`.
-    fn permastruct(&self, name: &str, slug: &str, with_front: bool, ep_mask: u32, feed: bool) -> Permastruct {
+    fn permastruct(
+        &self,
+        name: &str,
+        slug: &str,
+        with_front: bool,
+        ep_mask: u32,
+        feed: bool,
+    ) -> Permastruct {
         let prefix = if with_front { &self.front } else { &self.root };
-        Permastruct { struct_: format!("{prefix}{slug}/%{name}%"), ep_mask, feed }
+        Permastruct {
+            struct_: format!("{prefix}{slug}/%{name}%"),
+            ep_mask,
+            feed,
+        }
     }
 }
 
@@ -349,7 +440,10 @@ pub fn rewrite_rules(input: &RewriteInput<'_>) -> Vec<(String, String)> {
 /// [`rewrite_rules`] with the `$wp_rewrite->extra_rules_top` an earlier flush of the same request left (`persisted`):
 /// the rules of the permastructs went into it then, and keep their places. Also gives `extra_rules_top` after this
 /// flush.
-fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Vec<(String, String)>, Rules) {
+fn rewrite_rules_from(
+    input: &RewriteInput<'_>,
+    persisted: Option<Rules>,
+) -> (Vec<(String, String)>, Rules) {
     if input.permalink_structure.is_empty() {
         return (Vec::new(), Rules::default());
     }
@@ -358,16 +452,33 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
     let mut extra: Vec<Permastruct> = Vec::new();
 
     // `rest_api_register_rewrites()` and the sitemaps.
-    for (regex, query) in [("^wp-json/?$", "index.php?rest_route=/"), ("^wp-json/(.*)?", "index.php?rest_route=/$matches[1]"), ("^index.php/wp-json/?$", "index.php?rest_route=/"), ("^index.php/wp-json/(.*)?", "index.php?rest_route=/$matches[1]")] {
+    for (regex, query) in [
+        ("^wp-json/?$", "index.php?rest_route=/"),
+        ("^wp-json/(.*)?", "index.php?rest_route=/$matches[1]"),
+        ("^index.php/wp-json/?$", "index.php?rest_route=/"),
+        (
+            "^index.php/wp-json/(.*)?",
+            "index.php?rest_route=/$matches[1]",
+        ),
+    ] {
         top.set(regex.to_owned(), query.to_owned());
     }
     if input.blog_public {
         for (regex, query) in [
             (r"^wp-sitemap\.xml$", "index.php?sitemap=index"),
             (r"^wp-sitemap\.xsl$", "index.php?sitemap-stylesheet=sitemap"),
-            (r"^wp-sitemap-index\.xsl$", "index.php?sitemap-stylesheet=index"),
-            (r"^wp-sitemap-([a-z]+?)-([a-z\d_-]+?)-(\d+?)\.xml$", "index.php?sitemap=$matches[1]&sitemap-subtype=$matches[2]&paged=$matches[3]"),
-            (r"^wp-sitemap-([a-z]+?)-(\d+?)\.xml$", "index.php?sitemap=$matches[1]&paged=$matches[2]"),
+            (
+                r"^wp-sitemap-index\.xsl$",
+                "index.php?sitemap-stylesheet=index",
+            ),
+            (
+                r"^wp-sitemap-([a-z]+?)-([a-z\d_-]+?)-(\d+?)\.xml$",
+                "index.php?sitemap=$matches[1]&sitemap-subtype=$matches[2]&paged=$matches[3]",
+            ),
+            (
+                r"^wp-sitemap-([a-z]+?)-(\d+?)\.xml$",
+                "index.php?sitemap=$matches[1]&paged=$matches[2]",
+            ),
         ] {
             top.set(regex.to_owned(), query.to_owned());
         }
@@ -378,9 +489,29 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
     let category_base = taxonomy_base(input.category_base);
     let tag_base = taxonomy_base(input.tag_base);
     let using_index = g.using_index_permalinks();
-    extra.push(g.permastruct("category", if category_base.is_empty() { "category" } else { &category_base }, category_base.is_empty() || using_index, EP_CATEGORIES, true));
+    extra.push(g.permastruct(
+        "category",
+        if category_base.is_empty() {
+            "category"
+        } else {
+            &category_base
+        },
+        category_base.is_empty() || using_index,
+        EP_CATEGORIES,
+        true,
+    ));
     g.tags.add("%post_tag%", "([^/]+)", "tag=");
-    extra.push(g.permastruct("post_tag", if tag_base.is_empty() { "tag" } else { &tag_base }, tag_base.is_empty() || using_index, EP_TAGS, true));
+    extra.push(g.permastruct(
+        "post_tag",
+        if tag_base.is_empty() {
+            "tag"
+        } else {
+            &tag_base
+        },
+        tag_base.is_empty() || using_index,
+        EP_TAGS,
+        true,
+    ));
     g.tags.add("%post_format%", "([^/]+)", "post_format=");
     extra.push(g.permastruct("post_format", "type", true, EP_NONE, true));
 
@@ -395,7 +526,11 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
                 (slug.trim_matches('/').to_owned(), with_front)
             }
         };
-        let regex = if rtype.hierarchical { "(.+?)" } else { "([^/]+)" };
+        let regex = if rtype.hierarchical {
+            "(.+?)"
+        } else {
+            "([^/]+)"
+        };
         let query = match &rtype.query_var {
             Some(var) => format!("{var}="),
             None if rtype.taxonomy => format!("taxonomy={}&term=", rtype.name),
@@ -410,19 +545,43 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
                 Some(false) => format!("{}{archive}", g.root),
                 None => {
                     let (base, _) = g.without_old_front(archive);
-                    format!("{}{}", if with_front { g.front.trim_start_matches('/') } else { "" }, base.trim_matches('/'))
+                    format!(
+                        "{}{}",
+                        if with_front {
+                            g.front.trim_start_matches('/')
+                        } else {
+                            ""
+                        },
+                        base.trim_matches('/')
+                    )
                 }
             };
             let name = &rtype.name;
             let feeds = FEEDS.join("|");
-            let target = if rtype.early { &mut early_top } else { &mut top };
-            target.set(format!("{archive_slug}/?$"), format!("index.php?post_type={name}"));
+            let target = if rtype.early {
+                &mut early_top
+            } else {
+                &mut top
+            };
+            target.set(
+                format!("{archive_slug}/?$"),
+                format!("index.php?post_type={name}"),
+            );
             if rtype.feeds {
-                target.set(format!("{archive_slug}/feed/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
-                target.set(format!("{archive_slug}/({feeds})/?$"), format!("index.php?post_type={name}&feed=$matches[1]"));
+                target.set(
+                    format!("{archive_slug}/feed/({feeds})/?$"),
+                    format!("index.php?post_type={name}&feed=$matches[1]"),
+                );
+                target.set(
+                    format!("{archive_slug}/({feeds})/?$"),
+                    format!("index.php?post_type={name}&feed=$matches[1]"),
+                );
             }
             if rtype.pages {
-                target.set(format!("{archive_slug}/page/([0-9]{{1,}})/?$"), format!("index.php?post_type={name}&paged=$matches[1]"));
+                target.set(
+                    format!("{archive_slug}/page/([0-9]{{1,}})/?$"),
+                    format!("index.php?post_type={name}&paged=$matches[1]"),
+                );
             }
         }
         extra.push(g.permastruct(&rtype.name, &slug, with_front, rtype.ep_mask, rtype.feeds));
@@ -442,23 +601,67 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
         Default::default()
     };
     let deprecated = Rules::of(&[
-        (r".*wp-(atom|rdf|rss|rss2|feed|commentsrss2)\.php$".to_owned(), format!("{INDEX}?feed=old")),
-        (r".*wp-app\.php(/.*)?$".to_owned(), format!("{INDEX}?error=403")),
+        (
+            r".*wp-(atom|rdf|rss|rss2|feed|commentsrss2)\.php$".to_owned(),
+            format!("{INDEX}?feed=old"),
+        ),
+        (
+            r".*wp-app\.php(/.*)?$".to_owned(),
+            format!("{INDEX}?error=403"),
+        ),
     ]);
-    let registration = Rules::of(&[(r".*wp-register.php$".to_owned(), format!("{INDEX}?register=true"))]);
+    let registration = Rules::of(&[(
+        r".*wp-register.php$".to_owned(),
+        format!("{INDEX}?register=true"),
+    )]);
 
     let structure = input.permalink_structure;
     let post_rewrite = g.generate(structure, EP_PERMALINK, true, true, false, true);
     let date_rewrite = g.generate(&g.date_permastruct(), EP_DATE, true, true, false, true);
     let root_rewrite = g.generate(&format!("{}/", g.root), EP_ROOT, true, true, false, true);
-    let comments_rewrite = g.generate(&format!("{}comments", g.root), EP_COMMENTS, false, true, true, false);
-    let search_rewrite = g.generate(&format!("{}search/%search%", g.root), EP_SEARCH, true, true, false, true);
-    let author_rewrite = g.generate(&format!("{}author/%author%", g.front), EP_AUTHORS, true, true, false, true);
+    let comments_rewrite = g.generate(
+        &format!("{}comments", g.root),
+        EP_COMMENTS,
+        false,
+        true,
+        true,
+        false,
+    );
+    let search_rewrite = g.generate(
+        &format!("{}search/%search%", g.root),
+        EP_SEARCH,
+        true,
+        true,
+        false,
+        true,
+    );
+    let author_rewrite = g.generate(
+        &format!("{}author/%author%", g.front),
+        EP_AUTHORS,
+        true,
+        true,
+        false,
+        true,
+    );
     g.tags.add("%pagename%", "(.?.+?)", "pagename=");
-    let page_rewrite = g.generate(&format!("{}%pagename%", g.root), EP_PAGES, true, true, false, false);
+    let page_rewrite = g.generate(
+        &format!("{}%pagename%", g.root),
+        EP_PAGES,
+        true,
+        true,
+        false,
+        false,
+    );
 
     for permastruct in &extra {
-        let rules = g.generate(&permastruct.struct_, permastruct.ep_mask, true, permastruct.feed, false, true);
+        let rules = g.generate(
+            &permastruct.struct_,
+            permastruct.ep_mask,
+            true,
+            permastruct.feed,
+            false,
+            true,
+        );
         top = top.merge(rules);
     }
     let extra_rules_top = top.clone();
@@ -467,10 +670,26 @@ fn rewrite_rules_from(input: &RewriteInput<'_>, persisted: Option<Rules>) -> (Ve
     let verbose_page_rules = {
         let before = structure.find('%').unwrap_or(structure.len());
         let rest = &structure[before..];
-        ["%postname%", "%category%", "%tag%", "%author%"].iter().any(|t| rest.starts_with(t))
+        ["%postname%", "%category%", "%tag%", "%author%"]
+            .iter()
+            .any(|t| rest.starts_with(t))
     };
-    let mut rules = top.merge(robots).merge(favicon).merge(sitemap).merge(deprecated).merge(registration).merge(root_rewrite).merge(comments_rewrite).merge(search_rewrite).merge(author_rewrite).merge(date_rewrite);
-    rules = if verbose_page_rules { rules.merge(page_rewrite).merge(post_rewrite) } else { rules.merge(post_rewrite).merge(page_rewrite) };
+    let mut rules = top
+        .merge(robots)
+        .merge(favicon)
+        .merge(sitemap)
+        .merge(deprecated)
+        .merge(registration)
+        .merge(root_rewrite)
+        .merge(comments_rewrite)
+        .merge(search_rewrite)
+        .merge(author_rewrite)
+        .merge(date_rewrite);
+    rules = if verbose_page_rules {
+        rules.merge(page_rewrite).merge(post_rewrite)
+    } else {
+        rules.merge(post_rewrite).merge(page_rewrite)
+    };
     (rules.0, extra_rules_top)
 }
 
@@ -479,12 +698,23 @@ pub fn taxonomy_base(base: &str) -> String {
     if base.is_empty() {
         return String::new();
     }
-    base.strip_prefix("/index.php/").unwrap_or(base).trim_matches('/').to_owned()
+    base.strip_prefix("/index.php/")
+        .unwrap_or(base)
+        .trim_matches('/')
+        .to_owned()
 }
 
 /// The option value: `serialize( array( regex => query ) )`.
 pub fn serialize_rules(rules: &[(String, String)]) -> String {
-    let items = rules.iter().map(|(k, v)| (Key::Str(k.clone().into_bytes()), Value::Str(v.clone().into_bytes()))).collect();
+    let items = rules
+        .iter()
+        .map(|(k, v)| {
+            (
+                Key::Str(k.clone().into_bytes()),
+                Value::Str(v.clone().into_bytes()),
+            )
+        })
+        .collect();
     String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(items))).into_owned()
 }
 
@@ -501,7 +731,12 @@ pub struct Reregistered<'a> {
 /// (`site`, the snapshot it started with), then the plugin's `unregister_*()` and register call – the new arguments
 /// come from a fresh snapshot of the site under `wp_root`, the type comes last – into `rewrite_rules`. A type the
 /// plugin renamed keeps its old registration until the next request, as in WordPress.
-pub async fn flush_rewrite_rules(site: &crate::Site, writer: &rustpress_db::Writer, wp_root: &std::path::Path, change: Reregistered<'_>) -> crate::Result<()> {
+pub async fn flush_rewrite_rules(
+    site: &crate::Site,
+    writer: &rustpress_db::Writer,
+    wp_root: &std::path::Path,
+    change: Reregistered<'_>,
+) -> crate::Result<()> {
     flush_rewrite_rules_after(site, writer, wp_root, &[change]).await
 }
 
@@ -509,15 +744,29 @@ pub async fn flush_rewrite_rules(site: &crate::Site, writer: &rustpress_db::Writ
 /// import, a bulk action): `$wp_rewrite->extra_rules_top` lives on from one flush to the next – the rules of the
 /// permastructs keep the places the first flush gave them, `unregister_post_type()` takes out the archive rules and
 /// registering again adds them at the end.
-pub async fn flush_rewrite_rules_after(site: &crate::Site, writer: &rustpress_db::Writer, wp_root: &std::path::Path, changes: &[Reregistered<'_>]) -> crate::Result<()> {
+pub async fn flush_rewrite_rules_after(
+    site: &crate::Site,
+    writer: &rustpress_db::Writer,
+    wp_root: &std::path::Path,
+    changes: &[Reregistered<'_>],
+) -> crate::Result<()> {
     let mut fresh = crate::Site::load_at(site.db.clone(), wp_root).await?;
     let registered = fresh.types.rewrite_types();
     fresh.types = site.types.clone();
     let mut persisted: Option<Rules> = None;
     let mut rules = Vec::new();
     for change in changes {
-        let again = if change.active { registered.iter().find(|t| t.taxonomy == change.taxonomy && t.name == change.name).cloned() } else { None };
-        fresh.types.register_again(change.taxonomy, change.name, again.clone());
+        let again = if change.active {
+            registered
+                .iter()
+                .find(|t| t.taxonomy == change.taxonomy && t.name == change.name)
+                .cloned()
+        } else {
+            None
+        };
+        fresh
+            .types
+            .register_again(change.taxonomy, change.name, again.clone());
         let archive = format!("index.php?post_type={}", change.name);
         if let Some(top) = persisted.as_mut()
             && !change.taxonomy
@@ -533,11 +782,16 @@ pub async fn flush_rewrite_rules_after(site: &crate::Site, writer: &rustpress_db
                 }
             }
         }
-        let (flushed, top) = with_input(&fresh, |input| rewrite_rules_from(input, persisted.take()));
+        let (flushed, top) =
+            with_input(&fresh, |input| rewrite_rules_from(input, persisted.take()));
         rules = flushed;
         persisted = Some(top);
     }
-    let serialized = if rules.is_empty() { String::new() } else { serialize_rules(&rules) };
+    let serialized = if rules.is_empty() {
+        String::new()
+    } else {
+        serialize_rules(&rules)
+    };
     writer.update_option("rewrite_rules", &serialized).await?;
     Ok(())
 }
@@ -545,7 +799,10 @@ pub async fn flush_rewrite_rules_after(site: &crate::Site, writer: &rustpress_db
 /// The [`RewriteInput`] of a site's options and types.
 fn with_input<T>(site: &crate::Site, f: impl FnOnce(&RewriteInput<'_>) -> T) -> T {
     let structure = site.options.string("permalink_structure", "");
-    let front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
+    let front = structure
+        .find('%')
+        .map_or("", |at| &structure[..at])
+        .to_owned();
     let home = site.settings.home.trim_end_matches('/');
     let category_base = site.options.string("category_base", "");
     let tag_base = site.options.string("tag_base", "");
@@ -555,7 +812,9 @@ fn with_input<T>(site: &crate::Site, f: impl FnOnce(&RewriteInput<'_>) -> T) -> 
         category_base: &category_base,
         tag_base: &tag_base,
         page_on_front: site.options.u64("page_on_front", 0),
-        home_at_root: home.split_once("://").is_none_or(|(_, rest)| !rest.contains('/')),
+        home_at_root: home
+            .split_once("://")
+            .is_none_or(|(_, rest)| !rest.contains('/')),
         blog_public: site.options.string("blog_public", "1") != "0",
         types: &site.types,
     };

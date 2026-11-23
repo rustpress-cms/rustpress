@@ -27,9 +27,17 @@ pub fn admin_enqueue(ctx: &AdminContext<'_>, assets: &mut Assets) {
 }
 
 /// `acf_get_field_groups( [ 'taxonomy' => $taxonomy ] )`.
-pub(super) async fn groups_for<'g>(groups: &'g [FieldGroup], ctx: &AdminContext<'_>, taxonomy: &str) -> Result<Vec<&'g FieldGroup>> {
+pub(super) async fn groups_for<'g>(
+    groups: &'g [FieldGroup],
+    ctx: &AdminContext<'_>,
+    taxonomy: &str,
+) -> Result<Vec<&'g FieldGroup>> {
     let screen = Screen::Term { taxonomy };
-    let matcher = MatchContext { site: ctx.site, user: MatchUser::Admin(ctx.can), admin: true };
+    let matcher = MatchContext {
+        site: ctx.site,
+        user: MatchUser::Admin(ctx.can),
+        admin: true,
+    };
     let mut out = Vec::new();
     for group in groups {
         if group.visible(&screen, &matcher).await? {
@@ -40,7 +48,12 @@ pub(super) async fn groups_for<'g>(groups: &'g [FieldGroup], ctx: &AdminContext<
 }
 
 /// `acf_form_taxonomy::add_term()` (without a term) and `edit_term()`.
-pub async fn term_form(groups: &[FieldGroup], ctx: &AdminContext<'_>, taxonomy: &str, term: Option<&Term>) -> Result<MetaBoxes> {
+pub async fn term_form(
+    groups: &[FieldGroup],
+    ctx: &AdminContext<'_>,
+    taxonomy: &str,
+    term: Option<&Term>,
+) -> Result<MetaBoxes> {
     if !is_term_screen(ctx) {
         return Ok(MetaBoxes::default());
     }
@@ -51,8 +64,15 @@ pub async fn term_form(groups: &[FieldGroup], ctx: &AdminContext<'_>, taxonomy: 
     let id = term.map_or(0, |t| t.term_id);
     let services = AdminServices(ctx.wp_root.to_owned());
     let render = render_ctx(ctx, &services);
-    let object = Object { kind: MetaKind::Term, id };
-    let mut out = form_data("taxonomy", super::php::string(&format!("term_{id}")), &(ctx.nonce)("taxonomy"));
+    let object = Object {
+        kind: MetaKind::Term,
+        id,
+    };
+    let mut out = form_data(
+        "taxonomy",
+        super::php::string(&format!("term_{id}")),
+        &(ctx.nonce)("taxonomy"),
+    );
     if term.is_none() {
         out.push_str("<div id=\"acf-term-fields\" class=\"acf-fields -clear\">");
         for group in &visible {
@@ -79,7 +99,11 @@ pub fn admin_footer(ctx: &AdminContext<'_>) -> String {
         return String::new();
     }
     // `$this->view` is `add` until `edit_term()` ran.
-    let view = if ctx.edited_term.is_some() && ctx.hook_suffix == "term.php" { "edit" } else { "add" };
+    let view = if ctx.edited_term.is_some() && ctx.hook_suffix == "term.php" {
+        "edit"
+    } else {
+        "add"
+    };
     let mut out = format!(
         "<script type=\"text/javascript\">\n(function($) {{\n\t\n\t// Define vars.\n\tvar view = '{view}';\n\tvar $form = $('#' + view + 'tag');\n\tvar $submit = $('#' + view + 'tag input[type=\"submit\"]:last');\n\t\n\t// Add missing spinner.\n\tif( !$submit.next('.spinner').length ) {{\n\t\t$submit.after('<span class=\"spinner\"></span>');\n\t}}\n\t\n\t\t\t"
     );
@@ -91,7 +115,10 @@ pub fn admin_footer(ctx: &AdminContext<'_>) -> String {
 }
 
 /// `ACF_Assets::print_footer_scripts()` of the term screens: the form data of the fields, if there were any.
-pub async fn footer_scripts(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Result<Option<String>> {
+pub async fn footer_scripts(
+    groups: &[FieldGroup],
+    ctx: &AdminContext<'_>,
+) -> Result<Option<String>> {
     if !is_term_screen(ctx) {
         return Ok(None);
     }
@@ -101,9 +128,26 @@ pub async fn footer_scripts(groups: &[FieldGroup], ctx: &AdminContext<'_>) -> Re
         let visible = groups_for(groups, ctx, taxonomy).await?;
         if !visible.is_empty() {
             let id = ctx.edited_term.map_or(0, |t| t.term_id);
-            form = FormData { screen: Json::String("taxonomy".into()), post_id: Json::String(format!("term_{id}")), validation: Json::Bool(true), ..Default::default() };
+            form = FormData {
+                screen: Json::String("taxonomy".into()),
+                post_id: Json::String(format!("term_{id}")),
+                validation: Json::Bool(true),
+                ..Default::default()
+            };
             uploader = wants_uploader(&visible, (ctx.can)("upload_files"));
         }
     }
-    Ok(Some(super::form::footer(ctx.site, &form, ctx.wp_version, &(ctx.nonce)("acf_nonce"), ctx.user_agent, ctx.can, if uploader { Uploader::Render } else { Uploader::No })))
+    Ok(Some(super::form::footer(
+        ctx.site,
+        &form,
+        ctx.wp_version,
+        &(ctx.nonce)("acf_nonce"),
+        ctx.user_agent,
+        ctx.can,
+        if uploader {
+            Uploader::Render
+        } else {
+            Uploader::No
+        },
+    )))
 }

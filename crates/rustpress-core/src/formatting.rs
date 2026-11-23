@@ -21,20 +21,42 @@ const BACKTRACK_LIMIT: usize = 500_000_000;
 /// A pattern with look-around or back references (`fancy-regex`), compiled with [`BACKTRACK_LIMIT`]. Every such
 /// pattern that runs on text of visitors or authors is compiled here.
 pub fn pcre(pattern: &str) -> Result<Regex, fancy_regex::Error> {
-    fancy_regex::RegexBuilder::new(pattern).backtrack_limit(BACKTRACK_LIMIT).build()
+    fancy_regex::RegexBuilder::new(pattern)
+        .backtrack_limit(BACKTRACK_LIMIT)
+        .build()
 }
 
 // ---------------------------------------------------------------- escaping
 
 /// The browser part of `user_can_richedit()`.
 pub fn browser_can_richedit(agent: &str) -> bool {
-    let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
+    let mobile = [
+        "Mobile",
+        "Android",
+        "Silk/",
+        "Kindle",
+        "BlackBerry",
+        "Opera Mini",
+        "Opera Mobi",
+    ]
+    .iter()
+    .any(|m| agent.contains(m));
     let ie = agent.contains("MSIE") || agent.contains("Trident/");
-    let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
+    let safari =
+        agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
     if safari {
-        return !mobile || agent.split("AppleWebKit/").nth(1).and_then(|r| r.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v >= 534);
+        return !mobile
+            || agent
+                .split("AppleWebKit/")
+                .nth(1)
+                .and_then(|r| r.split('.').next())
+                .and_then(|v| v.parse::<u32>().ok())
+                .is_some_and(|v| v >= 534);
     }
-    !ie && (agent.contains("Gecko") || agent.contains("Chrome") || agent.contains("Edg/") || (agent.contains("Opera") && !mobile))
+    !ie && (agent.contains("Gecko")
+        || agent.contains("Chrome")
+        || agent.contains("Edg/")
+        || (agent.contains("Opera") && !mobile))
 }
 
 /// `sanitize_html_class()`: percent-encoded octets and everything but `[A-Za-z0-9_-]` go.
@@ -43,14 +65,21 @@ pub fn sanitize_html_class(class: &str) -> String {
     let mut stripped = String::with_capacity(class.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() && bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit) && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit) {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && bytes.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(i + 2).is_some_and(u8::is_ascii_hexdigit)
+        {
             i += 3;
             continue;
         }
         stripped.push(bytes[i] as char);
         i += 1;
     }
-    stripped.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+    stripped
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect()
 }
 
 /// `&` that is not part of a valid entity (`&amp;`, `&#038;`, `&#x26;`).
@@ -59,7 +88,9 @@ fn is_entity_at(s: &str) -> bool {
     if bytes.first() != Some(&b'&') {
         return false;
     }
-    let Some(end) = bytes[..bytes.len().min(34)].iter().position(|&b| b == b';') else { return false };
+    let Some(end) = bytes[..bytes.len().min(34)].iter().position(|&b| b == b';') else {
+        return false;
+    };
     let inner = &s[1..end];
     if let Some(num) = inner.strip_prefix('#') {
         return match num.strip_prefix(['x', 'X']) {
@@ -67,7 +98,9 @@ fn is_entity_at(s: &str) -> bool {
             None => !num.is_empty() && num.bytes().all(|b| b.is_ascii_digit()),
         };
     }
-    !inner.is_empty() && inner.as_bytes()[0].is_ascii_alphabetic() && inner.bytes().all(|b| b.is_ascii_alphanumeric())
+    !inner.is_empty()
+        && inner.as_bytes()[0].is_ascii_alphabetic()
+        && inner.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
 /// `_wp_specialchars( $text, ENT_QUOTES )` without double encoding.
@@ -104,8 +137,14 @@ pub fn esc_url_raw(url: &str) -> String {
 
 /// `preg_match( '/^[a-z0-9-]+?\.php/i', $url )`.
 fn is_php_file(url: &str) -> bool {
-    let stem = url.bytes().take_while(|b| b.is_ascii_alphanumeric() || *b == b'-').count();
-    stem > 0 && url[stem..].get(..4).is_some_and(|s| s.eq_ignore_ascii_case(".php"))
+    let stem = url
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        .count();
+    stem > 0
+        && url[stem..]
+            .get(..4)
+            .is_some_and(|s| s.eq_ignore_ascii_case(".php"))
 }
 
 fn esc_url_context(url: &str, display: bool) -> String {
@@ -115,18 +154,58 @@ fn esc_url_context(url: &str, display: bool) -> String {
     }
     let cleaned: String = url
         .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=!&;,/:%@$|*'()[]".contains(*c) || (*c as u32) >= 0x80)
+        .filter(|c| {
+            c.is_ascii_alphanumeric()
+                || "-~+_.?#=!&;,/:%@$|*'()[]".contains(*c)
+                || (*c as u32) >= 0x80
+        })
         .collect();
     if cleaned.is_empty() {
         return String::new();
     }
     let cleaned = cleaned.replace(";//", "://");
     // An address without a scheme is taken for a host, unless it is relative (`/x`, `#x`, `?x`, `file.php`).
-    let cleaned = if !cleaned.contains(':') && !cleaned.starts_with(['/', '#', '?']) && !is_php_file(&cleaned) { format!("http://{cleaned}") } else { cleaned };
+    let cleaned = if !cleaned.contains(':')
+        && !cleaned.starts_with(['/', '#', '?'])
+        && !is_php_file(&cleaned)
+    {
+        format!("http://{cleaned}")
+    } else {
+        cleaned
+    };
     if let Some(colon) = cleaned.find(':') {
         let scheme = &cleaned[..colon];
-        let looks_like_scheme = !scheme.is_empty() && scheme.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'));
-        if looks_like_scheme && !matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https" | "ftp" | "ftps" | "mailto" | "news" | "irc" | "irc6" | "ircs" | "gopher" | "nntp" | "feed" | "telnet" | "mms" | "rtsp" | "sms" | "svn" | "tel" | "fax" | "xmpp" | "webcal" | "urn") {
+        let looks_like_scheme = !scheme.is_empty()
+            && scheme
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'));
+        if looks_like_scheme
+            && !matches!(
+                scheme.to_ascii_lowercase().as_str(),
+                "http"
+                    | "https"
+                    | "ftp"
+                    | "ftps"
+                    | "mailto"
+                    | "news"
+                    | "irc"
+                    | "irc6"
+                    | "ircs"
+                    | "gopher"
+                    | "nntp"
+                    | "feed"
+                    | "telnet"
+                    | "mms"
+                    | "rtsp"
+                    | "sms"
+                    | "svn"
+                    | "tel"
+                    | "fax"
+                    | "xmpp"
+                    | "webcal"
+                    | "urn"
+            )
+        {
             return String::new();
         }
     }
@@ -162,9 +241,13 @@ pub fn html_split(input: &str) -> Vec<String> {
                 parts.push(rest[..i].to_owned());
                 let element = &rest[i..];
                 let len = if element.starts_with("<!--") {
-                    element[2..].find("-->").map_or(element.len(), |e| 2 + e + 3)
+                    element[2..]
+                        .find("-->")
+                        .map_or(element.len(), |e| 2 + e + 3)
                 } else if element.starts_with("<![CDATA[") {
-                    element[2..].find("]]>").map_or(element.len(), |e| 2 + e + 3)
+                    element[2..]
+                        .find("]]>")
+                        .map_or(element.len(), |e| 2 + e + 3)
                 } else {
                     element.find('>').map_or(element.len(), |e| e + 1)
                 };
@@ -236,7 +319,16 @@ impl TexturizeChars {
     /// Pairs the two comma-separated lists of the language pack; a missing replacement is empty.
     pub fn cockney_from(words: &str, replacements: &str) -> Vec<(String, String)> {
         let replacements: Vec<&str> = replacements.split(',').collect();
-        words.split(',').enumerate().map(|(i, w)| (w.to_owned(), replacements.get(i).copied().unwrap_or("").to_owned())).collect()
+        words
+            .split(',')
+            .enumerate()
+            .map(|(i, w)| {
+                (
+                    w.to_owned(),
+                    replacements.get(i).copied().unwrap_or("").to_owned(),
+                )
+            })
+            .collect()
     }
 }
 
@@ -249,11 +341,15 @@ struct LazyRegex {
 
 impl LazyRegex {
     fn new(pattern: String) -> Self {
-        Self { pattern, regex: OnceLock::new() }
+        Self {
+            pattern,
+            regex: OnceLock::new(),
+        }
     }
 
     fn get(&self) -> &Regex {
-        self.regex.get_or_init(|| pcre(&self.pattern).expect("valid texturize regex"))
+        self.regex
+            .get_or_init(|| pcre(&self.pattern).expect("valid texturize regex"))
     }
 }
 
@@ -275,39 +371,75 @@ impl Texturize {
         let mut apos: Vec<(LazyRegex, String)> = Vec::new();
         // '99 and '99" are ambiguous among other patterns; assume an abbreviated year at the end of a quotation.
         if chars.apos != "'" || chars.closing_single_quote != "'" {
-            apos.push((r(format!("'(\\d\\d)'(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), format!("{apos_flag}${{1}}{}", chars.closing_single_quote)));
+            apos.push((
+                r(format!(
+                    "'(\\d\\d)'(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})"
+                )),
+                format!("{apos_flag}${{1}}{}", chars.closing_single_quote),
+            ));
         }
         if chars.apos != "'" || chars.closing_quote != "\"" {
-            apos.push((r(format!("'(\\d\\d)\"(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})")), format!("{apos_flag}${{1}}{}", chars.closing_quote)));
+            apos.push((
+                r(format!(
+                    "'(\\d\\d)\"(?={end}|[.,:;!?)}}\\-\\]]|&gt;|{SPACES})"
+                )),
+                format!("{apos_flag}${{1}}{}", chars.closing_quote),
+            ));
         }
         // '99 '99s '99's (apostrophe), but never '9 or '99% or '999 or '99.0.
         if chars.apos != "'" {
-            apos.push((r(format!("'(?=\\d\\d(?:{end}|(?![%\\d]|[.,]\\d)))")), apos_flag.to_owned()));
+            apos.push((
+                r(format!("'(?=\\d\\d(?:{end}|(?![%\\d]|[.,]\\d)))")),
+                apos_flag.to_owned(),
+            ));
         }
         // Quoted numbers like '0.42'.
         if chars.opening_single_quote != "'" && chars.closing_single_quote != "'" {
-            apos.push((r(format!("(?<=\\A|{SPACES})'(\\d[.,\\d]*)'")), format!("{open_sq_flag}${{1}}{}", chars.closing_single_quote)));
+            apos.push((
+                r(format!("(?<=\\A|{SPACES})'(\\d[.,\\d]*)'")),
+                format!("{open_sq_flag}${{1}}{}", chars.closing_single_quote),
+            ));
         }
         // A single quote at the start, or after (, {, <, [, ", - or spaces.
         if chars.opening_single_quote != "'" {
-            apos.push((r(format!("(?<=\\A|[(\\[{{\"\\-]|&lt;|{SPACES})'")), open_sq_flag.to_owned()));
+            apos.push((
+                r(format!("(?<=\\A|[(\\[{{\"\\-]|&lt;|{SPACES})'")),
+                open_sq_flag.to_owned(),
+            ));
         }
         // An apostrophe in a word: no spaces, double apostrophes or other punctuation around it.
         if chars.apos != "'" {
-            apos.push((r(format!("(?<!{SPACES})'(?!{end}|[.,:;!?\"'(){{}}\\[\\]\\-]|&[lg]t;|{SPACES})")), apos_flag.to_owned()));
+            apos.push((
+                r(format!(
+                    "(?<!{SPACES})'(?!{end}|[.,:;!?\"'(){{}}\\[\\]\\-]|&[lg]t;|{SPACES})"
+                )),
+                apos_flag.to_owned(),
+            ));
         }
         let mut quote: Vec<(LazyRegex, String)> = Vec::new();
         if chars.opening_quote != "\"" && chars.closing_quote != "\"" {
-            quote.push((r(format!("(?<=\\A|{SPACES})\"(\\d[.,\\d]*)\"")), format!("{open_q_flag}${{1}}{}", chars.closing_quote)));
+            quote.push((
+                r(format!("(?<=\\A|{SPACES})\"(\\d[.,\\d]*)\"")),
+                format!("{open_q_flag}${{1}}{}", chars.closing_quote),
+            ));
         }
         if chars.opening_quote != "\"" {
-            quote.push((r(format!("(?<=\\A|[(\\[{{\\-]|&lt;|{SPACES})\"(?!{SPACES})")), open_q_flag.to_owned()));
+            quote.push((
+                r(format!("(?<=\\A|[(\\[{{\\-]|&lt;|{SPACES})\"(?!{SPACES})")),
+                open_q_flag.to_owned(),
+            ));
         }
         let dash = vec![
             (r("---".into()), chars.em_dash.clone()),
-            (r(format!("(?<=\\A|{SPACES})--(?={end}|{SPACES})")), chars.em_dash.clone()),
+            (
+                r(format!("(?<=\\A|{SPACES})--(?={end}|{SPACES})")),
+                chars.em_dash.clone(),
+            ),
             (r("(?<!xn)--".into()), chars.en_dash.clone()),
-            (r(format!("(?<=\\A|{SPACES})-(?={end}|{SPACES})")), chars.en_dash.clone()),
+            (
+                r(format!("(?<=\\A|{SPACES})-(?={end}|{SPACES})")),
+                chars.en_dash.clone(),
+            ),
         ];
         let mut static_chars = vec![
             ("...".to_owned(), "&#8230;".to_owned()),
@@ -316,7 +448,13 @@ impl Texturize {
             (" (tm)".to_owned(), " &#8482;".to_owned()),
         ];
         static_chars.extend(chars.cockney.iter().cloned());
-        Self { chars, apos, quote, dash, static_chars }
+        Self {
+            chars,
+            apos,
+            quote,
+            dash,
+            static_chars,
+        }
     }
 }
 
@@ -330,7 +468,13 @@ fn replace_all_str(re: &Regex, text: &str, replacement: &str) -> String {
 }
 
 /// `wptexturize_primes`.
-fn texturize_primes(haystack: &str, needle: char, prime: &str, open_quote: &str, close_quote: &str) -> String {
+fn texturize_primes(
+    haystack: &str,
+    needle: char,
+    prime: &str,
+    open_quote: &str,
+    close_quote: &str,
+) -> String {
     let flag = "<!--wp-prime-or-quote-->";
     let end = "\\n?\\z";
     let needle_text = needle.to_string();
@@ -353,7 +497,9 @@ fn texturize_primes(haystack: &str, needle: char, prime: &str, open_quote: &str,
                 *sentence = replace_all_str(flag_no_digit, sentence, close_quote);
                 if *sentence == before {
                     // No flag without a digit: use the last `flag.` or the last flag.
-                    let pos = sentence.rfind(&format!("{flag}.")).or_else(|| sentence.rfind(flag));
+                    let pos = sentence
+                        .rfind(&format!("{flag}."))
+                        .or_else(|| sentence.rfind(flag));
                     if let Some(pos) = pos {
                         sentence.replace_range(pos..pos + flag.len(), close_quote);
                     }
@@ -439,7 +585,10 @@ pub fn wptexturize_shortcodes(text: &str, rules: &Texturize, shortcodes: &[&str]
     // Split into tags/comments, shortcodes and text, like the first regexp of wptexturize.
     let mut rest = text;
     while !rest.is_empty() {
-        if let Some(len) = (rest.starts_with('[') && !tagnames.is_empty()).then(|| crate::shortcodes::texturize_delimiter_len(rest, &tagnames)).flatten() {
+        if let Some(len) = (rest.starts_with('[') && !tagnames.is_empty())
+            .then(|| crate::shortcodes::texturize_delimiter_len(rest, &tagnames))
+            .flatten()
+        {
             let piece = &rest[..len];
             rest = &rest[len..];
             out.push_str(piece);
@@ -470,7 +619,8 @@ pub fn wptexturize_shortcodes(text: &str, rules: &Texturize, shortcodes: &[&str]
             // Text ends where a shortcode begins.
             let mut at = 1;
             while let Some(i) = rest.get(at..len).and_then(|s| s.find('[')) {
-                if crate::shortcodes::texturize_delimiter_len(&rest[at + i..], &tagnames).is_some() {
+                if crate::shortcodes::texturize_delimiter_len(&rest[at + i..], &tagnames).is_some()
+                {
                     len = at + i;
                     break;
                 }
@@ -497,7 +647,13 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
         for (re, rep) in &rules.apos {
             curl = replace_all_str(re.get(), &curl, rep);
         }
-        curl = texturize_primes(&curl, '\'', &rules.chars.prime, "<!--osq-->", &rules.chars.closing_single_quote);
+        curl = texturize_primes(
+            &curl,
+            '\'',
+            &rules.chars.prime,
+            "<!--osq-->",
+            &rules.chars.closing_single_quote,
+        );
         curl = curl.replace("<!--apos-->", &rules.chars.apos);
         curl = curl.replace("<!--osq-->", &rules.chars.opening_single_quote);
     }
@@ -505,7 +661,13 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
         for (re, rep) in &rules.quote {
             curl = replace_all_str(re.get(), &curl, rep);
         }
-        curl = texturize_primes(&curl, '"', &rules.chars.double_prime, "<!--oq-->", &rules.chars.closing_quote);
+        curl = texturize_primes(
+            &curl,
+            '"',
+            &rules.chars.double_prime,
+            "<!--oq-->",
+            &rules.chars.closing_quote,
+        );
         curl = curl.replace("<!--oq-->", &rules.chars.opening_quote);
     }
     if curl.contains('-') {
@@ -514,7 +676,11 @@ fn texturize_text(piece: &str, rules: &Texturize) -> String {
         }
     }
     if curl.contains('x') && re!(r"(?<=\d)x\d").is_match(&curl).unwrap_or(false) {
-        curl = replace_all_str(re!(r"\b(\d(?:(?<=0)[\d.,]+|(?<!0)[\d.,]*))x(\d[\d.,]*)\b"), &curl, "$1&#215;$2");
+        curl = replace_all_str(
+            re!(r"\b(\d(?:(?<=0)[\d.,]+|(?<!0)[\d.,]*))x(\d[\d.,]*)\b"),
+            &curl,
+            "$1&#215;$2",
+        );
     }
     fix_ampersands(&curl)
 }
@@ -550,7 +716,9 @@ fn rx(pattern: &str) -> &'static Regex {
 
 /// [`cached_regex`] for the `regex` crate (no look-around).
 pub fn cached_plain_regex(pattern: &str) -> &'static regex::Regex {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static regex::Regex>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, &'static regex::Regex>>,
+    > = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found;
@@ -561,13 +729,19 @@ pub fn cached_plain_regex(pattern: &str) -> &'static regex::Regex {
         regex::Regex::new(r"\b\B").expect("never matches")
     });
     let compiled: &'static regex::Regex = Box::leak(Box::new(compiled));
-    cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
+    cache
+        .lock()
+        .expect("regex cache")
+        .entry(pattern.to_owned())
+        .or_insert(compiled)
 }
 
 /// A regex compiled once per pattern. The patterns of the filters are a small fixed set (built from constants), so
 /// the cache stays small; compiling them on every call was the largest cost of `wpautop()`.
 pub fn cached_regex(pattern: &str) -> &'static Regex {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static Regex>>> = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, &'static Regex>>,
+    > = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     if let Some(found) = cache.lock().expect("regex cache").get(pattern) {
         return found;
@@ -577,7 +751,11 @@ pub fn cached_regex(pattern: &str) -> &'static Regex {
         pcre(r"(?!)").expect("never matches")
     });
     let compiled: &'static Regex = Box::leak(Box::new(compiled));
-    cache.lock().expect("regex cache").entry(pattern.to_owned()).or_insert(compiled)
+    cache
+        .lock()
+        .expect("regex cache")
+        .entry(pattern.to_owned())
+        .or_insert(compiled)
 }
 
 /// `wpautop( $text, true )`.
@@ -608,7 +786,9 @@ pub fn wpautop(text: &str) -> String {
         text = rebuilt;
     }
 
-    let sub = |text: &str, pattern: &str, replacement: &str| replace_all_str(rx(pattern), text, replacement);
+    let sub = |text: &str, pattern: &str, replacement: &str| {
+        replace_all_str(rx(pattern), text, replacement)
+    };
 
     // Some patterns only run on text that can match them: a CGI process compiles each one it uses.
     if text.contains("<br") {
@@ -643,7 +823,11 @@ pub fn wpautop(text: &str) -> String {
     text = sub(&text, r"\n\n+", "\n\n");
 
     let mut out = String::new();
-    for paragraph in rx(r"\n\s*\n").split(&text).filter_map(Result::ok).filter(|p| !p.is_empty()) {
+    for paragraph in rx(r"\n\s*\n")
+        .split(&text)
+        .filter_map(Result::ok)
+        .filter(|p| !p.is_empty())
+    {
         out.push_str("<p>");
         out.push_str(paragraph.trim_matches('\n'));
         out.push_str("</p>\n");
@@ -654,21 +838,34 @@ pub fn wpautop(text: &str) -> String {
     if text.contains("</div>") || text.contains("</address>") || text.contains("</form>") {
         text = sub(&text, r"<p>([^<]+)</(div|address|form)>", "<p>$1</p></$2>");
     }
-    text = sub(&text, &format!(r"<p>\s*(</?{ALLBLOCKS}[^>]*>)\s*</p>"), "$1");
+    text = sub(
+        &text,
+        &format!(r"<p>\s*(</?{ALLBLOCKS}[^>]*>)\s*</p>"),
+        "$1",
+    );
     if text.contains("<p><li") {
         text = sub(&text, r"<p>(<li.+?)</p>", "$1");
     }
     if text.to_ascii_lowercase().contains("<p><blockquote") {
-        text = sub(&text, r#"(?i)<p><blockquote((?:[^>"']|"[^"]*"|'[^']*')*)>"#, "<blockquote$1><p>");
+        text = sub(
+            &text,
+            r#"(?i)<p><blockquote((?:[^>"']|"[^"]*"|'[^']*')*)>"#,
+            "<blockquote$1><p>",
+        );
     }
     text = text.replace("</blockquote></p>", "</p></blockquote>");
     text = sub(&text, &format!(r"<p>\s*(</?{ALLBLOCKS}[^>]*>)"), "$1");
     text = sub(&text, &format!(r"(</?{ALLBLOCKS}[^>]*>)\s*</p>"), "$1");
 
     // Preserve newlines in script/style/svg/math, convert the rest to <br />.
-    if ["<script", "<style", "<svg", "<math"].iter().any(|tag| text.contains(tag)) {
+    if ["<script", "<style", "<svg", "<math"]
+        .iter()
+        .any(|tag| text.contains(tag))
+    {
         text = rx(r"(?s)<(script|style|svg|math).*?</\1>")
-            .replace_all(&text, |caps: &fancy_regex::Captures<'_, str>| caps[0].replace('\n', "<WPPreserveNewline />"))
+            .replace_all(&text, |caps: &fancy_regex::Captures<'_, str>| {
+                caps[0].replace('\n', "<WPPreserveNewline />")
+            })
             .into_owned();
     }
     text = text.replace("<br>", "<br />").replace("<br/>", "<br />");
@@ -677,7 +874,11 @@ pub fn wpautop(text: &str) -> String {
 
     text = sub(&text, &format!(r"(</?{ALLBLOCKS}[^>]*>)\s*<br />"), "$1");
     if text.contains("<br />") {
-        text = sub(&text, r"<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)", "$1");
+        text = sub(
+            &text,
+            r"<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)",
+            "$1",
+        );
     }
     text = sub(&text, r"\n</p>$", "</p>");
 
@@ -685,7 +886,9 @@ pub fn wpautop(text: &str) -> String {
         text = text.replace(name, original);
     }
     if text.contains("<!-- wpnl -->") {
-        text = text.replace(" <!-- wpnl --> ", "\n").replace("<!-- wpnl -->", "\n");
+        text = text
+            .replace(" <!-- wpnl --> ", "\n")
+            .replace("<!-- wpnl -->", "\n");
     }
     text
 }
@@ -696,15 +899,24 @@ mod tests {
 
     #[test]
     fn escaping_does_not_double_encode_entities() {
-        assert_eq!(esc_html("Tom & Jerry <b>\"x\"</b> 'y'"), "Tom &amp; Jerry &lt;b&gt;&quot;x&quot;&lt;/b&gt; &#039;y&#039;");
-        assert_eq!(esc_html("a &amp; b &#8211; c &nbsp;"), "a &amp; b &#8211; c &nbsp;");
+        assert_eq!(
+            esc_html("Tom & Jerry <b>\"x\"</b> 'y'"),
+            "Tom &amp; Jerry &lt;b&gt;&quot;x&quot;&lt;/b&gt; &#039;y&#039;"
+        );
+        assert_eq!(
+            esc_html("a &amp; b &#8211; c &nbsp;"),
+            "a &amp; b &#8211; c &nbsp;"
+        );
         assert_eq!(esc_attr("x\"y"), "x&quot;y");
     }
 
     #[test]
     fn esc_js_matches_wordpress() {
         // Captured from `esc_js()` of the reference.
-        assert_eq!(esc_js("G-AB'C\"D\\E\nF\r<x>&amp;"), "G-AB\\'C&quot;DE\\nF&lt;x&gt;&amp;");
+        assert_eq!(
+            esc_js("G-AB'C\"D\\E\nF\r<x>&amp;"),
+            "G-AB\\'C&quot;DE\\nF&lt;x&gt;&amp;"
+        );
         assert_eq!(esc_js("a\\\\b"), "a\\\\b");
         assert_eq!(esc_js("x&#39;y&#x0027;z&#039"), "x\\'y\\'z&amp;#039");
         assert_eq!(esc_js("it's & <b>"), "it\\'s &amp; &lt;b&gt;");
@@ -712,7 +924,10 @@ mod tests {
 
     #[test]
     fn urls_are_escaped_like_esc_url() {
-        assert_eq!(esc_url("http://a.test/?x=1&y=2"), "http://a.test/?x=1&#038;y=2");
+        assert_eq!(
+            esc_url("http://a.test/?x=1&y=2"),
+            "http://a.test/?x=1&#038;y=2"
+        );
         assert_eq!(esc_url("/path with space"), "/path%20with%20space");
         assert_eq!(esc_url("javascript:alert(1)"), "");
         assert_eq!(esc_url("#"), "#");
@@ -722,7 +937,10 @@ mod tests {
 
     #[test]
     fn html_split_alternates_text_and_tags() {
-        assert_eq!(html_split("a<b>c<!-- x -->d"), ["a", "<b>", "c", "<!-- x -->", "d"]);
+        assert_eq!(
+            html_split("a<b>c<!-- x -->d"),
+            ["a", "<b>", "c", "<!-- x -->", "d"]
+        );
         assert_eq!(html_split("<p>x</p>"), ["", "<p>", "x", "</p>", ""]);
         assert_eq!(html_split("plain"), ["plain"]);
     }
@@ -736,22 +954,34 @@ mod tests {
 
     #[test]
     fn texturize_quotes_dashes_and_ellipsis() {
-        assert_eq!(wptexturize("\"Hello\" -- world..."), "&#8220;Hello&#8221; &#8212; world&#8230;");
+        assert_eq!(
+            wptexturize("\"Hello\" -- world..."),
+            "&#8220;Hello&#8221; &#8212; world&#8230;"
+        );
         assert_eq!(wptexturize("Don't stop"), "Don&#8217;t stop");
         assert_eq!(wptexturize("'single'"), "&#8216;single&#8217;");
         assert_eq!(wptexturize("a - b"), "a &#8211; b");
         assert_eq!(wptexturize("10x20"), "10&#215;20");
         // Verified against WordPress: a lone pair is a closing quote, not primes.
         assert_eq!(wptexturize("5'10\""), "5&#8217;10&#8221;");
-        assert_eq!(wptexturize("a - b -- c --- d"), "a &#8211; b &#8212; c &#8212; d");
+        assert_eq!(
+            wptexturize("a - b -- c --- d"),
+            "a &#8211; b &#8212; c &#8212; d"
+        );
         assert_eq!(wptexturize("(tm)"), "(tm)");
         assert_eq!(wptexturize("a (tm)"), "a &#8482;");
     }
 
     #[test]
     fn texturize_leaves_code_and_tags_alone() {
-        assert_eq!(wptexturize("<code>\"x\" -- y</code> \"z\""), "<code>\"x\" -- y</code> &#8220;z&#8221;");
-        assert_eq!(wptexturize("<a title=\"x\">\"q\"</a>"), "<a title=\"x\">&#8220;q&#8221;</a>");
+        assert_eq!(
+            wptexturize("<code>\"x\" -- y</code> \"z\""),
+            "<code>\"x\" -- y</code> &#8220;z&#8221;"
+        );
+        assert_eq!(
+            wptexturize("<a title=\"x\">\"q\"</a>"),
+            "<a title=\"x\">&#8220;q&#8221;</a>"
+        );
         assert_eq!(wptexturize("<!-- \"c\" -->"), "<!-- \"c\" -->");
     }
 
@@ -764,19 +994,31 @@ mod tests {
     fn convert_chars_and_capital_p() {
         assert_eq!(convert_chars("a & b &amp; c"), "a &#038; b &amp; c");
         assert_eq!(capital_p_dangit("I use Wordpress", true), "I use WordPress");
-        assert_eq!(capital_p_dangit("<b>Wordpress</b> and Wordpress", false), "<b>WordPress</b> and WordPress");
+        assert_eq!(
+            capital_p_dangit("<b>Wordpress</b> and Wordpress", false),
+            "<b>WordPress</b> and WordPress"
+        );
     }
 
     #[test]
     fn wpautop_wraps_paragraphs_and_breaks() {
-        assert_eq!(wpautop("Zeile eins\n\nZeile zwei\nUmbruch"), "<p>Zeile eins</p>\n<p>Zeile zwei<br />\nUmbruch</p>\n");
+        assert_eq!(
+            wpautop("Zeile eins\n\nZeile zwei\nUmbruch"),
+            "<p>Zeile eins</p>\n<p>Zeile zwei<br />\nUmbruch</p>\n"
+        );
         assert_eq!(wpautop("   "), "");
     }
 
     #[test]
     fn wpautop_does_not_wrap_block_elements() {
-        assert_eq!(wpautop("<div>x</div>\n\ntext"), "<div>x</div>\n<p>text</p>\n");
-        assert_eq!(wpautop("<ul>\n<li>a</li>\n</ul>"), "<ul>\n<li>a</li>\n</ul>\n");
+        assert_eq!(
+            wpautop("<div>x</div>\n\ntext"),
+            "<div>x</div>\n<p>text</p>\n"
+        );
+        assert_eq!(
+            wpautop("<ul>\n<li>a</li>\n</ul>"),
+            "<ul>\n<li>a</li>\n</ul>\n"
+        );
     }
 
     #[test]
@@ -786,7 +1028,6 @@ mod tests {
         assert!(out.starts_with("<p>a</p>"), "{out}");
     }
 }
-
 
 /// PHP's `strip_tags()` without an allow-list: removes `<...>` tags, comments and
 /// processing instructions; a `<` not followed by a tag-like character stays.
@@ -800,7 +1041,9 @@ pub fn specialchars_noquotes(text: &str) -> String {
             b'&' => {
                 // An entity that is complete stays as it is.
                 let rest = &text[i + 1..];
-                let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '#')).filter(|n| *n > 0 && rest[*n..].starts_with(';'));
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '#'))
+                    .filter(|n| *n > 0 && rest[*n..].starts_with(';'));
                 match end {
                     Some(n) => {
                         out.push_str(&text[i..i + n + 2]);
@@ -864,7 +1107,8 @@ pub fn strip_tags(text: &str) -> String {
 /// `wp_strip_all_tags( $text )`: script/style blocks go with their content.
 pub fn wp_strip_all_tags(text: &str) -> String {
     static SCRIPT: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = SCRIPT.get_or_init(|| pcre(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
+    let re =
+        SCRIPT.get_or_init(|| pcre(r"(?is)<(script|style)[^>]*?>.*?</\1>").expect("valid regex"));
     php_trim(&strip_tags(&re.replace_all(text, ""))).to_owned()
 }
 
@@ -916,7 +1160,8 @@ pub fn esc_js(text: &str) -> String {
         }
     }
     static APOS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let apos = APOS.get_or_init(|| regex::Regex::new(r"(?i)&#(?:x0*27|0*39);?").expect("valid regex"));
+    let apos =
+        APOS.get_or_init(|| regex::Regex::new(r"(?i)&#(?:x0*27|0*39);?").expect("valid regex"));
     let safe = apos.replace_all(&stripped, "'").replace('\r', "");
     let mut out = String::with_capacity(safe.len());
     for c in safe.chars() {
@@ -936,7 +1181,8 @@ pub fn esc_js(text: &str) -> String {
 /// `html_entity_decode( $text, ENT_COMPAT )`: double quotes and `&amp;` are decoded, single quotes are not.
 pub fn html_entity_decode(text: &str) -> String {
     static ENTITY: std::sync::OnceLock<fancy_regex::Regex> = std::sync::OnceLock::new();
-    let re = ENTITY.get_or_init(|| pcre(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|\w+);").expect("valid regex"));
+    let re =
+        ENTITY.get_or_init(|| pcre(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|\w+);").expect("valid regex"));
     re.replace_all(text, |caps: &fancy_regex::Captures<'_, str>| {
         let body = &caps[1];
         let code = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {
@@ -944,7 +1190,10 @@ pub fn html_entity_decode(text: &str) -> String {
         } else if let Some(dec) = body.strip_prefix('#') {
             dec.parse().ok()
         } else {
-            crate::entities::ENTITIES.iter().find(|(n, _)| *n == body).map(|(_, c)| *c)
+            crate::entities::ENTITIES
+                .iter()
+                .find(|(n, _)| *n == body)
+                .map(|(_, c)| *c)
         };
         match code.filter(|c| *c != 39).and_then(char::from_u32) {
             Some(c) => c.to_string(),
@@ -961,14 +1210,30 @@ pub fn wp_trim_words(text: &str, num_words: usize, more: &str) -> String {
 
 /// `wp_trim_words()` for the word count type of the language: languages without spaces between
 /// words (Chinese, Japanese, Korean) count characters instead.
-pub fn wp_trim_words_with(text: &str, num_words: usize, more: &str, count: crate::locale::WordCountType) -> String {
+pub fn wp_trim_words_with(
+    text: &str,
+    num_words: usize,
+    more: &str,
+    count: crate::locale::WordCountType,
+) -> String {
     let stripped = wp_strip_all_tags(text);
     if count != crate::locale::WordCountType::Words {
-        let collapsed = stripped.split(['\n', '\r', '\t', ' ']).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+        let collapsed = stripped
+            .split(['\n', '\r', '\t', ' '])
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
         let chars: Vec<char> = collapsed.chars().collect();
-        return if chars.len() > num_words { format!("{}{more}", chars[..num_words].iter().collect::<String>()) } else { collapsed };
+        return if chars.len() > num_words {
+            format!("{}{more}", chars[..num_words].iter().collect::<String>())
+        } else {
+            collapsed
+        };
     }
-    let words: Vec<&str> = stripped.split(['\n', '\r', '\t', ' ']).filter(|w| !w.is_empty()).collect();
+    let words: Vec<&str> = stripped
+        .split(['\n', '\r', '\t', ' '])
+        .filter(|w| !w.is_empty())
+        .collect();
     if words.len() > num_words {
         format!("{}{more}", words[..num_words].join(" "))
     } else {
@@ -982,27 +1247,50 @@ mod feed_helper_tests {
 
     #[test]
     fn strip_tags_like_php() {
-        assert_eq!(strip_tags("a <b>bold</b> and <a href=\"x>y\">link</a>"), "a bold and link");
+        assert_eq!(
+            strip_tags("a <b>bold</b> and <a href=\"x>y\">link</a>"),
+            "a bold and link"
+        );
         assert_eq!(strip_tags("1 < 2 and 3 > 2"), "1 < 2 and 3 > 2");
         assert_eq!(strip_tags("x<!-- hidden -->y"), "xy");
     }
 
     #[test]
     fn entities() {
-        assert_eq!(ent2ncr("Caf&eacute; &amp; &unknown; &#8211;"), "Caf&#233; &#38; &unknown; &#8211;");
-        assert_eq!(html_entity_decode("&quot;a&quot; &amp; &#8211; &#039; &eacute;"), "\"a\" & \u{2013} &#039; \u{e9}");
+        assert_eq!(
+            ent2ncr("Caf&eacute; &amp; &unknown; &#8211;"),
+            "Caf&#233; &#38; &unknown; &#8211;"
+        );
+        assert_eq!(
+            html_entity_decode("&quot;a&quot; &amp; &#8211; &#039; &eacute;"),
+            "\"a\" & \u{2013} &#039; \u{e9}"
+        );
     }
 
     #[test]
     fn languages_without_spaces_are_trimmed_by_characters() {
         use crate::locale::WordCountType::CharactersExcludingSpaces;
-        assert_eq!(wp_trim_words_with("<p>日本語の　テキスト です</p>", 4, "…", CharactersExcludingSpaces), "日本語の…");
-        assert_eq!(wp_trim_words_with("短い", 4, "…", CharactersExcludingSpaces), "短い");
+        assert_eq!(
+            wp_trim_words_with(
+                "<p>日本語の　テキスト です</p>",
+                4,
+                "…",
+                CharactersExcludingSpaces
+            ),
+            "日本語の…"
+        );
+        assert_eq!(
+            wp_trim_words_with("短い", 4, "…", CharactersExcludingSpaces),
+            "短い"
+        );
     }
 
     #[test]
     fn trim_words() {
-        assert_eq!(wp_trim_words("<p>one two  three\nfour</p>", 3, "..."), "one two three...");
+        assert_eq!(
+            wp_trim_words("<p>one two  three\nfour</p>", 3, "..."),
+            "one two three..."
+        );
         assert_eq!(wp_trim_words("one two", 3, "..."), "one two");
     }
 }

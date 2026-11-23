@@ -2,10 +2,10 @@
 
 mod actions;
 
-use rustpress_core::OrLog;
 use rustpress_auth::password::{check_password, hash_password, needs_rehash};
 use rustpress_auth::setcookie::{CookiePaths, SetCookie};
 use rustpress_auth::{Auth, CurrentUser, Roles, Scheme, session};
+use rustpress_core::OrLog;
 use rustpress_core::Site;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_db::{AuthUser, Db, Val, Writer};
@@ -26,10 +26,21 @@ pub struct LanguageOption {
 /// How e-mail leaves the site (`wp_mail()`).
 pub trait Mail: Send + Sync {
     /// Sends a plain text message; `false` when it could not be sent.
-    fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>>;
+    fn send<'a>(
+        &'a self,
+        to: &'a str,
+        subject: &'a str,
+        message: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>>;
 
     /// The same with the extra header lines of `wp_mail()` (`From:`, `Reply-To:`).
-    fn send_with_headers<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str, _headers: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+    fn send_with_headers<'a>(
+        &'a self,
+        to: &'a str,
+        subject: &'a str,
+        message: &'a str,
+        _headers: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         self.send(to, subject, message)
     }
 }
@@ -71,11 +82,19 @@ pub struct LoginRequest {
 
 impl LoginRequest {
     fn get(&self, name: &str) -> Option<&str> {
-        self.query.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.query
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     fn post_field(&self, name: &str) -> Option<&str> {
-        self.form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.form
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `$_REQUEST`: the form wins over the query string.
@@ -84,7 +103,10 @@ impl LoginRequest {
     }
 
     fn cookie(&self, name: &str) -> Option<&str> {
-        self.cookies.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.cookies
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -109,22 +131,35 @@ pub(crate) struct LoginError {
 }
 
 pub(crate) fn error(code: &'static str, message: String) -> LoginError {
-    LoginError { code, message, is_message: false }
+    LoginError {
+        code,
+        message,
+        is_message: false,
+    }
 }
 
 /// `nocache_headers()` and the frame headers of the sign-in page.
 pub(crate) fn page_headers() -> Vec<(String, String)> {
     vec![
         ("Expires".into(), "Wed, 11 Jan 1984 05:00:00 GMT".into()),
-        ("Cache-Control".into(), "no-cache, must-revalidate, max-age=0, no-store, private".into()),
+        (
+            "Cache-Control".into(),
+            "no-cache, must-revalidate, max-age=0, no-store, private".into(),
+        ),
     ]
 }
 
 pub(crate) fn frame_headers() -> Vec<(String, String)> {
     vec![
         ("X-Frame-Options".into(), "SAMEORIGIN".into()),
-        ("Content-Security-Policy".into(), "frame-ancestors 'self';".into()),
-        ("Referrer-Policy".into(), "strict-origin-when-cross-origin".into()),
+        (
+            "Content-Security-Policy".into(),
+            "frame-ancestors 'self';".into(),
+        ),
+        (
+            "Referrer-Policy".into(),
+            "strict-origin-when-cross-origin".into(),
+        ),
         ("Content-Type".into(), "text/html; charset=UTF-8".into()),
     ]
 }
@@ -139,30 +174,48 @@ pub(crate) fn sanitize_user(raw: &str) -> String {
         }
         out.push(c);
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_owned()
+    out.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_owned()
 }
 
 /// `wp_validate_redirect()`: the address is cleaned first (`wp_sanitize_redirect()`), then only `http`/`https`
 /// addresses of this site (or relative ones) pass; everything else becomes `fallback`.
 pub(crate) fn validate_redirect(site: &Site, location: &str, fallback: &str) -> String {
-    let home = site.settings.home.split_once("://").map_or("", |(_, r)| r.split(['/', ':']).next().unwrap_or(""));
+    let home = site
+        .settings
+        .home
+        .split_once("://")
+        .map_or("", |(_, r)| r.split(['/', ':']).next().unwrap_or(""));
     validate_redirect_for_host(home, location, fallback)
 }
 
 /// [`validate_redirect`] for the host of the site.
 fn validate_redirect_for_host(home: &str, location: &str, fallback: &str) -> String {
-    let mut location = sanitize_redirect(location.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{8}', '\u{b}']));
+    let mut location =
+        sanitize_redirect(location.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{8}', '\u{b}']));
     // Browsers obey a redirect to `//host`.
     if location.starts_with("//") {
         location = format!("http:{location}");
     }
-    let test = location.split_once('?').map_or(location.as_str(), |(before, _)| before);
+    let test = location
+        .split_once('?')
+        .map_or(location.as_str(), |(before, _)| before);
     // `parse_url()`: a scheme is letters, digits, `+`, `-` and `.` before the first colon.
-    let scheme = test.split_once(':').map(|(s, _)| s).filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) && !s.contains('/'));
+    let scheme = test.split_once(':').map(|(s, _)| s).filter(|s| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+            && !s.contains('/')
+    });
     if scheme.is_some_and(|s| s != "http" && s != "https") {
         return fallback.to_owned();
     }
-    let authority = test.split_once("://").map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
+    let authority = test
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or_default());
     let Some(authority) = authority else {
         // Without a host there may be no scheme, user, password or port.
         if scheme.is_some() {
@@ -175,7 +228,9 @@ fn validate_redirect_for_host(home: &str, location: &str, fallback: &str) -> Str
         Some((userinfo, hostport)) => (Some(userinfo), hostport),
         None => (None, authority),
     };
-    if userinfo.is_some_and(|u| u.is_empty() || u.contains(['/', '?', '#', '@']) || u.split(':').count() > 2) {
+    if userinfo.is_some_and(|u| {
+        u.is_empty() || u.contains(['/', '?', '#', '@']) || u.split(':').count() > 2
+    }) {
         return fallback.to_owned();
     }
     let host = hostport.split(':').next().unwrap_or_default();
@@ -205,11 +260,18 @@ pub(crate) fn sanitize_redirect(location: &str) -> String {
             }
         }
     }
-    let kept: String = encoded.chars().filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=&;,/:%!*[]()@".contains(*c)).collect();
+    let kept: String = encoded
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || "-~+_.?#=&;,/:%!*[]()@".contains(*c))
+        .collect();
     let mut out = rustpress_core::kses::no_null(&kept, true);
     // `_deep_replace()`: encoded line breaks go, however often they were nested.
     loop {
-        let next = out.replace("%0d", "").replace("%0a", "").replace("%0D", "").replace("%0A", "");
+        let next = out
+            .replace("%0d", "")
+            .replace("%0a", "")
+            .replace("%0D", "")
+            .replace("%0A", "");
         if next == out {
             return out;
         }
@@ -244,7 +306,15 @@ impl LoginEnv<'_> {
 
     fn test_cookies(&self) -> Vec<SetCookie> {
         let paths = self.paths();
-        let make = |path: &str| SetCookie { name: "wordpress_test_cookie".into(), value: "WP Cookie check".into(), expires: None, path: path.to_owned(), domain: None, secure: self.login_url().starts_with("https"), http_only: true };
+        let make = |path: &str| SetCookie {
+            name: "wordpress_test_cookie".into(),
+            value: "WP Cookie check".into(),
+            expires: None,
+            path: path.to_owned(),
+            domain: None,
+            secure: self.login_url().starts_with("https"),
+            http_only: true,
+        };
         let mut cookies = vec![make(&paths.cookie)];
         if paths.site != paths.cookie {
             cookies.push(make(&paths.site));
@@ -262,19 +332,32 @@ impl LoginEnv<'_> {
         if username.is_empty() || password.is_empty() {
             let mut errors = Vec::new();
             if username.is_empty() {
-                errors.push(error("empty_username", self.tr("<strong>Error:</strong> The username field is empty.")));
+                errors.push(error(
+                    "empty_username",
+                    self.tr("<strong>Error:</strong> The username field is empty."),
+                ));
             }
             if password.is_empty() {
-                errors.push(error("empty_password", self.tr("<strong>Error:</strong> The password field is empty.")));
+                errors.push(error(
+                    "empty_password",
+                    self.tr("<strong>Error:</strong> The password field is empty."),
+                ));
             }
             return Err(errors);
         }
         let by_login = self.db.auth_user_by_login(&username).await.ok().flatten();
-        let by_email = if by_login.is_none() && username.contains('@') { self.db.auth_user_by_email(&username).await.ok().flatten() } else { None };
+        let by_email = if by_login.is_none() && username.contains('@') {
+            self.db.auth_user_by_email(&username).await.ok().flatten()
+        } else {
+            None
+        };
         let is_email = by_login.is_none() && username.contains('@');
         let Some(mut user) = by_login.or(by_email) else {
             if is_email {
-                return Err(vec![error("invalid_email", self.tr("Unknown email address. Check again or try your username."))]);
+                return Err(vec![error(
+                    "invalid_email",
+                    self.tr("Unknown email address. Check again or try your username."),
+                )]);
             }
             return Err(vec![error(
                 "invalid_username",
@@ -287,13 +370,31 @@ impl LoginEnv<'_> {
             } else {
                 rustpress_core::i18n::sprintf(&self.tr("<strong>Error:</strong> The password you entered for the username %s is incorrect."), &[&format!("<strong>{}</strong>", esc_html(&username))])
             };
-            return Err(vec![error("incorrect_password", format!("{subject} <a href=\"{}\">{}</a>", self.lostpassword_url(), self.tr("Lost your password?")))]);
+            return Err(vec![error(
+                "incorrect_password",
+                format!(
+                    "{subject} <a href=\"{}\">{}</a>",
+                    self.lostpassword_url(),
+                    self.tr("Lost your password?")
+                ),
+            )]);
         }
         // `wp_password_needs_rehash()` and `wp_set_password()`. The sign-in cookie is made from the new hash, as
         // `wp_generate_auth_cookie()` reads the user again. Without write access the stored hash stays.
         if let (true, Some(writer)) = (needs_rehash(&user.user_pass), self.writer) {
             let hash = hash_password(password);
-            writer.update_rows("users", "ID", user.id, &[("user_pass", Val::Str(hash.clone())), ("user_activation_key", Val::Str(String::new()))]).await.or_log();
+            writer
+                .update_rows(
+                    "users",
+                    "ID",
+                    user.id,
+                    &[
+                        ("user_pass", Val::Str(hash.clone())),
+                        ("user_activation_key", Val::Str(String::new())),
+                    ],
+                )
+                .await
+                .or_log();
             user.user_pass = hash;
         }
         Ok(user)
@@ -301,9 +402,21 @@ impl LoginEnv<'_> {
 
     /// `wp_validate_auth_cookie()` for the sign-in cookie, as `wp_authenticate_cookie()` uses it.
     async fn user_of_auth_cookie(&self, request: &LoginRequest) -> Option<AuthUser> {
-        let (scheme, name) = if self.secure_cookie_default() { (Scheme::SecureAuth, self.auth.cookie_name(Scheme::SecureAuth)) } else { (Scheme::Auth, self.auth.cookie_name(Scheme::Auth)) };
+        let (scheme, name) = if self.secure_cookie_default() {
+            (
+                Scheme::SecureAuth,
+                self.auth.cookie_name(Scheme::SecureAuth),
+            )
+        } else {
+            (Scheme::Auth, self.auth.cookie_name(Scheme::Auth))
+        };
         let cookie = request.cookie(&name)?;
-        let session = self.auth.validate_cookie(self.db, cookie, scheme, self.now, request.post).await.ok().flatten()?;
+        let session = self
+            .auth
+            .validate_cookie(self.db, cookie, scheme, self.now, request.post)
+            .await
+            .ok()
+            .flatten()?;
         Some(session.user)
     }
 
@@ -311,12 +424,20 @@ impl LoginEnv<'_> {
 
     fn login_title(&self, title: &str) -> String {
         let site = &self.site.settings.blogname;
-        rustpress_core::i18n::sprintf(&self.tr("%1$s &lsaquo; %2$s &#8212; WordPress"), &[title, site])
+        rustpress_core::i18n::sprintf(
+            &self.tr("%1$s &lsaquo; %2$s &#8212; WordPress"),
+            &[title, site],
+        )
     }
 
     fn robots(&self) -> String {
         let mut directives: Vec<&str> = Vec::new();
-        if self.site.options.get("blog_public").is_some_and(|v| v != "0") {
+        if self
+            .site
+            .options
+            .get("blog_public")
+            .is_some_and(|v| v != "0")
+        {
             directives.push("max-image-preview:large");
         } else {
             directives.push("noindex");
@@ -327,12 +448,23 @@ impl LoginEnv<'_> {
                 directives.push(extra);
             }
         }
-        format!("<meta name='robots' content='{}' />\n", directives.join(", "))
+        format!(
+            "<meta name='robots' content='{}' />\n",
+            directives.join(", ")
+        )
     }
 
     /// `login_header()`: `head_scripts` are enqueued before the head is printed, `interim` is the login of the
     /// session-expired dialog.
-    pub(crate) fn header_with(&self, action: &str, title: &str, message: &str, errors: &[LoginError], head_scripts: &[&str], interim: bool) -> String {
+    pub(crate) fn header_with(
+        &self,
+        action: &str,
+        title: &str,
+        message: &str,
+        errors: &[LoginError],
+        head_scripts: &[&str],
+        interim: bool,
+    ) -> String {
         let rtl = self.site.is_rtl();
         let mut styles = default_styles(&self.loader);
         styles.enqueue("login");
@@ -342,14 +474,23 @@ impl LoginEnv<'_> {
         if rtl {
             lang_attrs = format!("dir=\"rtl\" {lang_attrs}");
         }
-        let mut classes = vec![format!("login-action-{action}"), "wp-core-ui".to_owned(), "admin-color-modern".to_owned()];
+        let mut classes = vec![
+            format!("login-action-{action}"),
+            "wp-core-ui".to_owned(),
+            "admin-color-modern".to_owned(),
+        ];
         if rtl {
             classes.push("rtl".to_owned());
         }
         if interim {
             classes.push("interim-login".to_owned());
         }
-        classes.push(format!("locale-{}", rustpress_core::formatting::sanitize_html_class(&self.site.locale().replace('_', "-").to_lowercase())));
+        classes.push(format!(
+            "locale-{}",
+            rustpress_core::formatting::sanitize_html_class(
+                &self.site.locale().replace('_', "-").to_lowercase()
+            )
+        ));
         let logo_text = self.tr("Powered by WordPress");
         let logo_url = self.tr("https://wordpress.org/");
 
@@ -361,7 +502,10 @@ impl LoginEnv<'_> {
         }
         out.push_str(&self.robots());
         // `wp_resource_hints()` on `login_head` at priority 8.
-        out.push_str(&rustpress_core::native::resource_hints(self.site, &rustpress_core::native::Assets::default()));
+        out.push_str(&rustpress_core::native::resource_hints(
+            self.site,
+            &rustpress_core::native::Assets::default(),
+        ));
         if !head_scripts.is_empty() {
             let mut scripts = default_scripts(&self.loader);
             self.user_settings(&mut scripts);
@@ -374,16 +518,26 @@ impl LoginEnv<'_> {
         // `login_head` of the plugins at priority 10, before `wp_strict_cross_origin_referrer()` (also 10, hooked later).
         out.push_str(&self.site.plugins.login_head(self.site));
         out.push_str("\t<meta name='referrer' content='strict-origin-when-cross-origin' />\n\t");
-        out.push_str("\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\t");
+        out.push_str(
+            "\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n\t",
+        );
         if interim {
             out.push_str("\t\t<style>html{background-color: transparent;}</style>\n\t\t");
         }
         out.push_str("\t</head>\n");
-        out.push_str(&format!("\t<body class=\"login no-js {}\">\n\t", esc_attr(&classes.join(" "))));
-        out.push_str(&inline_script_tag("document.body.className = document.body.className.replace('no-js','js');", &[]));
+        out.push_str(&format!(
+            "\t<body class=\"login no-js {}\">\n\t",
+            esc_attr(&classes.join(" "))
+        ));
+        out.push_str(&inline_script_tag(
+            "document.body.className = document.body.className.replace('no-js','js');",
+            &[],
+        ));
         out.push('\n');
         if action != "confirm_admin_email" && !title.is_empty() {
-            out.push_str(&format!("\t\t\t\t<h1 class=\"screen-reader-text\">{title}</h1>\n"));
+            out.push_str(&format!(
+                "\t\t\t\t<h1 class=\"screen-reader-text\">{title}</h1>\n"
+            ));
         }
         out.push_str(&format!("\t\t\t<div id=\"login\">\n\t\t<h1 role=\"presentation\" class=\"wp-login-logo\"><a href=\"{}\">{logo_text}</a></h1>\n\t", esc_url(&logo_url)));
         if !message.is_empty() {
@@ -396,18 +550,34 @@ impl LoginEnv<'_> {
     /// The error and message notices of `login_header()`.
     fn notices(&self, errors: &[LoginError]) -> String {
         let mut out = String::new();
-        let list: Vec<&LoginError> = errors.iter().filter(|e| !e.is_message && !(e.code.is_empty() && e.message.is_empty())).collect();
-        let messages: String = errors.iter().filter(|e| e.is_message).map(|e| format!("<p>{}</p>", e.message)).collect();
+        let list: Vec<&LoginError> = errors
+            .iter()
+            .filter(|e| !e.is_message && !(e.code.is_empty() && e.message.is_empty()))
+            .collect();
+        let messages: String = errors
+            .iter()
+            .filter(|e| e.is_message)
+            .map(|e| format!("<p>{}</p>", e.message))
+            .collect();
         if !list.is_empty() {
             let inner = if list.len() > 1 {
-                format!("<ul class=\"login-error-list\">{}</ul>", list.iter().map(|e| format!("<li>{}</li>", e.message)).collect::<String>())
+                format!(
+                    "<ul class=\"login-error-list\">{}</ul>",
+                    list.iter()
+                        .map(|e| format!("<li>{}</li>", e.message))
+                        .collect::<String>()
+                )
             } else {
                 format!("<p>{}</p>", list[0].message)
             };
-            out.push_str(&format!("<div id=\"login_error\" class=\"notice notice-error\">{inner}</div>"));
+            out.push_str(&format!(
+                "<div id=\"login_error\" class=\"notice notice-error\">{inner}</div>"
+            ));
         }
         if !messages.is_empty() {
-            out.push_str(&format!("<div id=\"login-message\" class=\"notice notice-info message\">{messages}</div>"));
+            out.push_str(&format!(
+                "<div id=\"login-message\" class=\"notice notice-info message\">{messages}</div>"
+            ));
         }
         out
     }
@@ -417,8 +587,17 @@ impl LoginEnv<'_> {
         let mut out = String::new();
         if !interim {
             let blogname = &self.site.settings.blogname;
-            let link = format!("<a href=\"{}\">{}</a>", esc_url(&self.site.home_url("/")), rustpress_core::i18n::sprintf(&self.site.trx("&larr; Go to %s", "site"), &[blogname]));
-            out.push_str(&format!("\t\t<p id=\"backtoblog\">\n\t\t\t{link}\t\t</p>\n\t\t"));
+            let link = format!(
+                "<a href=\"{}\">{}</a>",
+                esc_url(&self.site.home_url("/")),
+                rustpress_core::i18n::sprintf(
+                    &self.site.trx("&larr; Go to %s", "site"),
+                    &[blogname]
+                )
+            );
+            out.push_str(&format!(
+                "\t\t<p id=\"backtoblog\">\n\t\t\t{link}\t\t</p>\n\t\t"
+            ));
             if let Some((title, url)) = &self.privacy_policy {
                 out.push_str(&format!("<div class=\"privacy-policy-page-link\"><a class=\"privacy-policy-link\" href=\"{}\" rel=\"privacy-policy\">{}</a></div>", esc_url(url), esc_html(title)));
             }
@@ -434,19 +613,30 @@ impl LoginEnv<'_> {
 
     /// The script that moves the focus into the form (`login_footer( $input_id )`).
     pub(crate) fn focus_script(&self, input_id: &str) -> String {
-        inline_script_tag(&format!("\t\ttry{{document.getElementById('{input_id}').focus();}}catch(e){{}}\n\t\tif(typeof wpOnload==='function')wpOnload();\n\t\t"), &[])
+        inline_script_tag(
+            &format!(
+                "\t\ttry{{document.getElementById('{input_id}').focus();}}catch(e){{}}\n\t\tif(typeof wpOnload==='function')wpOnload();\n\t\t"
+            ),
+            &[],
+        )
     }
 
     fn language_switcher(&self, request: &LoginRequest) -> String {
         let current = self.site.locale();
         // WordPress compares the empty string with the selected locale here, so this entry is never selected.
-        let mut options = String::from("<option value=\"en_US\" lang=\"en\" data-installed=\"1\">English (United States)</option>\n");
+        let mut options = String::from(
+            "<option value=\"en_US\" lang=\"en\" data-installed=\"1\">English (United States)</option>\n",
+        );
         for language in &self.languages {
             options.push_str(&format!(
                 "<option value=\"{}\" lang=\"{}\"{} data-installed=\"1\">{}</option>\n",
                 esc_attr(&language.locale),
                 esc_attr(&language.lang),
-                if language.locale == current { " selected='selected'" } else { "" },
+                if language.locale == current {
+                    " selected='selected'"
+                } else {
+                    ""
+                },
                 esc_html(&language.native_name)
             ));
         }
@@ -455,9 +645,26 @@ impl LoginEnv<'_> {
         let interim = request.request("interim-login").is_some();
         let mut hidden = String::new();
         for (condition, field) in [
-            (interim, "<input type=\"hidden\" name=\"interim-login\" value=\"1\" />".to_owned()),
-            (request.get("redirect_to").is_some_and(|v| !v.is_empty()), format!("<input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />", rustpress_core::formatting::esc_url_raw(request.get("redirect_to").unwrap_or_default()))),
-            (request.get("action").is_some_and(|v| !v.is_empty()), format!("<input type=\"hidden\" name=\"action\" value=\"{}\" />", esc_attr(request.get("action").unwrap_or_default()))),
+            (
+                interim,
+                "<input type=\"hidden\" name=\"interim-login\" value=\"1\" />".to_owned(),
+            ),
+            (
+                request.get("redirect_to").is_some_and(|v| !v.is_empty()),
+                format!(
+                    "<input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />",
+                    rustpress_core::formatting::esc_url_raw(
+                        request.get("redirect_to").unwrap_or_default()
+                    )
+                ),
+            ),
+            (
+                request.get("action").is_some_and(|v| !v.is_empty()),
+                format!(
+                    "<input type=\"hidden\" name=\"action\" value=\"{}\" />",
+                    esc_attr(request.get("action").unwrap_or_default())
+                ),
+            ),
         ] {
             hidden.push_str("\n\t\t\t\t\t");
             if condition {
@@ -499,17 +706,45 @@ impl LoginEnv<'_> {
 
     /// The form of the default action.
     #[allow(clippy::too_many_arguments)]
-    fn form(&self, errors: &[LoginError], user_login: &str, remember: bool, redirect_to: &str, interim: bool) -> String {
-        let has_errors = errors.iter().any(|e| !e.code.is_empty() || !e.message.is_empty());
+    fn form(
+        &self,
+        errors: &[LoginError],
+        user_login: &str,
+        remember: bool,
+        redirect_to: &str,
+        interim: bool,
+    ) -> String {
+        let has_errors = errors
+            .iter()
+            .any(|e| !e.code.is_empty() || !e.message.is_empty());
         let describe = if has_errors {
-            if errors.first().is_some_and(|e| e.is_message) { " aria-describedby=\"login-message\"" } else { " aria-describedby=\"login_error\"" }
+            if errors.first().is_some_and(|e| e.is_message) {
+                " aria-describedby=\"login-message\""
+            } else {
+                " aria-describedby=\"login_error\""
+            }
         } else {
             ""
         };
         let help = self.tr("Selecting \"Remember Me\" increases the length of time until you&#8217;re asked to log in again on this device. To keep your account secure, use this option only on your personal devices.");
-        let toggletip = toggletip(&help, "rememberme-help-toggletip", &self.tr("Help"), &self.tr("Close"));
-        let register = if self.site.options.get("users_can_register").is_some_and(|v| v != "0" && !v.is_empty()) {
-            format!("<a class=\"wp-login-register\" href=\"{}\">{}</a>{}", esc_url(&self.site.site_url("wp-login.php?action=register")), self.tr("Register"), esc_html(" | "))
+        let toggletip = toggletip(
+            &help,
+            "rememberme-help-toggletip",
+            &self.tr("Help"),
+            &self.tr("Close"),
+        );
+        let register = if self
+            .site
+            .options
+            .get("users_can_register")
+            .is_some_and(|v| v != "0" && !v.is_empty())
+        {
+            format!(
+                "<a class=\"wp-login-register\" href=\"{}\">{}</a>{}",
+                esc_url(&self.site.site_url("wp-login.php?action=register")),
+                self.tr("Register"),
+                esc_html(" | ")
+            )
         } else {
             String::new()
         };
@@ -529,7 +764,13 @@ impl LoginEnv<'_> {
         );
         if interim {
             // The dialog of an expired session has no link to the lost password and goes back to the page it is on.
-            html = html.replace(&format!("<input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />", esc_attr(redirect_to)), "<input type=\"hidden\" name=\"interim-login\" value=\"1\" />");
+            html = html.replace(
+                &format!(
+                    "<input type=\"hidden\" name=\"redirect_to\" value=\"{}\" />",
+                    esc_attr(redirect_to)
+                ),
+                "<input type=\"hidden\" name=\"interim-login\" value=\"1\" />",
+            );
             if let Some(end) = html.find("</form>\n") {
                 html.truncate(end + "</form>\n".len());
                 html.push_str("\n\t\t");
@@ -540,21 +781,40 @@ impl LoginEnv<'_> {
 
     /// The default action: the form, with the outcome of a sign-in attempt.
     async fn login_action(&self, request: &LoginRequest) -> LoginResponse {
-        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new(), bytes: Vec::new() };
+        let mut response = LoginResponse {
+            status: 200,
+            headers: page_headers(),
+            cookies: self.test_cookies(),
+            body: String::new(),
+            bytes: Vec::new(),
+        };
         response.headers.extend(frame_headers());
 
         let redirect_to_requested = request.request("redirect_to").map(str::to_owned);
-        let redirect_to = redirect_to_requested.clone().unwrap_or_else(|| self.admin_url());
+        let redirect_to = redirect_to_requested
+            .clone()
+            .unwrap_or_else(|| self.admin_url());
         let reauth = request.request("reauth").is_some_and(|v| !v.is_empty());
         let interim = request.request("interim-login").is_some();
 
-        let login = request.post_field("log").filter(|l| !l.is_empty()).unwrap_or_default();
-        let password = request.post_field("pwd").filter(|p| !p.is_empty()).unwrap_or_default();
-        let remember = request.post_field("rememberme").is_some_and(|v| !v.is_empty());
+        let login = request
+            .post_field("log")
+            .filter(|l| !l.is_empty())
+            .unwrap_or_default();
+        let password = request
+            .post_field("pwd")
+            .filter(|p| !p.is_empty())
+            .unwrap_or_default();
+        let remember = request
+            .post_field("rememberme")
+            .is_some_and(|v| !v.is_empty());
 
         let mut outcome = self.authenticate(login, password).await;
         // `wp_authenticate_cookie()`: no credentials, but a valid sign-in cookie.
-        if outcome.is_err() && login.is_empty() && password.is_empty() && !reauth
+        if outcome.is_err()
+            && login.is_empty()
+            && password.is_empty()
+            && !reauth
             && let Some(user) = self.user_of_auth_cookie(request).await
         {
             outcome = Ok(user);
@@ -566,27 +826,70 @@ impl LoginEnv<'_> {
             Ok(user) => {
                 // `wp_signon()`: a successful sign-in clears `user_activation_key`.
                 if let Some(writer) = self.writer
-                    && !self.db.user_activation_key(user.id).await.unwrap_or_default().is_empty()
+                    && !self
+                        .db
+                        .user_activation_key(user.id)
+                        .await
+                        .unwrap_or_default()
+                        .is_empty()
                 {
-                    writer.update_rows("users", "ID", user.id, &[("user_activation_key", Val::Str(String::new()))]).await.or_log();
+                    writer
+                        .update_rows(
+                            "users",
+                            "ID",
+                            user.id,
+                            &[("user_activation_key", Val::Str(String::new()))],
+                        )
+                        .await
+                        .or_log();
                 }
                 if credentials_given {
                     // Sign in: a session and the cookies.
                     let Some(writer) = self.writer else {
                         errors.push(error("writes_disabled", self.tr("<strong>Error:</strong> Signing in is not possible: this site was started without write access.")));
-                        return self.login_page(request, response, errors, login, remember, &redirect_to, false);
+                        return self.login_page(
+                            request,
+                            response,
+                            errors,
+                            login,
+                            remember,
+                            &redirect_to,
+                            false,
+                        );
                     };
                     let expiration = Auth::login_expiration(remember, self.now);
-                    match session::create_session(self.db, writer, user.id, expiration, request.remote_addr.as_deref(), request.user_agent.as_deref(), self.now).await {
+                    match session::create_session(
+                        self.db,
+                        writer,
+                        user.id,
+                        expiration,
+                        request.remote_addr.as_deref(),
+                        request.user_agent.as_deref(),
+                        self.now,
+                    )
+                    .await
+                    {
                         Ok(token) => {
                             let secure = self.secure_cookie_default();
                             let home_https = self.site.settings.home.starts_with("https");
-                            response.cookies.extend(self.auth.login_cookies(&user, remember, secure, home_https, &token, self.now, expiration, &self.paths()));
+                            response.cookies.extend(self.auth.login_cookies(
+                                &user,
+                                remember,
+                                secure,
+                                home_https,
+                                &token,
+                                self.now,
+                                expiration,
+                                &self.paths(),
+                            ));
                             signed_in = Some(user);
                         }
                         Err(e) => {
                             tracing_error(&e);
-                            errors.push(error("session", self.tr("<strong>Error:</strong> Could not start a session.")));
+                            errors.push(error(
+                                "session",
+                                self.tr("<strong>Error:</strong> Could not start a session."),
+                            ));
                         }
                     }
                 } else {
@@ -600,8 +903,16 @@ impl LoginEnv<'_> {
         if signed_in.is_none() || (signed_in.is_some() && !credentials_given) {
             // The logged-in cookie of this request counts as set after a sign-in.
         }
-        let logged_in_cookie_present = request.cookie(&self.auth.cookie_name(Scheme::LoggedIn)).is_some_and(|c| !c.is_empty()) || (signed_in.is_some() && credentials_given);
-        if !logged_in_cookie_present && request.post_field("testcookie").is_some() && request.cookie("wordpress_test_cookie").is_none_or(str::is_empty) {
+        let logged_in_cookie_present = request
+            .cookie(&self.auth.cookie_name(Scheme::LoggedIn))
+            .is_some_and(|c| !c.is_empty())
+            || (signed_in.is_some() && credentials_given);
+        if !logged_in_cookie_present
+            && request.post_field("testcookie").is_some()
+            && request
+                .cookie("wordpress_test_cookie")
+                .is_none_or(str::is_empty)
+        {
             signed_in = None;
             errors = vec![error(
                 "test_cookie",
@@ -617,7 +928,22 @@ impl LoginEnv<'_> {
         {
             if interim {
                 // The dialog of an expired session closes itself.
-                let mut page = self.header_with("login", "", "<p class=\"message\">You have logged in successfully.</p>", &[], &[], true).replace("<p class=\"message\">You have logged in successfully.</p>", &format!("<p class=\"message\">{}</p>", self.tr("You have logged in successfully.")));
+                let mut page = self
+                    .header_with(
+                        "login",
+                        "",
+                        "<p class=\"message\">You have logged in successfully.</p>",
+                        &[],
+                        &[],
+                        true,
+                    )
+                    .replace(
+                        "<p class=\"message\">You have logged in successfully.</p>",
+                        &format!(
+                            "<p class=\"message\">{}</p>",
+                            self.tr("You have logged in successfully.")
+                        ),
+                    );
                 page = page.replace("<body class=\"login no-js login-action-login wp-core-ui admin-color-modern interim-login locale", "<body class=\"login no-js login-action-login wp-core-ui admin-color-modern interim-login interim-login-success locale");
                 page.push_str("\t\t\t\t</div>\n\t\t\t\t");
                 page.push_str(&self.footer_scripts(&[]));
@@ -631,10 +957,25 @@ impl LoginEnv<'_> {
             if let Ok(current) = CurrentUser::load(self.db, self.roles, user).await
                 && current.can("manage_options")
             {
-                let lifespan = self.site.options.string("admin_email_lifespan", "0").parse::<i64>().unwrap_or(0);
+                let lifespan = self
+                    .site
+                    .options
+                    .string("admin_email_lifespan", "0")
+                    .parse::<i64>()
+                    .unwrap_or(0);
                 if self.now > lifespan {
-                    let locale = self.db.user_meta(user.id, "locale").await.ok().flatten().filter(|l| !l.is_empty()).unwrap_or_else(|| self.site.locale());
-                    redirect_to = format!("{}&action=confirm_admin_email&wp_lang={locale}", self.login_url_for(&redirect_to));
+                    let locale = self
+                        .db
+                        .user_meta(user.id, "locale")
+                        .await
+                        .ok()
+                        .flatten()
+                        .filter(|l| !l.is_empty())
+                        .unwrap_or_else(|| self.site.locale());
+                    redirect_to = format!(
+                        "{}&action=confirm_admin_email&wp_lang={locale}",
+                        self.login_url_for(&redirect_to)
+                    );
                 }
             }
             let mut target = redirect_to.clone();
@@ -644,17 +985,29 @@ impl LoginEnv<'_> {
                 if let Some(current) = &current
                     && !current.can("edit_posts")
                 {
-                    target = if current.can("read") { self.site.site_url("wp-admin/profile.php") } else { self.site.home_url("/") };
+                    target = if current.can("read") {
+                        self.site.site_url("wp-admin/profile.php")
+                    } else {
+                        self.site.home_url("/")
+                    };
                 }
                 response.status = 302;
-                response.headers.push(("X-Redirect-By".into(), "WordPress".into()));
-                response.headers.push(("Location".into(), sanitize_redirect(&target)));
+                response
+                    .headers
+                    .push(("X-Redirect-By".into(), "WordPress".into()));
+                response
+                    .headers
+                    .push(("Location".into(), sanitize_redirect(&target)));
                 return response;
             }
             let safe = validate_redirect(self.site, &target, &admin_url);
             response.status = 302;
-            response.headers.push(("X-Redirect-By".into(), "WordPress".into()));
-            response.headers.push(("Location".into(), sanitize_redirect(&safe)));
+            response
+                .headers
+                .push(("X-Redirect-By".into(), "WordPress".into()));
+            response
+                .headers
+                .push(("Location".into(), sanitize_redirect(&safe)));
             return response;
         }
         if signed_in.is_some() && reauth {
@@ -662,47 +1015,127 @@ impl LoginEnv<'_> {
         }
         // A forced sign-in starts from nothing.
         if reauth {
-            response.cookies.extend(self.auth.clear_cookies(0, self.now, self.auth.cookie_hash(), &self.paths()));
+            response.cookies.extend(self.auth.clear_cookies(
+                0,
+                self.now,
+                self.auth.cookie_hash(),
+                &self.paths(),
+            ));
         }
         // The cookie of a password reset is used up once the form is left.
         let rp_cookie = format!("wp-resetpass-{}", self.auth.cookie_hash());
         if request.cookie(&rp_cookie).is_some() {
-            response.cookies.push(SetCookie { name: rp_cookie, value: " ".into(), expires: Some(self.now - 365 * 86_400), path: request.request_uri.split('?').next().unwrap_or_default().to_owned(), domain: None, secure: self.https, http_only: true });
+            response.cookies.push(SetCookie {
+                name: rp_cookie,
+                value: " ".into(),
+                expires: Some(self.now - 365 * 86_400),
+                path: request
+                    .request_uri
+                    .split('?')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+                domain: None,
+                secure: self.https,
+                http_only: true,
+            });
         }
-        self.login_page(request, response, errors, login, remember, &redirect_to, reauth)
+        self.login_page(
+            request,
+            response,
+            errors,
+            login,
+            remember,
+            &redirect_to,
+            reauth,
+        )
     }
 
     /// Builds the form page with `errors`.
     #[allow(clippy::too_many_arguments)]
-    fn login_page(&self, request: &LoginRequest, mut response: LoginResponse, mut errors: Vec<LoginError>, login: &str, remember: bool, redirect_to: &str, reauth: bool) -> LoginResponse {
+    fn login_page(
+        &self,
+        request: &LoginRequest,
+        mut response: LoginResponse,
+        mut errors: Vec<LoginError>,
+        login: &str,
+        remember: bool,
+        redirect_to: &str,
+        reauth: bool,
+    ) -> LoginResponse {
         let interim = request.request("interim-login").is_some();
         if request.get("loggedout").is_some_and(|v| !v.is_empty()) || reauth {
             errors.retain(|e| e.is_message);
         }
-        let only_empty = errors.len() == 2 && errors[0].code == "empty_username" && errors[1].code == "empty_password";
+        let only_empty = errors.len() == 2
+            && errors[0].code == "empty_username"
+            && errors[1].code == "empty_password";
         if !request.post && only_empty {
             errors.clear();
         }
         if interim {
             if errors.is_empty() {
-                errors.push(LoginError { code: "expired", message: self.tr("Your session has expired. Please log in to continue where you left off."), is_message: true });
+                errors.push(LoginError {
+                    code: "expired",
+                    message: self.tr(
+                        "Your session has expired. Please log in to continue where you left off.",
+                    ),
+                    is_message: true,
+                });
             }
         } else if request.get("loggedout").is_some_and(|v| !v.is_empty()) {
-            errors.push(LoginError { code: "loggedout", message: self.tr("You are now logged out."), is_message: true });
+            errors.push(LoginError {
+                code: "loggedout",
+                message: self.tr("You are now logged out."),
+                is_message: true,
+            });
         } else if request.get("registration") == Some("disabled") {
-            errors.push(error("registerdisabled", self.tr("<strong>Error:</strong> User registration is currently not allowed.")));
+            errors.push(error(
+                "registerdisabled",
+                self.tr("<strong>Error:</strong> User registration is currently not allowed."),
+            ));
         } else if redirect_to.contains("about.php?updated") {
             errors.push(LoginError { code: "updated", message: self.tr("<strong>You have successfully updated WordPress!</strong> Please log back in to see what&#8217;s new."), is_message: true });
-        } else if let Some(authorize) = request.get("redirect_to").filter(|r| r.contains("wp-admin/authorize-application.php")) {
-            let app_name = authorize.split_once('?').and_then(|(_, q)| q.split('&').find_map(|p| p.strip_prefix("app_name="))).map(|v| String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(v.replace('+', " ").as_bytes())).into_owned()).filter(|v| !v.is_empty());
+        } else if let Some(authorize) = request
+            .get("redirect_to")
+            .filter(|r| r.contains("wp-admin/authorize-application.php"))
+        {
+            let app_name = authorize
+                .split_once('?')
+                .and_then(|(_, q)| q.split('&').find_map(|p| p.strip_prefix("app_name=")))
+                .map(|v| {
+                    String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(
+                        v.replace('+', " ").as_bytes(),
+                    ))
+                    .into_owned()
+                })
+                .filter(|v| !v.is_empty());
             let blogname = &self.site.settings.blogname;
             let message = match app_name {
-                Some(name) => rustpress_core::i18n::sprintf(&self.tr("Please log in to %1$s to authorize %2$s to connect to your account."), &[blogname, &format!("<strong>{}</strong>", esc_html(&name))]),
-                None => rustpress_core::i18n::sprintf(&self.tr("Please log in to %s to proceed with authorization."), &[blogname]),
+                Some(name) => rustpress_core::i18n::sprintf(
+                    &self.tr("Please log in to %1$s to authorize %2$s to connect to your account."),
+                    &[blogname, &format!("<strong>{}</strong>", esc_html(&name))],
+                ),
+                None => rustpress_core::i18n::sprintf(
+                    &self.tr("Please log in to %s to proceed with authorization."),
+                    &[blogname],
+                ),
             };
-            errors.push(LoginError { code: "authorize_application", message, is_message: true });
+            errors.push(LoginError {
+                code: "authorize_application",
+                message,
+                is_message: true,
+            });
         }
-        let user_login = if request.post_field("log").is_some() && errors.first().is_some_and(|e| e.code == "incorrect_password" || e.code == "empty_password") { request.post_field("log").unwrap_or_default() } else { "" };
+        let user_login = if request.post_field("log").is_some()
+            && errors
+                .first()
+                .is_some_and(|e| e.code == "incorrect_password" || e.code == "empty_password")
+        {
+            request.post_field("log").unwrap_or_default()
+        } else {
+            ""
+        };
         let _ = login;
         let title = self.tr("Log In");
         let mut body = self.header_with("login", &title, "", &errors, &[], interim);
@@ -720,16 +1153,34 @@ impl LoginEnv<'_> {
         script.push_str("d.focus(); d.select();} catch( er ) {}}, 200);}\n");
         script.push_str("wp_attempt_focus();\n");
         script.push_str("if ( typeof wpOnload === 'function' ) { wpOnload() }");
-        body.push_str(&format!("{}{}", if interim { "" } else { "\t\t\t" }, inline_script_tag(&script, &[])));
+        body.push_str(&format!(
+            "{}{}",
+            if interim { "" } else { "\t\t\t" },
+            inline_script_tag(&script, &[])
+        ));
         if interim {
             body.push_str(&inline_script_tag("\t\t\t( function() {\n\t\t\t\ttry {\n\t\t\t\t\tvar i, links = document.getElementsByTagName( 'a' );\n\t\t\t\t\tfor ( i in links ) {\n\t\t\t\t\t\tif ( links[i].href ) {\n\t\t\t\t\t\t\tlinks[i].target = '_blank';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t} catch( er ) {}\n\t\t\t}());\n\t\t\t", &[]));
             body.push_str("\t</div>\n\t\n\t");
         } else {
             body.push_str(&self.footer_for(request, false));
         }
-        if errors.first().is_some_and(|e| matches!(e.code, "empty_password" | "empty_email" | "invalid_email" | "invalidcombo" | "empty_username" | "invalid_username" | "incorrect_password")) {
+        if errors.first().is_some_and(|e| {
+            matches!(
+                e.code,
+                "empty_password"
+                    | "empty_email"
+                    | "invalid_email"
+                    | "invalidcombo"
+                    | "empty_username"
+                    | "invalid_username"
+                    | "incorrect_password"
+            )
+        }) {
             // `wp_shake_js()`
-            body.push_str(&inline_script_tag("document.querySelector('form').classList.add('shake');", &[]));
+            body.push_str(&inline_script_tag(
+                "document.querySelector('form').classList.add('shake');",
+                &[],
+            ));
         }
         body.push_str(&self.footer_scripts(&["user-profile", "wp-tooltip"]));
         body.push_str("\t</body>\n\t</html>\n\t");
@@ -741,43 +1192,93 @@ impl LoginEnv<'_> {
 
     /// `wp-login.php?action=logout`.
     async fn logout_action(&self, request: &LoginRequest) -> LoginResponse {
-        let mut response = LoginResponse { status: 200, headers: page_headers(), cookies: self.test_cookies(), body: String::new(), bytes: Vec::new() };
+        let mut response = LoginResponse {
+            status: 200,
+            headers: page_headers(),
+            cookies: self.test_cookies(),
+            body: String::new(),
+            bytes: Vec::new(),
+        };
         response.headers.extend(frame_headers());
         // The session of the logged-in cookie, and the nonce of the sign-out link.
         let cookie_name = self.auth.cookie_name(Scheme::LoggedIn);
         let session = match request.cookie(&cookie_name) {
-            Some(cookie) => self.auth.validate_cookie(self.db, cookie, Scheme::LoggedIn, self.now, request.post).await.ok().flatten(),
+            Some(cookie) => self
+                .auth
+                .validate_cookie(self.db, cookie, Scheme::LoggedIn, self.now, request.post)
+                .await
+                .ok()
+                .flatten(),
             None => None,
         };
-        let (user_id, token) = session.as_ref().map(|s| (s.user.id, s.token.clone())).unwrap_or((0, String::new()));
+        let (user_id, token) = session
+            .as_ref()
+            .map(|s| (s.user.id, s.token.clone()))
+            .unwrap_or((0, String::new()));
         let nonce = request.request("_wpnonce").unwrap_or_default();
-        if self.auth.verify_nonce(nonce, "log-out", user_id, &token, self.now).is_none() {
+        if self
+            .auth
+            .verify_nonce(nonce, "log-out", user_id, &token, self.now)
+            .is_none()
+        {
             // `wp_nonce_ays( 'log-out' )`
             let blogname = &self.site.settings.blogname;
-            let title = rustpress_core::i18n::sprintf(&self.tr("You are attempting to log out of %s"), &[blogname]);
+            let title = rustpress_core::i18n::sprintf(
+                &self.tr("You are attempting to log out of %s"),
+                &[blogname],
+            );
             let mut url = self.site.site_url("wp-login.php?action=logout");
             if let Some(redirect) = request.request("redirect_to").filter(|r| !r.is_empty()) {
-                url = format!("{url}&redirect_to={}", rustpress_core::canonical::php_urlencode(redirect));
+                url = format!(
+                    "{url}&redirect_to={}",
+                    rustpress_core::canonical::php_urlencode(redirect)
+                );
             }
-            let link = esc_html(&format!("{url}&_wpnonce={}", self.auth.create_nonce("log-out", user_id, &token, self.now).unwrap_or_default()));
-            let html = format!("{title}</p><p>{}", rustpress_core::i18n::sprintf(&self.tr("Do you really want to <a href=\"%s\">log out</a>?"), &[&link]));
+            let link = esc_html(&format!(
+                "{url}&_wpnonce={}",
+                self.auth
+                    .create_nonce("log-out", user_id, &token, self.now)
+                    .unwrap_or_default()
+            ));
+            let html = format!(
+                "{title}</p><p>{}",
+                rustpress_core::i18n::sprintf(
+                    &self.tr("Do you really want to <a href=\"%s\">log out</a>?"),
+                    &[&link]
+                )
+            );
             response.status = 403;
             response.body = crate::die::page(self.site, &title, &html);
             return response;
         }
         // `wp_logout()`: end the session, clear the cookies.
         if let (Some(session), Some(writer)) = (&session, self.writer) {
-            session::destroy_session(self.db, writer, session.user.id, &session.token, self.now).await.or_log();
+            session::destroy_session(self.db, writer, session.user.id, &session.token, self.now)
+                .await
+                .or_log();
         }
-        response.cookies.extend(self.auth.clear_cookies(user_id, self.now, self.auth.cookie_hash(), &self.paths()));
+        response.cookies.extend(self.auth.clear_cookies(
+            user_id,
+            self.now,
+            self.auth.cookie_hash(),
+            &self.paths(),
+        ));
         let target = match request.request("redirect_to").filter(|r| !r.is_empty()) {
             Some(redirect) => redirect.to_owned(),
-            None => format!("{}?loggedout=true&wp_lang={}", self.login_url(), self.site.locale()),
+            None => format!(
+                "{}?loggedout=true&wp_lang={}",
+                self.login_url(),
+                self.site.locale()
+            ),
         };
         let safe = validate_redirect(self.site, &target, &self.admin_url());
         response.status = 302;
-        response.headers.push(("X-Redirect-By".into(), "WordPress".into()));
-        response.headers.push(("Location".into(), sanitize_redirect(&safe)));
+        response
+            .headers
+            .push(("X-Redirect-By".into(), "WordPress".into()));
+        response
+            .headers
+            .push(("Location".into(), sanitize_redirect(&safe)));
         response
     }
 }
@@ -804,7 +1305,19 @@ pub async fn handle(env: &LoginEnv<'_>, request: &LoginRequest) -> LoginResponse
     if request.get("checkemail").is_some() {
         action = "checkemail";
     }
-    const KNOWN: [&str; 11] = ["confirm_admin_email", "postpass", "logout", "lostpassword", "retrievepassword", "resetpass", "rp", "register", "checkemail", "confirmaction", "login"];
+    const KNOWN: [&str; 11] = [
+        "confirm_admin_email",
+        "postpass",
+        "logout",
+        "lostpassword",
+        "retrievepassword",
+        "resetpass",
+        "rp",
+        "register",
+        "checkemail",
+        "confirmaction",
+        "login",
+    ];
     if !KNOWN.contains(&action) {
         action = "login";
     }
@@ -830,7 +1343,13 @@ mod redirect_tests {
 
     #[test]
     fn validates_like_wordpress() {
-        let check = |input: &str, expected: &str| assert_eq!(validate_redirect_for_host("example.org", input, "/fallback"), expected, "input {input:?}");
+        let check = |input: &str, expected: &str| {
+            assert_eq!(
+                validate_redirect_for_host("example.org", input, "/fallback"),
+                expected,
+                "input {input:?}"
+            )
+        };
         check("/wp-admin/", "/wp-admin/");
         check("http://example.org/x", "http://example.org/x");
         check("https://example.org/x?a=1", "https://example.org/x?a=1");

@@ -19,7 +19,8 @@ const ITOA64: &[u8] = b"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 
 /// `base64_encode( hash_hmac( 'sha384', $password, 'wp-sha384', true ) )`.
 fn prehash(password: &str) -> String {
-    let mut mac = Hmac::<Sha384>::new_from_slice(b"wp-sha384").expect("hmac accepts any key length");
+    let mut mac =
+        Hmac::<Sha384>::new_from_slice(b"wp-sha384").expect("hmac accepts any key length");
     mac.update(password.as_bytes());
     STANDARD.encode(mac.finalize().into_bytes())
 }
@@ -38,16 +39,21 @@ pub fn hash_password(password: &str) -> String {
 pub fn fast_hash(message: &str) -> String {
     use blake2::Blake2bMac;
     use blake2::digest::consts::U30;
-    let mut mac = <Blake2bMac<U30> as hmac::digest::KeyInit>::new_from_slice(b"wp_fast_hash_6.8+").expect("a key of 17 bytes");
+    let mut mac = <Blake2bMac<U30> as hmac::digest::KeyInit>::new_from_slice(b"wp_fast_hash_6.8+")
+        .expect("a key of 17 bytes");
     hmac::digest::Update::update(&mut mac, message.as_bytes());
     let hashed = hmac::digest::FixedOutput::finalize_fixed(mac);
-    format!("$generic${}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hashed))
+    format!(
+        "$generic${}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hashed)
+    )
 }
 
 /// `wp_verify_fast_hash()`: also accepts the phpass hashes of older versions.
 pub fn verify_fast_hash(message: &str, hash: &str) -> bool {
     if !hash.starts_with("$generic$") {
-        return phpass(message, hash).is_some_and(|computed| computed.as_bytes().ct_eq(hash.as_bytes()).into());
+        return phpass(message, hash)
+            .is_some_and(|computed| computed.as_bytes().ct_eq(hash.as_bytes()).into());
     }
     fast_hash(message).as_bytes().ct_eq(hash.as_bytes()).into()
 }
@@ -64,7 +70,10 @@ pub fn hash_portable(password: &str) -> String {
 /// `wp_check_password()`.
 pub fn check_password(password: &str, hash: &str) -> bool {
     if hash.len() <= 32 {
-        return hash.as_bytes().ct_eq(format!("{:x}", Md5::digest(password.as_bytes())).as_bytes()).into();
+        return hash
+            .as_bytes()
+            .ct_eq(format!("{:x}", Md5::digest(password.as_bytes())).as_bytes())
+            .into();
     }
     if password.len() > MAX_LENGTH {
         return false;
@@ -73,7 +82,8 @@ pub fn check_password(password: &str, hash: &str) -> bool {
         return bcrypt::verify(prehash(password), inner).unwrap_or(false);
     }
     if hash.starts_with("$P$") {
-        return phpass(password, hash).is_some_and(|computed| computed.as_bytes().ct_eq(hash.as_bytes()).into());
+        return phpass(password, hash)
+            .is_some_and(|computed| computed.as_bytes().ct_eq(hash.as_bytes()).into());
     }
     bcrypt::verify(password, hash).unwrap_or(false)
 }
@@ -97,9 +107,15 @@ fn phpass(password: &str, setting: &str) -> Option<String> {
         return None;
     }
     let salt = &bytes[4..12];
-    let mut hash = Md5::new().chain_update(salt).chain_update(password.as_bytes()).finalize();
+    let mut hash = Md5::new()
+        .chain_update(salt)
+        .chain_update(password.as_bytes())
+        .finalize();
     for _ in 0..(1u64 << count_log2) {
-        hash = Md5::new().chain_update(hash).chain_update(password.as_bytes()).finalize();
+        hash = Md5::new()
+            .chain_update(hash)
+            .chain_update(password.as_bytes())
+            .finalize();
     }
     Some(format!("{}{}", &setting[..12], encode64(&hash)))
 }
@@ -153,8 +169,14 @@ mod tests {
     #[test]
     fn phpass_known_vector() {
         // The documented phpass test vector: password "test12345".
-        assert!(check_password("test12345", "$P$9IQRaTwmfeRo7ud9Fh4E2PdI0S3r.L0"));
-        assert!(!check_password("test1234", "$P$9IQRaTwmfeRo7ud9Fh4E2PdI0S3r.L0"));
+        assert!(check_password(
+            "test12345",
+            "$P$9IQRaTwmfeRo7ud9Fh4E2PdI0S3r.L0"
+        ));
+        assert!(!check_password(
+            "test1234",
+            "$P$9IQRaTwmfeRo7ud9Fh4E2PdI0S3r.L0"
+        ));
         assert!(needs_rehash("$P$9IQRaTwmfeRo7ud9Fh4E2PdI0S3r.L0"));
     }
 
@@ -162,15 +184,24 @@ mod tests {
     fn plain_bcrypt_and_md5_are_accepted() {
         let bcrypt_hash = bcrypt::hash("passwort", 4).unwrap();
         assert!(check_password("passwort", &bcrypt_hash));
-        assert!(check_password("passwort", &format!("{:x}", Md5::digest(b"passwort"))));
-        assert!(!check_password("falsch", &format!("{:x}", Md5::digest(b"passwort"))));
+        assert!(check_password(
+            "passwort",
+            &format!("{:x}", Md5::digest(b"passwort"))
+        ));
+        assert!(!check_password(
+            "falsch",
+            &format!("{:x}", Md5::digest(b"passwort"))
+        ));
     }
 
     #[test]
     fn overlong_passwords_never_match() {
         let long = "x".repeat(MAX_LENGTH + 1);
         assert_eq!(hash_password(&long), "*");
-        assert!(!check_password(&long, "$wp$2y$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"));
+        assert!(!check_password(
+            &long,
+            "$wp$2y$10$abcdefghijklmnopqrstuuabcdefghijklmnopqrstuvwxyz01234"
+        ));
     }
 }
 

@@ -11,7 +11,10 @@ mod upload;
 
 use futures::future::BoxFuture;
 use rustpress_blocks::php_json;
-use rustpress_core::native::{ActivePlugin, AdminContext, AdminHelp, AdminPage, AjaxAnswer, Assets, MetaType, NativePlugin, RegisteredMeta, Uploader};
+use rustpress_core::native::{
+    ActivePlugin, AdminContext, AdminHelp, AdminPage, AjaxAnswer, Assets, MetaType, NativePlugin,
+    RegisteredMeta, Uploader,
+};
 use rustpress_core::{Result, Site};
 use rustpress_phpser::{Key, Value};
 
@@ -30,7 +33,11 @@ impl NativePlugin for SvgSupport {
     }
 
     fn load<'a>(&'a self, site: &'a Site) -> BoxFuture<'a, Result<Box<dyn ActivePlugin>>> {
-        Box::pin(async move { Ok(Box::new(Active { settings: Settings::from_option(site.options.value("bodhi_svgs_settings")) }) as Box<dyn ActivePlugin>) })
+        Box::pin(async move {
+            Ok(Box::new(Active {
+                settings: Settings::from_option(site.options.value("bodhi_svgs_settings")),
+            }) as Box<dyn ActivePlugin>)
+        })
     }
 
     fn text_domain(&self) -> Option<&'static str> {
@@ -71,9 +78,15 @@ impl Settings {
                 .collect(),
             _ => Vec::new(),
         };
-        let list = |role: &str| Value::Array(vec![(Key::Int(0), Value::Str(role.as_bytes().to_vec()))]);
+        let list =
+            |role: &str| Value::Array(vec![(Key::Int(0), Value::Str(role.as_bytes().to_vec()))]);
         // The defaults `svg-support.php` stores on every load, in its order.
-        let current = |options: &[(String, Value)], key: &str| options.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        let current = |options: &[(String, Value)], key: &str| {
+            options
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+        };
         let snapshot = options.clone();
         let mut set = |key: &str, value: Value| match options.iter_mut().find(|(k, _)| k == key) {
             Some((_, slot)) => *slot = value,
@@ -140,9 +153,19 @@ impl ActivePlugin for Active {
         admin::footer_text(ctx)
     }
 
-    fn admin_page<'a>(&'a self, _slug: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<String>> {
+    fn admin_page<'a>(
+        &'a self,
+        _slug: &'a str,
+        ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<String>> {
         // `get_option( 'bodhi_svgs_settings' )` as the page reads it, after the defaults of this request.
-        Box::pin(async move { Ok(admin::settings_page(ctx, &self.settings, &ctx.settings_fields("bodhi_svgs_settings_group"))) })
+        Box::pin(async move {
+            Ok(admin::settings_page(
+                ctx,
+                &self.settings,
+                &ctx.settings_fields("bodhi_svgs_settings_group"),
+            ))
+        })
     }
 
     fn plugin_action_links(&self, site: &Site, links: Vec<String>) -> Vec<String> {
@@ -157,24 +180,47 @@ impl ActivePlugin for Active {
     fn block_editor_assets(&self, ctx: &AdminContext<'_>, assets: &mut Assets) {
         if self.settings.advanced_mode() {
             // The plugin's URL ends with a slash and the path starts with one.
-            let src = format!("{}/js/min/gutenberg-filters-min.js", ctx.site.site_url("wp-content/plugins/svg-support/"));
-            assets.script("bodhi-svgs-gutenberg-filters", src, &["wp-edit-post"], VERSION, true);
+            let src = format!(
+                "{}/js/min/gutenberg-filters-min.js",
+                ctx.site.site_url("wp-content/plugins/svg-support/")
+            );
+            assets.script(
+                "bodhi-svgs-gutenberg-filters",
+                src,
+                &["wp-edit-post"],
+                VERSION,
+                true,
+            );
         }
     }
 
     /// `bodhi_svgs_add_class_to_thumbnail()`: on a singular page, an inlined featured image gets the target class.
-    fn post_thumbnail_html<'a>(&'a self, site: &'a Site, post_id: u64, singular: bool, html: String) -> BoxFuture<'a, Result<String>> {
+    fn post_thumbnail_html<'a>(
+        &'a self,
+        site: &'a Site,
+        post_id: u64,
+        singular: bool,
+        html: String,
+    ) -> BoxFuture<'a, Result<String>> {
         Box::pin(async move {
             if !self.settings.advanced_mode() || !singular {
                 return Ok(html);
             }
             let rows = site.db.post_meta(post_id).await?;
             // `in_array( 1, get_post_meta( ... ) )`: a value that equals 1 loosely.
-            let inline = rows.iter().filter(|m| m.meta_key.as_deref() == Some("inline_featured_image")).filter_map(|m| m.meta_value.as_deref()).any(|v| v.trim().parse::<f64>().is_ok_and(|n| n == 1.0));
+            let inline = rows
+                .iter()
+                .filter(|m| m.meta_key.as_deref() == Some("inline_featured_image"))
+                .filter_map(|m| m.meta_value.as_deref())
+                .any(|v| v.trim().parse::<f64>().is_ok_and(|n| n == 1.0));
             if !inline {
                 return Ok(html);
             }
-            let target = self.settings.str("css_target").filter(|c| !c.is_empty() && c != "0").unwrap_or_else(|| "style-svg".to_owned());
+            let target = self
+                .settings
+                .str("css_target")
+                .filter(|c| !c.is_empty() && c != "0")
+                .unwrap_or_else(|| "style-svg".to_owned());
             Ok(html.replace("attachment-", &format!("{target} attachment-")))
         })
     }
@@ -183,7 +229,12 @@ impl ActivePlugin for Active {
         upload::upload_mimes(&self.settings, uploader, mimes);
     }
 
-    fn upload_prefilter(&self, uploader: &Uploader<'_>, name: &mut String, bytes: &mut Vec<u8>) -> std::result::Result<(), String> {
+    fn upload_prefilter(
+        &self,
+        uploader: &Uploader<'_>,
+        name: &mut String,
+        bytes: &mut Vec<u8>,
+    ) -> std::result::Result<(), String> {
         upload::prefilter(uploader.site, &self.settings, uploader, name, bytes)
     }
 
@@ -191,17 +242,33 @@ impl ActivePlugin for Active {
         upload::accept_filetype(name, mimes)
     }
 
-    fn attachment_metadata(&self, site: &Site, mime: &str, path: &std::path::Path, relative: &str, metadata: Value) -> Value {
+    fn attachment_metadata(
+        &self,
+        site: &Site,
+        mime: &str,
+        path: &std::path::Path,
+        relative: &str,
+        metadata: Value,
+    ) -> Value {
         upload::metadata(site, mime, path, relative, metadata)
     }
 
-    fn prepare_attachment_for_js(&self, mime: &str, path: Option<&std::path::Path>, response: &mut serde_json::Map<String, serde_json::Value>) {
+    fn prepare_attachment_for_js(
+        &self,
+        mime: &str,
+        path: Option<&std::path::Path>,
+        response: &mut serde_json::Map<String, serde_json::Value>,
+    ) {
         upload::prepare_attachment_for_js(mime, path, response);
     }
 
     /// `bodhi_svgs_display_thumbs()`: the output buffer of the media library.
     fn admin_page_output(&self, ctx: &AdminContext<'_>, html: String) -> String {
-        if ctx.hook_suffix == "upload.php" { upload::media_templates(html) } else { html }
+        if ctx.hook_suffix == "upload.php" {
+            upload::media_templates(html)
+        } else {
+            html
+        }
     }
 
     fn registered_settings(&self) -> Vec<(&'static str, &'static str)> {
@@ -212,7 +279,11 @@ impl ActivePlugin for Active {
         admin::sanitize(value)
     }
 
-    fn admin_ajax<'a>(&'a self, action: &'a str, ctx: &'a AdminContext<'a>) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
+    fn admin_ajax<'a>(
+        &'a self,
+        action: &'a str,
+        ctx: &'a AdminContext<'a>,
+    ) -> BoxFuture<'a, Result<Option<AjaxAnswer>>> {
         Box::pin(async move {
             match action {
                 "bodhi_svgs_autosave" => Ok(Some(admin::autosave(ctx).await?)),
@@ -223,7 +294,11 @@ impl ActivePlugin for Active {
 
     /// `bodhi_svgs_register_meta()`: whether the featured image is inlined, for every post type.
     fn registered_post_meta(&self) -> Vec<RegisteredMeta> {
-        vec![RegisteredMeta { key: "inline_featured_image", post_type: None, kind: MetaType::Boolean }]
+        vec![RegisteredMeta {
+            key: "inline_featured_image",
+            post_type: None,
+            kind: MetaType::Boolean,
+        }]
     }
 
     fn enqueue(&self, site: &Site, assets: &mut Assets) {
@@ -231,12 +306,28 @@ impl ActivePlugin for Active {
         let settings = &self.settings;
         let in_footer = settings.on("js_foot_choice");
         // `bodhi_svgs_frontend_js()` at priority 9.
-        if settings.str("sanitize_svg_front_end").as_deref() == Some("on") && settings.advanced_mode() {
-            assets.script("bodhi-dompurify-library", format!("{base}/vendor/DOMPurify/DOMPurify.min.js"), &[], "2.5.9", in_footer).priority = 9;
+        if settings.str("sanitize_svg_front_end").as_deref() == Some("on")
+            && settings.advanced_mode()
+        {
+            assets
+                .script(
+                    "bodhi-dompurify-library",
+                    format!("{base}/vendor/DOMPurify/DOMPurify.min.js"),
+                    &[],
+                    "2.5.9",
+                    in_footer,
+                )
+                .priority = 9;
         }
         // `bodhi_svgs_frontend_css()`.
         if settings.on("frontend_css") {
-            assets.style("bodhi-svgs-attachment", format!("{base}/css/svgs-attachment.css"), &[], VERSION, "all");
+            assets.style(
+                "bodhi-svgs-attachment",
+                format!("{base}/css/svgs-attachment.css"),
+                &[],
+                VERSION,
+                "all",
+            );
         }
         // `bodhi_svgs_inline()`.
         if settings.advanced_mode() {
@@ -247,17 +338,43 @@ impl ActivePlugin for Active {
                 }
                 None => ("img.style-svg".to_owned(), "style-svg".to_owned()),
             };
-            let (folder, suffix) = if settings.on("use_expanded_js") { ("", "") } else { ("min/", "-min") };
+            let (folder, suffix) = if settings.on("use_expanded_js") {
+                ("", "")
+            } else {
+                ("min/", "-min")
+            };
             let vanilla = settings.on("use_vanilla_js");
-            let path = format!("js/{folder}svgs-inline{}{suffix}.js", if vanilla { "-vanilla" } else { "" });
+            let path = format!(
+                "js/{folder}svgs-inline{}{suffix}.js",
+                if vanilla { "-vanilla" } else { "" }
+            );
             let deps: &[&str] = if vanilla { &[] } else { &["jquery"] };
-            let script = assets.script("bodhi_svg_inline", format!("{base}/{path}"), deps, VERSION, in_footer);
+            let script = assets.script(
+                "bodhi_svg_inline",
+                format!("{base}/{path}"),
+                deps,
+                VERSION,
+                in_footer,
+            );
             // `wp_localize_script()` turns the boolean into a string.
-            let skip_nested = if settings.on("skip_nested_svg") { "1" } else { "" };
-            script.extra = Some(format!("var svgSettings = {};", localize(&serde_json::json!({ "skipNested": skip_nested }))));
+            let skip_nested = if settings.on("skip_nested_svg") {
+                "1"
+            } else {
+                ""
+            };
+            script.extra = Some(format!(
+                "var svgSettings = {};",
+                localize(&serde_json::json!({ "skipNested": skip_nested }))
+            ));
             let css_target = serde_json::json!({ "Bodhi": bodhi, "ForceInlineSVG": force });
-            let force_active = if settings.on("force_inline_svg") { "true" } else { "false" };
-            let sanitize = settings.get("sanitize_svg_front_end").map_or(serde_json::Value::Null, php_to_json);
+            let force_active = if settings.on("force_inline_svg") {
+                "true"
+            } else {
+                "false"
+            };
+            let sanitize = settings
+                .get("sanitize_svg_front_end")
+                .map_or(serde_json::Value::Null, php_to_json);
             script.after.push(format!(
                 "cssTarget={};ForceInlineSVGActive={};frontSanitizationEnabled={};",
                 php_json::encode(&css_target),
@@ -270,7 +387,15 @@ impl ActivePlugin for Active {
 
 /// `wp_json_encode( $l10n, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )` of `WP_Scripts::localize()`.
 fn localize(value: &serde_json::Value) -> String {
-    php_json::encode_with(value, php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E")
+    php_json::encode_with(
+        value,
+        php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    )
+    .replace('<', "\\u003C")
+    .replace('>', "\\u003E")
 }
 
 /// A scalar of the settings as `wp_json_encode()` sees it.

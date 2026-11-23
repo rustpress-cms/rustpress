@@ -8,18 +8,18 @@ mod block_types;
 mod caps;
 mod comments;
 mod editor;
-mod fonts;
 mod export;
+mod fonts;
 mod health;
 mod hints;
 mod icons;
 mod media;
 mod navigation;
-mod user_writes;
 mod plugins;
 mod posts;
 mod settings;
 mod templates;
+mod user_writes;
 pub use templates::default_template_types;
 mod terms;
 mod types;
@@ -65,11 +65,19 @@ pub enum CommentEvent {
     /// `wp_set_comment_status( $id, 'approve' )` of a comment that was not approved.
     Approved { comment: u64, by: u64 },
     /// `rest_insert_comment`: the post author hears about a note, the users it mentions about a new one.
-    Inserted { comment: u64, by: u64, creating: bool },
+    Inserted {
+        comment: u64,
+        by: u64,
+        creating: bool,
+    },
 }
 
 /// The handler of [`CommentEvent`]s.
-pub type CommentNotify = std::sync::Arc<dyn Fn(CommentEvent) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
+pub type CommentNotify = std::sync::Arc<
+    dyn Fn(CommentEvent) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// A file of a multipart upload.
 #[derive(Debug, Clone)]
@@ -87,9 +95,16 @@ pub enum Body {
     None,
     Json(Value),
     Form(Vec<(String, String)>),
-    Multipart { fields: Vec<(String, String)>, files: Vec<UploadedPart> },
+    Multipart {
+        fields: Vec<(String, String)>,
+        files: Vec<UploadedPart>,
+    },
     /// A raw upload (`POST /wp/v2/media` with `Content-Disposition: attachment; filename=...`).
-    Raw { bytes: Vec<u8>, content_type: String, disposition: String },
+    Raw {
+        bytes: Vec<u8>,
+        content_type: String,
+        disposition: String,
+    },
 }
 
 /// The request as the server saw it.
@@ -119,7 +134,10 @@ impl Args {
     fn new(params: &Params, body: &Body) -> Self {
         let mut map = Map::new();
         for key in params_keys(params) {
-            if let Some(list) = params.list(&key).filter(|_| params.raw().contains(&format!("{key}[]")) || params.raw().contains(&format!("{key}%5B"))) {
+            if let Some(list) = params.list(&key).filter(|_| {
+                params.raw().contains(&format!("{key}[]"))
+                    || params.raw().contains(&format!("{key}%5B"))
+            }) {
                 map.insert(key.clone(), Value::from(list));
             } else if let Some(value) = params.get(&key) {
                 map.insert(key.clone(), Value::from(value));
@@ -192,7 +210,15 @@ impl Args {
     /// A list of IDs: `[1,2]`, `"1,2"`.
     pub fn ids(&self, key: &str) -> Option<Vec<u64>> {
         match self.map.get(key)? {
-            Value::Array(items) => Some(items.iter().filter_map(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).collect()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(|v| {
+                        v.as_u64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                    })
+                    .collect(),
+            ),
             Value::String(s) => Some(s.split(',').filter_map(|p| p.trim().parse().ok()).collect()),
             Value::Number(n) => n.as_u64().map(|n| vec![n]),
             _ => None,
@@ -201,8 +227,22 @@ impl Args {
 
     pub fn list(&self, key: &str) -> Option<Vec<String>> {
         match self.map.get(key)? {
-            Value::Array(items) => Some(items.iter().filter_map(|v| v.as_str().map(str::to_owned).or_else(|| v.as_u64().map(|n| n.to_string()))).collect()),
-            Value::String(s) => Some(s.split(',').map(|p| p.trim().to_owned()).filter(|p| !p.is_empty()).collect()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(|v| {
+                        v.as_str()
+                            .map(str::to_owned)
+                            .or_else(|| v.as_u64().map(|n| n.to_string()))
+                    })
+                    .collect(),
+            ),
+            Value::String(s) => Some(
+                s.split(',')
+                    .map(|p| p.trim().to_owned())
+                    .filter(|p| !p.is_empty())
+                    .collect(),
+            ),
             _ => None,
         }
     }
@@ -238,7 +278,10 @@ impl Rest<'_> {
     pub(crate) fn allow_for(&self, route: &str) -> String {
         if self.access.is_none() {
             "GET".to_owned()
-        } else if route.trim_start_matches('/').starts_with("wp/v2/font-collections") {
+        } else if route
+            .trim_start_matches('/')
+            .starts_with("wp/v2/font-collections")
+        {
             // Font collections can only be read.
             "GET".to_owned()
         } else if route.trim_start_matches('/').starts_with("wp/v2/sidebars/") {
@@ -246,7 +289,12 @@ impl Rest<'_> {
             "GET, POST, PUT, PATCH".to_owned()
         } else if route.trim_matches('/') == "wp/v2/widgets" {
             "GET, POST".to_owned()
-        } else if route.trim_matches('/') == "batch/v1" || (route.trim_start_matches('/').starts_with("wp/v2/widget-types/") && (route.ends_with("/encode") || route.ends_with("/render"))) {
+        } else if route.trim_matches('/') == "batch/v1"
+            || (route
+                .trim_start_matches('/')
+                .starts_with("wp/v2/widget-types/")
+                && (route.ends_with("/encode") || route.ends_with("/render")))
+        {
             "POST".to_owned()
         } else {
             "GET, POST, PUT, PATCH, DELETE".to_owned()
@@ -259,7 +307,11 @@ impl Rest<'_> {
     }
 
     /// Routes a request that is not a plain anonymous read. `None` leaves it to the read-only endpoints.
-    pub(crate) async fn dispatch_edit(&self, route: &str, params: &Params) -> Result<Option<Outcome>> {
+    pub(crate) async fn dispatch_edit(
+        &self,
+        route: &str,
+        params: &Params,
+    ) -> Result<Option<Outcome>> {
         let route = route.trim_end_matches('/');
         let segments: Vec<&str> = route.trim_start_matches('/').split('/').collect();
         let method = self.method().to_owned();
@@ -273,65 +325,197 @@ impl Rest<'_> {
         let get = method == "GET";
         // The index of a namespace.
         if get && self.namespaces().iter().any(|ns| *ns == segments.join("/")) {
-            return Ok(Some(Ok(crate::Resp::item(self.namespace_index(&segments.join("/"))))));
+            return Ok(Some(Ok(crate::Resp::item(
+                self.namespace_index(&segments.join("/")),
+            ))));
         }
         if let ["wp", "v2", "font-families" | "font-collections", ..] = segments.as_slice() {
-            return self.fonts_route(&segments, &method, &args, params).await.map(Some);
+            return self
+                .fonts_route(&segments, &method, &args, params)
+                .await
+                .map(Some);
         }
         if self.access.is_none() && get {
             return Ok(None);
         }
         let edit_read = params.get("context") == Some("edit");
         match segments.as_slice() {
-            ["wp", "v2", "users", id, "application-passwords"] => self.app_passwords_route(id, None, &method, &args).await.map(Some),
-            ["wp", "v2", "users", id, "application-passwords", uuid] => self.app_passwords_route(id, Some(uuid), &method, &args).await.map(Some),
+            ["wp", "v2", "users", id, "application-passwords"] => self
+                .app_passwords_route(id, None, &method, &args)
+                .await
+                .map(Some),
+            ["wp", "v2", "users", id, "application-passwords", uuid] => self
+                .app_passwords_route(id, Some(uuid), &method, &args)
+                .await
+                .map(Some),
             ["wp", "v2", "users", "me"] => self.users_me(&method, &args).await.map(Some),
-            ["wp", "v2", "users"] if get && (self.access.is_some()) => self.users_list(&args).await.map(Some),
+            ["wp", "v2", "users"] if get && (self.access.is_some()) => {
+                self.users_list(&args).await.map(Some)
+            }
             ["wp", "v2", "users"] if method == "POST" => self.users_create(&args).await.map(Some),
-            ["wp", "v2", "users", id] if !get && *id != "me" => self.users_write(id, &method, &args).await.map(Some),
-            ["wp", "v2", "comments"] | ["wp", "v2", "comments", _] if !get => self.comments_write(segments.get(3).copied(), &method, &args, params).await.map(Some),
-            ["wp", "v2", "users", id] if get && self.access.is_some() && id.parse::<u64>().is_ok() => self.users_get(id, &args).await.map(Some),
-            ["wp", "v2", "plugins", ..] => self.plugins_route(&segments, &method, &args).await.map(Some),
+            ["wp", "v2", "users", id] if !get && *id != "me" => {
+                self.users_write(id, &method, &args).await.map(Some)
+            }
+            ["wp", "v2", "comments"] | ["wp", "v2", "comments", _] if !get => self
+                .comments_write(segments.get(3).copied(), &method, &args, params)
+                .await
+                .map(Some),
+            ["wp", "v2", "users", id]
+                if get && self.access.is_some() && id.parse::<u64>().is_ok() =>
+            {
+                self.users_get(id, &args).await.map(Some)
+            }
+            ["wp", "v2", "plugins", ..] => self
+                .plugins_route(&segments, &method, &args)
+                .await
+                .map(Some),
             ["wp", "v2", "settings"] => self.settings(&method, &args).await.map(Some),
-            ["wp", "v2", "types"] if get && self.access.is_some() => Ok(Some(self.types_list_edit(&args).await?)),
-            ["wp", "v2", "types", name] if get && self.access.is_some() => Ok(Some(self.type_get_edit(name, &args).await?)),
-            ["wp", "v2", "taxonomies"] if get && self.access.is_some() => Ok(Some(self.taxonomies_list_edit(&args))),
-            ["wp", "v2", "taxonomies", name] if get && self.access.is_some() => Ok(Some(self.taxonomy_get_edit(name, &args))),
-            ["wp", "v2", base @ ("posts" | "pages")] | ["wp", "v2", base @ ("posts" | "pages"), _] if !get || edit_read || params.get("status").is_some() || self.access.is_some() => {
-                let kind = if *base == "posts" { crate::posts::Kind::Post } else { crate::posts::Kind::Page };
-                self.posts_route(kind, segments.get(3).copied(), &method, &args, params).await.map(Some)
+            ["wp", "v2", "types"] if get && self.access.is_some() => {
+                Ok(Some(self.types_list_edit(&args).await?))
             }
-            ["wp", "v2", base @ ("posts" | "pages"), parent, sub @ ("autosaves" | "revisions")] | ["wp", "v2", base @ ("posts" | "pages"), parent, sub @ ("autosaves" | "revisions"), _] => {
-                let kind = if *base == "posts" { crate::posts::Kind::Post } else { crate::posts::Kind::Page };
-                self.revisions_route(kind, parent, sub, segments.get(5).copied(), &method, &args).await.map(Some)
+            ["wp", "v2", "types", name] if get && self.access.is_some() => {
+                Ok(Some(self.type_get_edit(name, &args).await?))
             }
-            ["wp", "v2", "media"] | ["wp", "v2", "media", _] if !get || self.access.is_some() => self.media_route(segments.get(3).copied(), &method, &args, params).await.map(Some),
-            ["wp", "v2", base @ ("categories" | "tags" | "wp_pattern_category")] | ["wp", "v2", base @ ("categories" | "tags" | "wp_pattern_category"), _] if !get || edit_read => {
+            ["wp", "v2", "taxonomies"] if get && self.access.is_some() => {
+                Ok(Some(self.taxonomies_list_edit(&args)))
+            }
+            ["wp", "v2", "taxonomies", name] if get && self.access.is_some() => {
+                Ok(Some(self.taxonomy_get_edit(name, &args)))
+            }
+            ["wp", "v2", base @ ("posts" | "pages")]
+            | ["wp", "v2", base @ ("posts" | "pages"), _]
+                if !get || edit_read || params.get("status").is_some() || self.access.is_some() =>
+            {
+                let kind = if *base == "posts" {
+                    crate::posts::Kind::Post
+                } else {
+                    crate::posts::Kind::Page
+                };
+                self.posts_route(kind, segments.get(3).copied(), &method, &args, params)
+                    .await
+                    .map(Some)
+            }
+            [
+                "wp",
+                "v2",
+                base @ ("posts" | "pages"),
+                parent,
+                sub @ ("autosaves" | "revisions"),
+            ]
+            | [
+                "wp",
+                "v2",
+                base @ ("posts" | "pages"),
+                parent,
+                sub @ ("autosaves" | "revisions"),
+                _,
+            ] => {
+                let kind = if *base == "posts" {
+                    crate::posts::Kind::Post
+                } else {
+                    crate::posts::Kind::Page
+                };
+                self.revisions_route(kind, parent, sub, segments.get(5).copied(), &method, &args)
+                    .await
+                    .map(Some)
+            }
+            ["wp", "v2", "media"] | ["wp", "v2", "media", _] if !get || self.access.is_some() => {
+                self.media_route(segments.get(3).copied(), &method, &args, params)
+                    .await
+                    .map(Some)
+            }
+            [
+                "wp",
+                "v2",
+                base @ ("categories" | "tags" | "wp_pattern_category"),
+            ]
+            | [
+                "wp",
+                "v2",
+                base @ ("categories" | "tags" | "wp_pattern_category"),
+                _,
+            ] if !get || edit_read => {
                 let tax = match *base {
                     "categories" => crate::terms::Tax::category(),
                     "tags" => crate::terms::Tax::tag(),
                     _ => crate::terms::Tax::pattern_category(),
                 };
-                self.terms_route(&tax, segments.get(3).copied(), &method, &args, params).await.map(Some)
+                self.terms_route(&tax, segments.get(3).copied(), &method, &args, params)
+                    .await
+                    .map(Some)
             }
-            ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() && (!get || edit_read) => self.custom_edit_route(base, segments.get(3).copied(), &method, &args, params).await.map(Some),
-            ["wp", "v2", "templates", ..] => self.templates_route(templates::TKind::Template, &segments, &method, &args, params).await.map(Some),
-            ["wp", "v2", "template-parts", ..] => self.templates_route(templates::TKind::Part, &segments, &method, &args, params).await.map(Some),
-            ["wp", "v2", "block-renderer", namespace, name] if get || method == "POST" => self.block_renderer(namespace, name, &args, params).await.map(Some),
-            ["oembed", "1.0", "proxy"] if get && args.str("url").is_none() => Ok(Some(Err(RestError::missing_params(&["url"])))),
-            ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") { Err(RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404).after_permission_check()) } else { Err(self.forbidden("rest_forbidden", &self.site.tr("Sorry, you are not allowed to make proxied oEmbed requests."))) })),
+            ["wp", "v2", base] | ["wp", "v2", base, _]
+                if self.custom_route(base).is_some() && (!get || edit_read) =>
+            {
+                self.custom_edit_route(base, segments.get(3).copied(), &method, &args, params)
+                    .await
+                    .map(Some)
+            }
+            ["wp", "v2", "templates", ..] => self
+                .templates_route(
+                    templates::TKind::Template,
+                    &segments,
+                    &method,
+                    &args,
+                    params,
+                )
+                .await
+                .map(Some),
+            ["wp", "v2", "template-parts", ..] => self
+                .templates_route(templates::TKind::Part, &segments, &method, &args, params)
+                .await
+                .map(Some),
+            ["wp", "v2", "block-renderer", namespace, name] if get || method == "POST" => self
+                .block_renderer(namespace, name, &args, params)
+                .await
+                .map(Some),
+            ["oembed", "1.0", "proxy"] if get && args.str("url").is_none() => {
+                Ok(Some(Err(RestError::missing_params(&["url"]))))
+            }
+            ["oembed", "1.0", "proxy"] if get => Ok(Some(if self.can("edit_posts") {
+                Err(
+                    RestError::new("oembed_invalid_url", &self.site.tr("Not Found"), 404)
+                        .after_permission_check(),
+                )
+            } else {
+                Err(self.forbidden(
+                    "rest_forbidden",
+                    &self
+                        .site
+                        .tr("Sorry, you are not allowed to make proxied oEmbed requests."),
+                ))
+            })),
             ["wp-site-health", "v1", ..] if get => self.health_route(&segments).await.map(Some),
-            ["wp-abilities", "v1", ..] => self.abilities_route(&segments, &method, &args, params).await.map(Some),
+            ["wp-abilities", "v1", ..] => self
+                .abilities_route(&segments, &method, &args, params)
+                .await
+                .map(Some),
             ["wp", "v2", "view-config"] if get => self.view_config(&args).await.map(Some),
-            ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => Ok(Some(self.icons_route(&segments, &args))),
-            ["wp-block-editor", "v1", "navigation-fallback"] if get => self.navigation_fallback(&args).await.map(Some),
-            ["wp", "v2", "block-types"] | ["wp", "v2", "block-types", _] | ["wp", "v2", "block-types", _, _] if get => self.block_types_route(&segments, &args).await.map(Some),
-            ["wp", "v2", "block-types", _, _, _, ..] if get => Ok(Some(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
+            ["wp", "v2", "icons", ..] | ["wp", "v2", "icon-collections", ..] if get => {
+                Ok(Some(self.icons_route(&segments, &args)))
+            }
+            ["wp-block-editor", "v1", "navigation-fallback"] if get => {
+                self.navigation_fallback(&args).await.map(Some)
+            }
+            ["wp", "v2", "block-types"]
+            | ["wp", "v2", "block-types", _]
+            | ["wp", "v2", "block-types", _, _]
+                if get =>
+            {
+                self.block_types_route(&segments, &args).await.map(Some)
+            }
+            ["wp", "v2", "block-types", _, _, _, ..] if get => Ok(Some(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )))),
             ["batch", "v1"] if method == "POST" => self.batch(&args, params).await.map(Some),
-            ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] => match self.widgets_route(&segments, &method, &args).await? {
-                Some(outcome) => Ok(Some(outcome)),
-                None => self.editor_route(&segments, &method, &args, params).await,
-            },
+            ["wp", "v2", "sidebars" | "widgets" | "widget-types", ..] => {
+                match self.widgets_route(&segments, &method, &args).await? {
+                    Some(outcome) => Ok(Some(outcome)),
+                    None => self.editor_route(&segments, &method, &args, params).await,
+                }
+            }
             _ => self.editor_route(&segments, &method, &args, params).await,
         }
     }
@@ -339,7 +523,8 @@ impl Rest<'_> {
     /// `OPTIONS`: the methods the user may use. The schema stays empty.
     async fn options(&self, route: &str) -> Outcome {
         // A path no route matches gets an empty answer.
-        let Some((mut data, methods)) = self.route_help(if route.is_empty() { "/" } else { route }) else {
+        let Some((mut data, methods)) = self.route_help(if route.is_empty() { "/" } else { route })
+        else {
             let mut resp = crate::Resp::item(serde_json::json!([]));
             resp.allow = Some(String::new());
             return Ok(resp);
@@ -347,7 +532,11 @@ impl Rest<'_> {
         // `rest_send_allow_header()`: the methods whose permission check passes; reading for everybody, writing
         // for who may edit.
         let writes = self.access.is_some() && self.can("edit_posts");
-        let allowed: Vec<&str> = methods.iter().map(String::as_str).filter(|m| *m == "GET" || writes).collect();
+        let allowed: Vec<&str> = methods
+            .iter()
+            .map(String::as_str)
+            .filter(|m| *m == "GET" || writes)
+            .collect();
         rustpress_core::OrLog::or_log(self.add_plugin_schema(&mut data).await);
         let mut resp = crate::Resp::item(data);
         resp.allow = Some(allowed.join(", "));
@@ -369,13 +558,39 @@ impl Rest<'_> {
     }
 
     pub(crate) fn writer(&self) -> std::result::Result<&Writer, RestError> {
-        self.access.as_ref().and_then(|a| a.writer).ok_or_else(|| RestError::new("rest_cannot_edit", "RustPress was started without write access.", 500))
+        self.access.as_ref().and_then(|a| a.writer).ok_or_else(|| {
+            RestError::new(
+                "rest_cannot_edit",
+                "RustPress was started without write access.",
+                500,
+            )
+        })
     }
 
-    pub(crate) fn content(&self) -> std::result::Result<rustpress_content::content::Content<'_>, RestError> {
-        let access = self.access.as_ref().ok_or_else(|| RestError::new("rest_forbidden", "Sorry, you are not allowed to do that.", 401))?;
-        let writer = access.writer.ok_or_else(|| RestError::new("rest_cannot_edit", "RustPress was started without write access.", 500))?;
-        Ok(rustpress_content::content::Content { site: self.site, db: &self.site.db, writer, user: &access.user, now: access.now })
+    pub(crate) fn content(
+        &self,
+    ) -> std::result::Result<rustpress_content::content::Content<'_>, RestError> {
+        let access = self.access.as_ref().ok_or_else(|| {
+            RestError::new(
+                "rest_forbidden",
+                "Sorry, you are not allowed to do that.",
+                401,
+            )
+        })?;
+        let writer = access.writer.ok_or_else(|| {
+            RestError::new(
+                "rest_cannot_edit",
+                "RustPress was started without write access.",
+                500,
+            )
+        })?;
+        Ok(rustpress_content::content::Content {
+            site: self.site,
+            db: &self.site.db,
+            writer,
+            user: &access.user,
+            now: access.now,
+        })
     }
 
     pub(crate) fn now(&self) -> i64 {

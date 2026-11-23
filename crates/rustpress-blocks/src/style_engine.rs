@@ -38,7 +38,15 @@ const fn def(
     css_vars: &'static [(&'static str, &'static str)],
     classnames: &'static [(&'static str, ClassSource)],
 ) -> Def {
-    Def { group, path, property, individual, css_vars, classnames, func: Func::None }
+    Def {
+        group,
+        path,
+        property,
+        individual,
+        css_vars,
+        classnames,
+        func: Func::None,
+    }
 }
 
 const fn side(group: &'static str, path: &'static [&'static str]) -> Def {
@@ -66,10 +74,38 @@ static DEFINITIONS: &[Def] = &[
         classnames: &[],
         func: Func::UrlOrValue,
     },
-    def("background", &["background", "backgroundPosition"], "background-position", None, &[], &[]),
-    def("background", &["background", "backgroundRepeat"], "background-repeat", None, &[], &[]),
-    def("background", &["background", "backgroundSize"], "background-size", None, &[], &[]),
-    def("background", &["background", "backgroundAttachment"], "background-attachment", None, &[], &[]),
+    def(
+        "background",
+        &["background", "backgroundPosition"],
+        "background-position",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "background",
+        &["background", "backgroundRepeat"],
+        "background-repeat",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "background",
+        &["background", "backgroundSize"],
+        "background-size",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "background",
+        &["background", "backgroundAttachment"],
+        "background-attachment",
+        None,
+        &[],
+        &[],
+    ),
     def(
         "background",
         &["background", "gradient"],
@@ -84,7 +120,10 @@ static DEFINITIONS: &[Def] = &[
         "color",
         None,
         &[("color", "--wp--preset--color--$slug")],
-        &[("has-text-color", Fixed), ("has-$slug-color", Preset("color"))],
+        &[
+            ("has-text-color", Fixed),
+            ("has-$slug-color", Preset("color")),
+        ],
     ),
     def(
         "color",
@@ -92,7 +131,10 @@ static DEFINITIONS: &[Def] = &[
         "background-color",
         None,
         &[("color", "--wp--preset--color--$slug")],
-        &[("has-background", Fixed), ("has-$slug-background-color", Preset("color"))],
+        &[
+            ("has-background", Fixed),
+            ("has-$slug-background-color", Preset("color")),
+        ],
     ),
     def(
         "color",
@@ -100,7 +142,10 @@ static DEFINITIONS: &[Def] = &[
         "background",
         None,
         &[("gradient", "--wp--preset--gradient--$slug")],
-        &[("has-background", Fixed), ("has-$slug-gradient-background", Preset("gradient"))],
+        &[
+            ("has-background", Fixed),
+            ("has-$slug-gradient-background", Preset("gradient")),
+        ],
     ),
     def(
         "border",
@@ -108,7 +153,10 @@ static DEFINITIONS: &[Def] = &[
         "border-color",
         Some("border-%s-color"),
         &[],
-        &[("has-border-color", Fixed), ("has-$slug-border-color", Preset("color"))],
+        &[
+            ("has-border-color", Fixed),
+            ("has-$slug-border-color", Preset("color")),
+        ],
     ),
     def(
         "border",
@@ -118,21 +166,98 @@ static DEFINITIONS: &[Def] = &[
         &[("border-radius", "--wp--preset--border-radius--$slug")],
         &[],
     ),
-    def("border", &["border", "style"], "border-style", Some("border-%s-style"), &[], &[]),
-    def("border", &["border", "width"], "border-width", Some("border-%s-width"), &[], &[]),
+    def(
+        "border",
+        &["border", "style"],
+        "border-style",
+        Some("border-%s-style"),
+        &[],
+        &[],
+    ),
+    def(
+        "border",
+        &["border", "width"],
+        "border-width",
+        Some("border-%s-width"),
+        &[],
+        &[],
+    ),
     side("border", &["border", "top"]),
     side("border", &["border", "right"]),
     side("border", &["border", "bottom"]),
     side("border", &["border", "left"]),
-    def("shadow", &["shadow"], "box-shadow", None, &[("shadow", "--wp--preset--shadow--$slug")], &[]),
-    def("dimensions", &["dimensions", "aspectRatio"], "aspect-ratio", None, &[], &[("has-aspect-ratio", Fixed)]),
-    def("dimensions", &["dimensions", "height"], "height", None, &[("dimension", "--wp--preset--dimension--$slug")], &[]),
-    def("dimensions", &["dimensions", "minHeight"], "min-height", None, &[("dimension", "--wp--preset--dimension--$slug")], &[]),
-    def("dimensions", &["dimensions", "minWidth"], "min-width", None, &[("dimension", "--wp--preset--dimension--$slug")], &[]),
-    def("dimensions", &["dimensions", "objectFit"], "object-fit", None, &[], &[]),
-    def("dimensions", &["dimensions", "width"], "width", None, &[("dimension", "--wp--preset--dimension--$slug")], &[]),
-    def("spacing", &["spacing", "padding"], "padding", Some("padding-%s"), &[("spacing", "--wp--preset--spacing--$slug")], &[]),
-    def("spacing", &["spacing", "margin"], "margin", Some("margin-%s"), &[("spacing", "--wp--preset--spacing--$slug")], &[]),
+    def(
+        "shadow",
+        &["shadow"],
+        "box-shadow",
+        None,
+        &[("shadow", "--wp--preset--shadow--$slug")],
+        &[],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "aspectRatio"],
+        "aspect-ratio",
+        None,
+        &[],
+        &[("has-aspect-ratio", Fixed)],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "height"],
+        "height",
+        None,
+        &[("dimension", "--wp--preset--dimension--$slug")],
+        &[],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "minHeight"],
+        "min-height",
+        None,
+        &[("dimension", "--wp--preset--dimension--$slug")],
+        &[],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "minWidth"],
+        "min-width",
+        None,
+        &[("dimension", "--wp--preset--dimension--$slug")],
+        &[],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "objectFit"],
+        "object-fit",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "dimensions",
+        &["dimensions", "width"],
+        "width",
+        None,
+        &[("dimension", "--wp--preset--dimension--$slug")],
+        &[],
+    ),
+    def(
+        "spacing",
+        &["spacing", "padding"],
+        "padding",
+        Some("padding-%s"),
+        &[("spacing", "--wp--preset--spacing--$slug")],
+        &[],
+    ),
+    def(
+        "spacing",
+        &["spacing", "margin"],
+        "margin",
+        Some("margin-%s"),
+        &[("spacing", "--wp--preset--spacing--$slug")],
+        &[],
+    ),
     def(
         "typography",
         &["typography", "fontSize"],
@@ -149,15 +274,78 @@ static DEFINITIONS: &[Def] = &[
         &[("font-family", "--wp--preset--font-family--$slug")],
         &[("has-$slug-font-family", Preset("font-family"))],
     ),
-    def("typography", &["typography", "fontStyle"], "font-style", None, &[], &[]),
-    def("typography", &["typography", "fontWeight"], "font-weight", None, &[], &[]),
-    def("typography", &["typography", "lineHeight"], "line-height", None, &[], &[]),
-    def("typography", &["typography", "textColumns"], "column-count", None, &[], &[]),
-    def("typography", &["typography", "textDecoration"], "text-decoration", None, &[], &[]),
-    def("typography", &["typography", "textIndent"], "text-indent", None, &[], &[]),
-    def("typography", &["typography", "textTransform"], "text-transform", None, &[], &[]),
-    def("typography", &["typography", "letterSpacing"], "letter-spacing", None, &[], &[]),
-    def("typography", &["typography", "writingMode"], "writing-mode", None, &[], &[]),
+    def(
+        "typography",
+        &["typography", "fontStyle"],
+        "font-style",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "fontWeight"],
+        "font-weight",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "lineHeight"],
+        "line-height",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "textColumns"],
+        "column-count",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "textDecoration"],
+        "text-decoration",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "textIndent"],
+        "text-indent",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "textTransform"],
+        "text-transform",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "letterSpacing"],
+        "letter-spacing",
+        None,
+        &[],
+        &[],
+    ),
+    def(
+        "typography",
+        &["typography", "writingMode"],
+        "writing-mode",
+        None,
+        &[],
+        &[],
+    ),
 ];
 
 /// Result of [`get_styles`].
@@ -172,7 +360,10 @@ pub struct Styles {
 
 impl Styles {
     pub fn declaration(&self, property: &str) -> Option<&str> {
-        self.declarations.iter().find(|(p, _)| p == property).map(|(_, v)| v.as_str())
+        self.declarations
+            .iter()
+            .find(|(p, _)| p == property)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -181,7 +372,9 @@ impl Styles {
 pub fn get_styles(block_styles: &Value, convert_vars_to_classnames: bool) -> Styles {
     let mut classnames: Vec<String> = Vec::new();
     let mut declarations: Vec<(String, String)> = Vec::new();
-    let Some(styles) = block_styles.as_object() else { return Styles::default() };
+    let Some(styles) = block_styles.as_object() else {
+        return Styles::default();
+    };
 
     for def in DEFINITIONS {
         // `empty( $block_styles[ $group ] )` for the group key.
@@ -189,7 +382,9 @@ pub fn get_styles(block_styles: &Value, convert_vars_to_classnames: bool) -> Sty
         if styles.get(group_key).is_none_or(is_empty) {
             continue;
         }
-        let Some(value) = path_get(block_styles, def.path) else { continue };
+        let Some(value) = path_get(block_styles, def.path) else {
+            continue;
+        };
         if !is_valid_style_value(value) {
             continue;
         }
@@ -197,9 +392,11 @@ pub fn get_styles(block_styles: &Value, convert_vars_to_classnames: bool) -> Sty
         let new = get_css_declarations(value, def, convert_vars_to_classnames);
         for (property, mut v) in new {
             if property == "background-image"
-                && let Some((_, existing)) = declarations.iter().find(|(p, _)| p == "background-image") {
-                    v = format!("{v}, {existing}");
-                }
+                && let Some((_, existing)) =
+                    declarations.iter().find(|(p, _)| p == "background-image")
+            {
+                v = format!("{v}, {existing}");
+            }
             match declarations.iter_mut().find(|(p, _)| *p == property) {
                 Some(slot) => slot.1 = v,
                 None => declarations.push((property, v)),
@@ -217,7 +414,11 @@ pub fn get_styles(block_styles: &Value, convert_vars_to_classnames: bool) -> Sty
         }
     });
     let css = compile_declarations(&declarations);
-    Styles { css, classnames: classnames.join(" "), declarations }
+    Styles {
+        css,
+        classnames: classnames.join(" "),
+        declarations,
+    }
 }
 
 /// `prop:value;prop:value;` with the declaration filter applied.
@@ -261,8 +462,16 @@ pub fn safecss_filter_declaration(property: &str, value: &str) -> Option<String>
     }
     if lower.contains("url(") {
         // Only plain http(s)/relative URLs.
-        let inner = lower.split("url(").nth(1).unwrap_or("").trim_start_matches(['"', '\'', ' ']);
-        if inner.contains(':') && !(inner.starts_with("http:") || inner.starts_with("https:") || inner.starts_with("data:image/")) {
+        let inner = lower
+            .split("url(")
+            .nth(1)
+            .unwrap_or("")
+            .trim_start_matches(['"', '\'', ' ']);
+        if inner.contains(':')
+            && !(inner.starts_with("http:")
+                || inner.starts_with("https:")
+                || inner.starts_with("data:image/"))
+        {
             return None;
         }
     }
@@ -299,7 +508,10 @@ fn strip_tags(value: &str) -> String {
 
 /// `sanitize_key`: lowercase `[a-z0-9_-]`.
 pub fn sanitize_key(key: &str) -> String {
-    key.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect::<String>().to_ascii_lowercase()
+    key.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 /// `PHP empty()`.
@@ -341,7 +553,10 @@ pub fn to_kebab_case(input: &str) -> String {
                     || (c.is_ascii_uppercase()
                         && chars[i - 1].is_ascii_uppercase()
                         && chars.get(i + 1).is_some_and(|n| n.is_ascii_lowercase()))
-                    || (c.is_ascii_digit() && !chars[i - 1].is_ascii_digit() && current.chars().all(|x| x.is_ascii_digit()) && false));
+                    || (c.is_ascii_digit()
+                        && !chars[i - 1].is_ascii_digit()
+                        && current.chars().all(|x| x.is_ascii_digit())
+                        && false));
             if boundary && !current.is_empty() {
                 words.push(std::mem::take(&mut current));
             }
@@ -358,7 +573,11 @@ pub fn to_kebab_case(input: &str) -> String {
             }
         }
     }
-    words.iter().map(|w| w.to_ascii_lowercase()).collect::<Vec<_>>().join("-")
+    words
+        .iter()
+        .map(|w| w.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 /// `get_slug_from_preset_value`.
@@ -421,7 +640,9 @@ fn get_css_declarations(value: &Value, def: &Def, skip_css_vars: bool) -> Vec<(S
             }
             return out;
         }
-        Func::IndividualProperty => return individual_property_declarations(value, def, skip_css_vars),
+        Func::IndividualProperty => {
+            return individual_property_declarations(value, def, skip_css_vars);
+        }
         Func::None => {}
     }
 
@@ -436,17 +657,23 @@ fn get_css_declarations(value: &Value, def: &Def, skip_css_vars: bool) -> Vec<(S
             }
         }
         Value::Object(map) => {
-            let Some(individual) = def.individual else { return out };
+            let Some(individual) = def.individual else {
+                return out;
+            };
             for (key, v) in map {
                 let mut v = v.clone();
                 if let Value::String(s) = &v
-                    && s.contains("var:") && !skip_css_vars && !def.css_vars.is_empty() {
-                        v = Value::String(css_var_value(s, def.css_vars));
-                    }
+                    && s.contains("var:")
+                    && !skip_css_vars
+                    && !def.css_vars.is_empty()
+                {
+                    v = Value::String(css_var_value(s, def.css_vars));
+                }
                 if is_valid_style_value(&v)
-                    && let Some(s) = as_declaration_string(&v) {
-                        out.push((individual.replace("%s", &to_kebab_case(key)), s));
-                    }
+                    && let Some(s) = as_declaration_string(&v)
+                {
+                    out.push((individual.replace("%s", &to_kebab_case(key)), s));
+                }
             }
         }
         other => {
@@ -459,8 +686,14 @@ fn get_css_declarations(value: &Value, def: &Def, skip_css_vars: bool) -> Vec<(S
 }
 
 /// `border.top` etc.: `{width, color, style}` becomes `border-top-width` ...
-fn individual_property_declarations(value: &Value, def: &Def, skip_css_vars: bool) -> Vec<(String, String)> {
-    let Some(map) = value.as_object().filter(|m| !m.is_empty()) else { return Vec::new() };
+fn individual_property_declarations(
+    value: &Value,
+    def: &Def,
+    skip_css_vars: bool,
+) -> Vec<(String, String)> {
+    let Some(map) = value.as_object().filter(|m| !m.is_empty()) else {
+        return Vec::new();
+    };
     let side = def.path[1];
     let mut out = Vec::new();
     for (css_property, v) in map {
@@ -471,12 +704,17 @@ fn individual_property_declarations(value: &Value, def: &Def, skip_css_vars: boo
             .iter()
             .find(|d| d.group == "border" && d.path == ["border", css_property.as_str()])
             .and_then(|d| d.individual);
-        let Some(individual) = individual else { continue };
+        let Some(individual) = individual else {
+            continue;
+        };
         let mut v = v.clone();
         if let Value::String(s) = &v
-            && s.contains("var:") && !skip_css_vars && !def.css_vars.is_empty() {
-                v = Value::String(css_var_value(s, def.css_vars));
-            }
+            && s.contains("var:")
+            && !skip_css_vars
+            && !def.css_vars.is_empty()
+        {
+            v = Value::String(css_var_value(s, def.css_vars));
+        }
         if let Some(s) = as_declaration_string(&v) {
             out.push((individual.replace("%s", side), s));
         }
@@ -502,21 +740,36 @@ mod tests {
 
     #[test]
     fn spacing_presets_become_css_variables() {
-        let s = get_styles(&json!({"spacing": {"padding": {"top": "var:preset|spacing|60", "bottom": "1rem"}, "margin": {"top": "0"}}}), false);
-        assert_eq!(s.css, "padding-top:var(--wp--preset--spacing--60);padding-bottom:1rem;margin-top:0;");
+        let s = get_styles(
+            &json!({"spacing": {"padding": {"top": "var:preset|spacing|60", "bottom": "1rem"}, "margin": {"top": "0"}}}),
+            false,
+        );
+        assert_eq!(
+            s.css,
+            "padding-top:var(--wp--preset--spacing--60);padding-bottom:1rem;margin-top:0;"
+        );
         assert_eq!(s.classnames, "");
     }
 
     #[test]
     fn preset_colors_become_classes_when_converting() {
-        let s = get_styles(&json!({"color": {"text": "var:preset|color|contrast", "background": "#fff"}}), true);
-        assert_eq!(s.classnames, "has-text-color has-contrast-color has-background");
+        let s = get_styles(
+            &json!({"color": {"text": "var:preset|color|contrast", "background": "#fff"}}),
+            true,
+        );
+        assert_eq!(
+            s.classnames,
+            "has-text-color has-contrast-color has-background"
+        );
         assert_eq!(s.css, "background-color:#fff;");
     }
 
     #[test]
     fn preset_colors_become_variables_otherwise() {
-        let s = get_styles(&json!({"color": {"text": "var:preset|color|accent-1"}}), false);
+        let s = get_styles(
+            &json!({"color": {"text": "var:preset|color|accent-1"}}),
+            false,
+        );
         assert_eq!(s.css, "color:var(--wp--preset--color--accent-1);");
         assert_eq!(s.classnames, "has-text-color has-accent-1-color");
     }
@@ -539,19 +792,28 @@ mod tests {
 
     #[test]
     fn declaration_order_follows_the_definition_table() {
-        let s = get_styles(&json!({"typography": {"fontSize": "1rem"}, "color": {"text": "red"}}), false);
+        let s = get_styles(
+            &json!({"typography": {"fontSize": "1rem"}, "color": {"text": "red"}}),
+            false,
+        );
         assert_eq!(s.css, "color:red;font-size:1rem;");
     }
 
     #[test]
     fn empty_groups_and_values_are_skipped() {
-        assert_eq!(get_styles(&json!({"spacing": {}, "color": {"text": ""}}), false), Styles::default());
+        assert_eq!(
+            get_styles(&json!({"spacing": {}, "color": {"text": ""}}), false),
+            Styles::default()
+        );
         assert_eq!(get_styles(&json!(null), false), Styles::default());
     }
 
     #[test]
     fn dangerous_values_are_dropped() {
-        let s = get_styles(&json!({"color": {"text": "red;background:url(javascript:alert(1))"}}), false);
+        let s = get_styles(
+            &json!({"color": {"text": "red;background:url(javascript:alert(1))"}}),
+            false,
+        );
         assert_eq!(s.css, "");
     }
 

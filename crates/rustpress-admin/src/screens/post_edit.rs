@@ -14,7 +14,11 @@ use crate::content::{Content, PostData, TermRef};
 
 /// `esc_textarea()`: `htmlspecialchars( $text, ENT_QUOTES )`.
 fn esc_textarea(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#039;")
 }
 
 pub fn esc_textarea_pub(text: &str) -> String {
@@ -22,17 +26,26 @@ pub fn esc_textarea_pub(text: &str) -> String {
 }
 
 fn content_for<'a>(ctx: &'a Ctx<'a>) -> Option<Content<'a>> {
-    Some(Content { site: ctx.site(), db: ctx.env.db, writer: ctx.env.writer?, user: &ctx.user, now: ctx.env.now })
+    Some(Content {
+        site: ctx.site(),
+        db: ctx.env.db,
+        writer: ctx.env.writer?,
+        user: &ctx.user,
+        now: ctx.env.now,
+    })
 }
 
 fn sticky_ids(ctx: &Ctx<'_>) -> Vec<u64> {
     let raw = ctx.site().options.string("sticky_posts", "");
     match rustpress_phpser::unserialize(raw.as_bytes()) {
-        Ok(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_i64()).map(|i| i as u64).collect(),
+        Ok(rustpress_phpser::Value::Array(items)) => items
+            .iter()
+            .filter_map(|(_, v)| v.as_i64())
+            .map(|i| i as u64)
+            .collect(),
         _ => Vec::new(),
     }
 }
-
 
 /// `labels->edit_item` and `labels->add_new_item`: those of the registration, else the defaults of posts or, for a
 /// hierarchical type, pages (`_get_custom_object_labels()`).
@@ -44,8 +57,17 @@ fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
         _ if info.hierarchical => (tr("Edit Page"), tr("Add Page")),
         _ => (tr("Edit Post"), tr("Add Post")),
     };
-    match ctx.site().types.admin_post_types().into_iter().find(|t| t.name == info.name) {
-        Some(registered) => (registered.label("edit_item").unwrap_or(edit), registered.label("add_new_item").unwrap_or(add)),
+    match ctx
+        .site()
+        .types
+        .admin_post_types()
+        .into_iter()
+        .find(|t| t.name == info.name)
+    {
+        Some(registered) => (
+            registered.label("edit_item").unwrap_or(edit),
+            registered.label("add_new_item").unwrap_or(add),
+        ),
         None => (edit, add),
     }
 }
@@ -53,10 +75,15 @@ fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
 /// `touch_time()` for the publish box.
 fn touch_time(ctx: &Ctx<'_>, post: &Post, edit: bool) -> String {
     // A draft or pending post without a GMT date floats: its fields show the current time.
-    let floating = matches!(post.post_status.as_str(), "draft" | "pending") && (post.post_date_gmt.is_empty() || post.post_date_gmt == "0000-00-00 00:00:00");
+    let floating = matches!(post.post_status.as_str(), "draft" | "pending")
+        && (post.post_date_gmt.is_empty() || post.post_date_gmt == "0000-00-00 00:00:00");
     let edit = edit && !floating;
     let now_local = ctx.site().date("Y-m-d H:i:s", ctx.env.now);
-    let date = if edit && post.post_date != "0000-00-00 00:00:00" && !post.post_date.is_empty() { post.post_date.clone() } else { now_local };
+    let date = if edit && post.post_date != "0000-00-00 00:00:00" && !post.post_date.is_empty() {
+        post.post_date.clone()
+    } else {
+        now_local
+    };
     timestamp_fields(ctx, &date)
 }
 
@@ -65,8 +92,21 @@ pub fn timestamp_fields(ctx: &Ctx<'_>, date: &str) -> String {
     let site = ctx.site();
     let (date, cur) = (date.to_owned(), site.date("Y-m-d H:i:s", ctx.env.now));
     let part = |s: &str, range: std::ops::Range<usize>| s.get(range).unwrap_or("00").to_owned();
-    let (jj, mm, aa, hh, mn, ss) = (part(&date, 8..10), part(&date, 5..7), part(&date, 0..4), part(&date, 11..13), part(&date, 14..16), part(&date, 17..19));
-    let (cur_jj, cur_mm, cur_aa, cur_hh, cur_mn) = (part(&cur, 8..10), part(&cur, 5..7), part(&cur, 0..4), part(&cur, 11..13), part(&cur, 14..16));
+    let (jj, mm, aa, hh, mn, ss) = (
+        part(&date, 8..10),
+        part(&date, 5..7),
+        part(&date, 0..4),
+        part(&date, 11..13),
+        part(&date, 14..16),
+        part(&date, 17..19),
+    );
+    let (cur_jj, cur_mm, cur_aa, cur_hh, cur_mn) = (
+        part(&cur, 8..10),
+        part(&cur, 5..7),
+        part(&cur, 0..4),
+        part(&cur, 11..13),
+        part(&cur, 14..16),
+    );
     let locale = site.locale_data();
     let mut month = String::from("<label><span class=\"screen-reader-text\">");
     month.push_str(&ctx.tr("Month"));
@@ -77,21 +117,41 @@ pub fn timestamp_fields(ctx: &Ctx<'_>, date: &str) -> String {
         month.push_str(&format!(
             "\t\t\t<option value=\"{number}\" data-text=\"{}\" {}>{}</option>\n",
             esc_attr(abbrev),
-            if number == mm { " selected='selected'" } else { "" },
+            if number == mm {
+                " selected='selected'"
+            } else {
+                ""
+            },
             rustpress_core::i18n::sprintf(&ctx.tr("%1$s-%2$s"), &[&number, abbrev])
         ));
     }
     month.push_str("</select></label>");
     let field = |label: &str, id: &str, value: &str, size: u8| {
-        format!("<label><span class=\"screen-reader-text\">{label}</span><input type=\"text\" id=\"{id}\" name=\"{id}\" value=\"{value}\" size=\"{size}\" maxlength=\"{size}\" autocomplete=\"off\" class=\"form-required\" inputmode=\"numeric\" /></label>")
+        format!(
+            "<label><span class=\"screen-reader-text\">{label}</span><input type=\"text\" id=\"{id}\" name=\"{id}\" value=\"{value}\" size=\"{size}\" maxlength=\"{size}\" autocomplete=\"off\" class=\"form-required\" inputmode=\"numeric\" /></label>"
+        )
     };
     let mut out = String::from("<div class=\"timestamp-wrap\">");
     out.push_str(&rustpress_core::i18n::sprintf(
         &ctx.tr("%1$s %2$s, %3$s at %4$s:%5$s"),
-        &[&month, &field(&ctx.tr("Day"), "jj", &jj, 2), &field(&ctx.tr("Year"), "aa", &aa, 4), &field(&ctx.tr("Hour"), "hh", &hh, 2), &field(&ctx.tr("Minute"), "mn", &mn, 2)],
+        &[
+            &month,
+            &field(&ctx.tr("Day"), "jj", &jj, 2),
+            &field(&ctx.tr("Year"), "aa", &aa, 4),
+            &field(&ctx.tr("Hour"), "hh", &hh, 2),
+            &field(&ctx.tr("Minute"), "mn", &mn, 2),
+        ],
     ));
-    out.push_str(&format!("</div><input type=\"hidden\" id=\"ss\" name=\"ss\" value=\"{ss}\" />\n\n"));
-    for (name, value, current) in [("mm", &mm, &cur_mm), ("jj", &jj, &cur_jj), ("aa", &aa, &cur_aa), ("hh", &hh, &cur_hh), ("mn", &mn, &cur_mn)] {
+    out.push_str(&format!(
+        "</div><input type=\"hidden\" id=\"ss\" name=\"ss\" value=\"{ss}\" />\n\n"
+    ));
+    for (name, value, current) in [
+        ("mm", &mm, &cur_mm),
+        ("jj", &jj, &cur_jj),
+        ("aa", &aa, &cur_aa),
+        ("hh", &hh, &cur_hh),
+        ("mn", &mn, &cur_mn),
+    ] {
         out.push_str(&format!("<input type=\"hidden\" id=\"hidden_{name}\" name=\"hidden_{name}\" value=\"{value}\" />\n<input type=\"hidden\" id=\"cur_{name}\" name=\"cur_{name}\" value=\"{current}\" />\n"));
     }
     out.push_str(&format!(
@@ -103,17 +163,32 @@ pub fn timestamp_fields(ctx: &Ctx<'_>, date: &str) -> String {
 }
 
 /// `post_submit_meta_box()`: `revisions` is `(count, latest id)` when the revisions box is shown.
-async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, sticky: bool, revisions: Option<(u64, u64)>) -> String {
+async fn submit_box(
+    ctx: &Ctx<'_>,
+    post: &Post,
+    info: &TypeInfo,
+    is_new: bool,
+    sticky: bool,
+    revisions: Option<(u64, u64)>,
+) -> String {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
-    let can_publish = ctx.can(if info.name == "page" { "publish_pages" } else { "publish_posts" });
+    let can_publish = ctx.can(if info.name == "page" {
+        "publish_pages"
+    } else {
+        "publish_posts"
+    });
     let status = post.post_status.as_str();
     let mut h = format!(
         "<div class=\"submitbox\" id=\"submitpost\">\n\n<div id=\"minor-publishing\">\n\n\t\t<div style=\"display:none;\">\n\t\t{}\t</div>\n\n\t<div id=\"minor-publishing-actions\">\n\t\t<div id=\"save-action\">\n\t\t\t",
         super::meta_boxes::submit_button(&tr("Save"), "", "save", true, None, &[])
     );
     if !["publish", "future", "pending"].contains(&status) {
-        let style = if status == "private" { "style=\"display:none\"" } else { "" };
+        let style = if status == "private" {
+            "style=\"display:none\""
+        } else {
+            ""
+        };
         h.push_str(&format!("\t\t\t\t<input {style} type=\"submit\" name=\"save\" id=\"save-post\" value=\"{}\" class=\"button\" />\n\t\t\t\t<span class=\"spinner\"></span>\n\t\t\t", esc_attr(&tr("Save Draft"))));
     } else if status == "pending" && can_publish {
         h.push_str(&format!("\t\t\t\t<input type=\"submit\" name=\"save\" id=\"save-post\" value=\"{}\" class=\"button\" />\n\t\t\t\t<span class=\"spinner\"></span>\n\t\t\t", esc_attr(&tr("Save as Pending"))));
@@ -121,8 +196,16 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
     h.push_str("\t\t</div>\n\n\t\t");
     if site.is_post_type_viewable(&info.name) {
         // `get_preview_post_link()`
-        let preview = add_query_arg(&site.permalink(post).await.unwrap_or_default(), "preview", "true");
-        let text = if status == "publish" { tr("Preview Changes") } else { site.trx("Preview", "verb") };
+        let preview = add_query_arg(
+            &site.permalink(post).await.unwrap_or_default(),
+            "preview",
+            "true",
+        );
+        let text = if status == "publish" {
+            tr("Preview Changes")
+        } else {
+            site.trx("Preview", "verb")
+        };
         h.push_str(&format!(
             "\t\t\t<div id=\"preview-action\">\n\t\t\t\t\t\t\t\t<a class=\"preview button\" href=\"{}\" target=\"wp-preview-{}\" id=\"post-preview\">{text}<span class=\"screen-reader-text\"> {}</span></a>\n\t\t\t\t<input type=\"hidden\" name=\"wp-preview\" id=\"wp-preview\" value=\"\" />\n\t\t\t</div>\n\t\t\t",
             esc_url(&preview),
@@ -143,7 +226,11 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
         tr("Status:")
     ));
     if status == "publish" || status == "private" || can_publish {
-        let style = if status == "private" { "style=\"display:none\"" } else { "" };
+        let style = if status == "private" {
+            "style=\"display:none\""
+        } else {
+            ""
+        };
         h.push_str(&format!(
             "\t\t\t\t<a href=\"#post_status\" {style} class=\"edit-post-status hide-if-no-js\" role=\"button\"><span aria-hidden=\"true\">{}</span> <span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t</span></a>\n\n\t\t\t\t<div id=\"post-status-select\" class=\"hide-if-js\">\n\t\t\t\t\t<input type=\"hidden\" name=\"hidden_post_status\" id=\"hidden_post_status\" value=\"{}\" />\n\t\t\t\t\t<label for=\"post_status\" class=\"screen-reader-text\">\n\t\t\t\t\t\t{}\t\t\t\t\t</label>\n\t\t\t\t\t<select name=\"post_status\" id=\"post_status\">\n\t\t\t\t\t\t",
             tr("Edit"),
@@ -151,16 +238,45 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
             esc_attr(if status == "auto-draft" { "draft" } else { status }),
             tr("Set status")
         ));
-        let sel = |s: &str| if status == s { " selected='selected'" } else { "" };
+        let sel = |s: &str| {
+            if status == s {
+                " selected='selected'"
+            } else {
+                ""
+            }
+        };
         match status {
-            "publish" => h.push_str(&format!("\t\t\t\t\t\t\t<option{} value='publish'>{}</option>\n\t\t\t\t\t\t", sel("publish"), tr("Published"))),
-            "private" => h.push_str(&format!("\t\t\t\t\t\t\t<option{} value='publish'>{}</option>\n\t\t\t\t\t\t", sel("private"), tr("Privately Published"))),
-            "future" => h.push_str(&format!("\t\t\t\t\t\t\t<option{} value='future'>{}</option>\n\t\t\t\t\t\t", sel("future"), tr("Scheduled"))),
+            "publish" => h.push_str(&format!(
+                "\t\t\t\t\t\t\t<option{} value='publish'>{}</option>\n\t\t\t\t\t\t",
+                sel("publish"),
+                tr("Published")
+            )),
+            "private" => h.push_str(&format!(
+                "\t\t\t\t\t\t\t<option{} value='publish'>{}</option>\n\t\t\t\t\t\t",
+                sel("private"),
+                tr("Privately Published")
+            )),
+            "future" => h.push_str(&format!(
+                "\t\t\t\t\t\t\t<option{} value='future'>{}</option>\n\t\t\t\t\t\t",
+                sel("future"),
+                tr("Scheduled")
+            )),
             _ => {}
         }
-        h.push_str(&format!("\t\t\t\t\t\t\t<option{} value='pending'>{}</option>\n\t\t\t\t\t\t", sel("pending"), tr("Pending Review")));
-        let draft = if status == "auto-draft" { sel("auto-draft") } else { sel("draft") };
-        h.push_str(&format!("\t\t\t\t\t\t\t<option{draft} value='draft'>{}</option>\n\t\t\t\t\t\t", tr("Draft")));
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t<option{} value='pending'>{}</option>\n\t\t\t\t\t\t",
+            sel("pending"),
+            tr("Pending Review")
+        ));
+        let draft = if status == "auto-draft" {
+            sel("auto-draft")
+        } else {
+            sel("draft")
+        };
+        h.push_str(&format!(
+            "\t\t\t\t\t\t\t<option{draft} value='draft'>{}</option>\n\t\t\t\t\t\t",
+            tr("Draft")
+        ));
         h.push_str(&format!(
             "\t\t\t\t\t</select>\n\t\t\t\t\t<a href=\"#post_status\" class=\"save-post-status hide-if-no-js button\">{}</a>\n\t\t\t\t\t<a href=\"#post_status\" class=\"cancel-post-status hide-if-no-js button-cancel\">{}</a>\n\t\t\t\t</div>\n\t\t\t\t",
             tr("OK"),
@@ -173,7 +289,11 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
     let (visibility, visibility_text, password) = if status == "private" {
         ("private", tr("Private"), String::new())
     } else if !post.post_password.is_empty() {
-        ("password", tr("Password protected"), post.post_password.clone())
+        (
+            "password",
+            tr("Password protected"),
+            post.post_password.clone(),
+        )
     } else if info.name == "post" && sticky {
         ("public", tr("Public, Sticky"), String::new())
     } else {
@@ -185,7 +305,13 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
         esc_html(&visibility_text)
     ));
     if can_publish {
-        let checked = |v: &str| if visibility == v { " checked='checked'" } else { "" };
+        let checked = |v: &str| {
+            if visibility == v {
+                " checked='checked'"
+            } else {
+                ""
+            }
+        };
         h.push_str(&format!(
             "\t\t\t\t<a href=\"#visibility\" class=\"edit-visibility hide-if-no-js\" role=\"button\"><span aria-hidden=\"true\">{}</span> <span class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t</span></a>\n\n\t\t\t\t<div id=\"post-visibility-select\" class=\"hide-if-js\">\n\t\t\t\t\t<input type=\"hidden\" name=\"hidden_post_password\" id=\"hidden-post-password\" value=\"{}\" />\n\t\t\t\t\t",
             tr("Edit"),
@@ -225,10 +351,17 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
     // Date
     let stamp_time = |local: &str| {
         let ts = site.timezone.local_timestamp(local).unwrap_or(ctx.env.now);
-        rustpress_core::i18n::sprintf(&tr("%1$s at %2$s"), &[&site.date(&site.trx("M j, Y", "publish box date format"), ts), &site.date(&site.trx("H:i", "publish box time format"), ts)])
+        rustpress_core::i18n::sprintf(
+            &tr("%1$s at %2$s"),
+            &[
+                &site.date(&site.trx("M j, Y", "publish box date format"), ts),
+                &site.date(&site.trx("H:i", "publish box time format"), ts),
+            ],
+        )
     };
     let now_local = site.date("Y-m-d H:i:s", ctx.env.now);
-    let gmt_ts = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
+    let gmt_ts =
+        rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_date_gmt).unwrap_or(0);
     let (stamp, date) = if post.id != 0 {
         let stamp = if status == "future" {
             tr("Scheduled for: %s")
@@ -266,15 +399,33 @@ async fn submit_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, s
     }
     h.push_str("\t</div>\n\t<div class=\"clear\"></div>\n</div>\n\n<div id=\"major-publishing-actions\">\n\t\t<div id=\"delete-action\">\n\t\t");
     if ctx.user.can_delete_post(post) {
-        let url = format!("{}&amp;_wpnonce={}", ctx.admin_url(&format!("post.php?post={}&action=trash", post.id)).replace('&', "&amp;"), ctx.create_nonce(&format!("trash-post_{}", post.id)));
-        h.push_str(&format!("\t\t\t<a class=\"submitdelete deletion\" href=\"{url}\">{}</a>\n\t\t\t", tr("Move to Trash")));
+        let url = format!(
+            "{}&amp;_wpnonce={}",
+            ctx.admin_url(&format!("post.php?post={}&action=trash", post.id))
+                .replace('&', "&amp;"),
+            ctx.create_nonce(&format!("trash-post_{}", post.id))
+        );
+        h.push_str(&format!(
+            "\t\t\t<a class=\"submitdelete deletion\" href=\"{url}\">{}</a>\n\t\t\t",
+            tr("Move to Trash")
+        ));
     }
-    h.push_str("\t</div>\n\n\t<div id=\"publishing-action\">\n\t\t<span class=\"spinner\"></span>\n\t\t");
+    h.push_str(
+        "\t</div>\n\n\t<div id=\"publishing-action\">\n\t\t<span class=\"spinner\"></span>\n\t\t",
+    );
     if !["publish", "future", "private"].contains(&status) || post.id == 0 {
-        let scheduled = !post.post_date_gmt.is_empty() && post.post_date_gmt != "0000-00-00 00:00:00" && ctx.env.now < gmt_ts;
-        let submit = |label: &str| super::meta_boxes::submit_button(label, "primary large", "publish", false, None, &[]);
+        let scheduled = !post.post_date_gmt.is_empty()
+            && post.post_date_gmt != "0000-00-00 00:00:00"
+            && ctx.env.now < gmt_ts;
+        let submit = |label: &str| {
+            super::meta_boxes::submit_button(label, "primary large", "publish", false, None, &[])
+        };
         if can_publish {
-            let label = if scheduled { site.trx("Schedule", "post action/button label") } else { tr("Publish") };
+            let label = if scheduled {
+                site.trx("Schedule", "post action/button label")
+            } else {
+                tr("Publish")
+            };
             h.push_str(&format!("\t\t\t\t\t<input name=\"original_publish\" type=\"hidden\" id=\"original_publish\" value=\"{}\" />\n\t\t\t\t\t{}\t\t\t\t\t", esc_attr(&label), submit(&label)));
         } else {
             let label = tr("Submit for Review");
@@ -320,12 +471,23 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             format!("<p>{}</p>", rustpress_core::i18n::sprintf(&tr("Keyboard users: When you are working in the visual editor, you can use %s to access the toolbar."), &["<kbd>Alt + F10</kbd>"])),
         ]
         .concat();
-        tabs.push(HelpTab { id: "title-post-editor".into(), title: tr("Title and Post Editor"), content });
+        tabs.push(HelpTab {
+            id: "title-post-editor".into(),
+            title: tr("Title and Post Editor"),
+            content,
+        });
         sidebar = format!(
             "<p>{}</p><p><strong>{}</strong></p>{}{}",
-            rustpress_core::i18n::sprintf(&tr("You can also create posts with the <a href=\"%s\">Press This bookmarklet</a>."), &["tools.php"]),
+            rustpress_core::i18n::sprintf(
+                &tr(
+                    "You can also create posts with the <a href=\"%s\">Press This bookmarklet</a>."
+                ),
+                &["tools.php"]
+            ),
             tr("For more information:"),
-            p("<a href=\"https://wordpress.org/documentation/article/write-posts-classic-editor/\">Documentation on Writing and Editing Posts</a>"),
+            p(
+                "<a href=\"https://wordpress.org/documentation/article/write-posts-classic-editor/\">Documentation on Writing and Editing Posts</a>"
+            ),
             p("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
         );
     } else if info.name == "page" {
@@ -334,12 +496,20 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             p("Creating a Page is very similar to creating a Post, and the screens can be customized in the same way using drag and drop, the Screen Options tab, and expanding/collapsing boxes as you choose. This screen also has the distraction-free writing space, available in both the Visual and Code modes via the Fullscreen buttons. The Page editor mostly works the same as the Post editor, but there are some Page-specific features in the Page Attributes box."),
         ]
         .concat();
-        tabs.push(HelpTab { id: "about-pages".into(), title: tr("About Pages"), content });
+        tabs.push(HelpTab {
+            id: "about-pages".into(),
+            title: tr("About Pages"),
+            content,
+        });
         sidebar = format!(
             "<p><strong>{}</strong></p>{}{}{}",
             tr("For more information:"),
-            p("<a href=\"https://wordpress.org/documentation/article/pages-add-new-screen/\">Documentation on Adding New Pages</a>"),
-            p("<a href=\"https://wordpress.org/documentation/article/pages-screen/\">Documentation on Editing Pages</a>"),
+            p(
+                "<a href=\"https://wordpress.org/documentation/article/pages-add-new-screen/\">Documentation on Adding New Pages</a>"
+            ),
+            p(
+                "<a href=\"https://wordpress.org/documentation/article/pages-screen/\">Documentation on Editing Pages</a>"
+            ),
             p("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
         );
     }
@@ -349,10 +519,22 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             p("You can also embed media from many popular websites including Twitter, YouTube, Flickr and others by pasting the media URL on its own line into the content of your post/page. <a href=\"https://wordpress.org/documentation/article/embeds/\">Learn more about embeds</a>."),
         ]
         .concat();
-        tabs.push(HelpTab { id: "inserting-media".into(), title: tr("Inserting Media"), content });
+        tabs.push(HelpTab {
+            id: "inserting-media".into(),
+            title: tr("Inserting Media"),
+            content,
+        });
     }
     if info.name == "post" {
-        let mut publish = format!("{}<ul><li>{}</li>", p("Several boxes on this screen contain settings for how your content will be published, including:"), tr("<strong>Publish</strong> &mdash; You can set the terms of publishing your post in the Publish box. For Status, Visibility, and Publish (immediately), click on the Edit link to reveal more options. Visibility includes options for password-protecting a post or making it stay at the top of your blog indefinitely (sticky). The Password protected option allows you to set an arbitrary password for each post. The Private option hides the post from everyone except editors and administrators. Publish (immediately) allows you to set a future or past date and time, so you can schedule a post to be published in the future or backdate a post."));
+        let mut publish = format!(
+            "{}<ul><li>{}</li>",
+            p(
+                "Several boxes on this screen contain settings for how your content will be published, including:"
+            ),
+            tr(
+                "<strong>Publish</strong> &mdash; You can set the terms of publishing your post in the Publish box. For Status, Visibility, and Publish (immediately), click on the Edit link to reveal more options. Visibility includes options for password-protecting a post or making it stay at the top of your blog indefinitely (sticky). The Password protected option allows you to set an arbitrary password for each post. The Private option hides the post from everyone except editors and administrators. Publish (immediately) allows you to set a future or past date and time, so you can schedule a post to be published in the future or backdate a post."
+            )
+        );
         if !ctx.env.theme.post_formats().is_empty() {
             publish.push_str(&format!("<li>{}</li>", tr("<strong>Format</strong> &mdash; Post Formats designate how your theme will display a specific post. For example, you could have a <em>standard</em> blog post with a title and paragraphs, or a short <em>aside</em> that omits the title and contains a short text blurb. Your theme could enable all or some of 10 possible formats. <a href=\"https://developer.wordpress.org/advanced-administration/wordpress/post-formats/#supported-formats\">Learn more about each post format</a>.")));
         }
@@ -360,13 +542,21 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             publish.push_str(&format!("<li>{}</li>", rustpress_core::i18n::sprintf(&tr("<strong>%s</strong> &mdash; This allows you to associate an image with your post without inserting it. This is usually useful only if your theme makes use of the image as a post thumbnail on the home page, a custom header, etc."), &[&esc_html(&ctx.site().trx("Featured image", "post"))])));
         }
         publish.push_str("</ul>");
-        tabs.push(HelpTab { id: "publish-box".into(), title: tr("Publish Settings"), content: publish });
+        tabs.push(HelpTab {
+            id: "publish-box".into(),
+            title: tr("Publish Settings"),
+            content: publish,
+        });
         let content = [
             p("<strong>Send Trackbacks</strong> &mdash; Trackbacks are a way to notify legacy blog systems that you&#8217;ve linked to them. Enter the URL(s) you want to send trackbacks. If you link to other WordPress sites they&#8217;ll be notified automatically using pingbacks, and this field is unnecessary."),
             p("<strong>Discussion</strong> &mdash; You can turn comments and pings on or off, and if there are comments on the post, you can see them here and moderate them."),
         ]
         .concat();
-        tabs.push(HelpTab { id: "discussion-settings".into(), title: tr("Discussion Settings"), content });
+        tabs.push(HelpTab {
+            id: "discussion-settings".into(),
+            title: tr("Discussion Settings"),
+            content,
+        });
     } else if info.name == "page" {
         let content = [
             p("<strong>Parent</strong> &mdash; You can arrange your pages in hierarchies. For example, you could have an &#8220;About&#8221; page that has &#8220;Life Story&#8221; and &#8220;My Dog&#8221; pages under it. There are no limits to how many levels you can nest pages."),
@@ -374,14 +564,27 @@ fn edit_help(ctx: &Ctx<'_>, info: &TypeInfo) -> Help {
             p("<strong>Order</strong> &mdash; Pages are usually ordered alphabetically, but you can choose your own order by entering a number (1 for first, etc.) in this field."),
         ]
         .concat();
-        tabs.push(HelpTab { id: "page-attributes".into(), title: tr("Page Attributes"), content });
+        tabs.push(HelpTab {
+            id: "page-attributes".into(),
+            title: tr("Page Attributes"),
+            content,
+        });
     }
     Help { tabs, sidebar }
 }
 
 /// `register_and_do_post_meta_boxes()`: the boxes of the screen in the order they are added.
-async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool, sticky: bool) -> Vec<super::meta_boxes::MetaBox> {
-    use super::meta_boxes::{MetaBox, custom_fields_box, post_format_box, post_thumbnail_html, revisions_box, trackback_box};
+async fn register_meta_boxes(
+    ctx: &Ctx<'_>,
+    post: &Post,
+    info: &TypeInfo,
+    is_new: bool,
+    sticky: bool,
+) -> Vec<super::meta_boxes::MetaBox> {
+    use super::meta_boxes::{
+        MetaBox, custom_fields_box, post_format_box, post_thumbnail_html, revisions_box,
+        trackback_box,
+    };
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
     let supports = |feature: &str| site.post_type_supports(&info.name, feature);
@@ -394,7 +597,14 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
         if count > 1 {
             revisions = Some((count, latest));
             let mut list = db
-                .posts(&PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), order_by: rustpress_db::OrderBy::Date, order: rustpress_db::Order::Desc, ..Default::default() })
+                .posts(&PostQuery {
+                    post_types: vec!["revision".into()],
+                    statuses: vec!["inherit".into()],
+                    parent: Some(post.id),
+                    order_by: rustpress_db::OrderBy::Date,
+                    order: rustpress_db::Order::Desc,
+                    ..Default::default()
+                })
                 .await
                 .unwrap_or_default();
             list.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(b.id.cmp(&a.id)));
@@ -402,42 +612,124 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
             for revision in &list {
                 rows.push(revision_title(ctx, revision, post).await);
             }
-            boxes.push(MetaBox::new("revisionsdiv", &tr("Revisions"), "normal", "core", revisions_box(ctx, &rows)));
+            boxes.push(MetaBox::new(
+                "revisionsdiv",
+                &tr("Revisions"),
+                "normal",
+                "core",
+                revisions_box(ctx, &rows),
+            ));
         }
     }
-    boxes.push(MetaBox::new("submitdiv", &tr("Publish"), "side", "core", submit_box(ctx, post, info, is_new, sticky, revisions).await));
+    boxes.push(MetaBox::new(
+        "submitdiv",
+        &tr("Publish"),
+        "side",
+        "core",
+        submit_box(ctx, post, info, is_new, sticky, revisions).await,
+    ));
     let formats = ctx.env.theme.post_formats();
     if !formats.is_empty() && supports("post-formats") {
-        let current = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned)).unwrap_or_else(|| "0".to_owned());
-        boxes.push(MetaBox::new("formatdiv", &site.trx("Format", "post format"), "side", "core", post_format_box(ctx, &formats, &current)));
+        let current = db
+            .terms_for_post(post.id, Some("post_format"))
+            .await
+            .unwrap_or_default()
+            .first()
+            .and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned))
+            .unwrap_or_else(|| "0".to_owned());
+        boxes.push(MetaBox::new(
+            "formatdiv",
+            &site.trx("Format", "post format"),
+            "side",
+            "core",
+            post_format_box(ctx, &formats, &current),
+        ));
     }
     // `register_and_do_post_meta_boxes()`: a box per taxonomy, `{$taxonomy}div` or `tagsdiv-{$taxonomy}`.
     for tax in tax_boxes(ctx, &info.name) {
         let title = tax.label(ctx, "name", "Categories", "Tags");
         if tax.hierarchical {
             let html = category_box(ctx, post, &tax).await;
-            boxes.push(MetaBox::new(&format!("{}div", tax.name), &title, "side", "core", html));
+            boxes.push(MetaBox::new(
+                &format!("{}div", tax.name),
+                &title,
+                "side",
+                "core",
+                html,
+            ));
         } else {
             let html = tags_box(ctx, post, &tax).await;
-            boxes.push(MetaBox::new(&format!("tagsdiv-{}", tax.name), &title, "side", "core", html));
+            boxes.push(MetaBox::new(
+                &format!("tagsdiv-{}", tax.name),
+                &title,
+                "side",
+                "core",
+                html,
+            ));
         }
     }
     if supports("page-attributes") || !super::inline_edit::page_templates(ctx, info).is_empty() {
-        let label = if info.name == "page" { tr("Page Attributes") } else { tr("Post Attributes") };
-        boxes.push(MetaBox::new("pageparentdiv", &label, "side", "core", page_attributes_box(ctx, post, info).await));
+        let label = if info.name == "page" {
+            tr("Page Attributes")
+        } else {
+            tr("Post Attributes")
+        };
+        boxes.push(MetaBox::new(
+            "pageparentdiv",
+            &label,
+            "side",
+            "core",
+            page_attributes_box(ctx, post, info).await,
+        ));
     }
     // Block themes and themes with `add_theme_support( 'post-thumbnails' )`.
-    if supports("thumbnail") && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails")) && ctx.can("upload_files") {
-        let thumbnail = db.post_meta_value(post.id, "_thumbnail_id").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-        let image = if thumbnail != 0 { super::meta_boxes::post_thumbnail_image(ctx, thumbnail).await } else { None };
-        boxes.push(MetaBox::new("postimagediv", &esc_html(&ctx.site().trx("Featured image", "post")), "side", "low", post_thumbnail_html(ctx, post.id, thumbnail, image.as_deref())));
+    if supports("thumbnail")
+        && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails"))
+        && ctx.can("upload_files")
+    {
+        let thumbnail = db
+            .post_meta_value(post.id, "_thumbnail_id")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        let image = if thumbnail != 0 {
+            super::meta_boxes::post_thumbnail_image(ctx, thumbnail).await
+        } else {
+            None
+        };
+        boxes.push(MetaBox::new(
+            "postimagediv",
+            &esc_html(&ctx.site().trx("Featured image", "post")),
+            "side",
+            "low",
+            post_thumbnail_html(ctx, post.id, thumbnail, image.as_deref()),
+        ));
     }
     if supports("excerpt") {
-        boxes.push(MetaBox::new("postexcerpt", &tr("Excerpt"), "normal", "core", excerpt_box(ctx, post)));
+        boxes.push(MetaBox::new(
+            "postexcerpt",
+            &tr("Excerpt"),
+            "normal",
+            "core",
+            excerpt_box(ctx, post),
+        ));
     }
     if supports("trackbacks") {
-        let (to_ping, pinged) = db.post_pings(post.id).await.ok().flatten().unwrap_or_default();
-        boxes.push(MetaBox::new("trackbacksdiv", &tr("Send Trackbacks"), "normal", "core", trackback_box(ctx, &to_ping, &pinged)));
+        let (to_ping, pinged) = db
+            .post_pings(post.id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        boxes.push(MetaBox::new(
+            "trackbacksdiv",
+            &tr("Send Trackbacks"),
+            "normal",
+            "core",
+            trackback_box(ctx, &to_ping, &pinged),
+        ));
     }
     if supports("custom-fields") {
         let meta: Vec<rustpress_db::PostMeta> = {
@@ -448,19 +740,66 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
         let mut keys = db.custom_field_keys(30).await.unwrap_or_default();
         super::meta_boxes::natcasesort(&mut keys);
         keys.retain(|k| !super::meta_boxes::is_protected_meta(k));
-        boxes.push(MetaBox::new("postcustom", &tr("Custom Fields"), "normal", "core", custom_fields_box(ctx, &meta, &keys)));
+        boxes.push(MetaBox::new(
+            "postcustom",
+            &tr("Custom Fields"),
+            "normal",
+            "core",
+            custom_fields_box(ctx, &meta, &keys),
+        ));
     }
     if post.comment_status == "open" || post.ping_status == "open" || supports("comments") {
-        boxes.push(MetaBox::new("commentstatusdiv", &tr("Discussion"), "normal", "core", discussion_box(ctx, post)));
+        boxes.push(MetaBox::new(
+            "commentstatusdiv",
+            &tr("Discussion"),
+            "normal",
+            "core",
+            discussion_box(ctx, post),
+        ));
     }
-    if matches!(post.post_status.as_str(), "publish" | "private") && (post.comment_status == "open" || post.ping_status == "open" || post.comment_count > 0 || supports("comments")) {
-        boxes.push(MetaBox::new("commentsdiv", &tr("Comments"), "normal", "core", comments_box(ctx, post).await));
+    if matches!(post.post_status.as_str(), "publish" | "private")
+        && (post.comment_status == "open"
+            || post.ping_status == "open"
+            || post.comment_count > 0
+            || supports("comments"))
+    {
+        boxes.push(MetaBox::new(
+            "commentsdiv",
+            &tr("Comments"),
+            "normal",
+            "core",
+            comments_box(ctx, post).await,
+        ));
     }
-    if !(post.post_status == "pending" && !ctx.can(if info.name == "page" { "publish_pages" } else { "publish_posts" })) {
-        boxes.push(MetaBox::new("slugdiv", &tr("Slug"), "normal", "core", slug_box(ctx, post)));
+    if !(post.post_status == "pending"
+        && !ctx.can(if info.name == "page" {
+            "publish_pages"
+        } else {
+            "publish_posts"
+        }))
+    {
+        boxes.push(MetaBox::new(
+            "slugdiv",
+            &tr("Slug"),
+            "normal",
+            "core",
+            slug_box(ctx, post),
+        ));
     }
-    if supports("author") && ctx.can(if info.name == "page" { "edit_others_pages" } else { "edit_others_posts" }) {
-        boxes.push(MetaBox::new("authordiv", &tr("Author"), "normal", "core", author_box(ctx, post).await));
+    if supports("author")
+        && ctx.can(if info.name == "page" {
+            "edit_others_pages"
+        } else {
+            "edit_others_posts"
+        })
+    {
+        boxes.push(MetaBox::new(
+            "authordiv",
+            &tr("Author"),
+            "normal",
+            "core",
+            author_box(ctx, post).await,
+        ));
     }
     boxes
 }
@@ -468,18 +807,57 @@ async fn register_meta_boxes(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new
 /// `wp_post_revision_title_expanded()` of a revision in the list of the revisions box.
 async fn revision_title(ctx: &Ctx<'_>, revision: &Post, parent: &Post) -> String {
     let site = ctx.site();
-    let author = ctx.env.db.users_by_ids(&[revision.post_author]).await.unwrap_or_default().into_iter().next();
-    let name = author.as_ref().map(|u| u.display_name.clone()).unwrap_or_default();
-    let email = author.as_ref().map(|u| u.user_email.clone()).unwrap_or_default();
-    let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&site.options, &email, s));
-    let gravatar = format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-24 photo' height='24' width='24' loading='lazy' decoding='async'/>", url(24), url(48));
-    let ts = site.timezone.local_timestamp(&revision.post_modified).unwrap_or(0);
+    let author = ctx
+        .env
+        .db
+        .users_by_ids(&[revision.post_author])
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+    let name = author
+        .as_ref()
+        .map(|u| u.display_name.clone())
+        .unwrap_or_default();
+    let email = author
+        .as_ref()
+        .map(|u| u.user_email.clone())
+        .unwrap_or_default();
+    let url = |s: u64| {
+        esc_url(&rustpress_blocks::content::avatar_url(
+            &site.options,
+            &email,
+            s,
+        ))
+    };
+    let gravatar = format!(
+        "<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-24 photo' height='24' width='24' loading='lazy' decoding='async'/>",
+        url(24),
+        url(48)
+    );
+    let ts = site
+        .timezone
+        .local_timestamp(&revision.post_modified)
+        .unwrap_or(0);
     let mut date = site.date(&site.trx("F j, Y @ H:i:s", "revision date format"), ts);
     if ctx.user.can_edit_post(parent) {
-        date = format!("<a href='{}'>{date}</a>", ctx.admin_url(&format!("revision.php?revision={}", revision.id)));
+        date = format!(
+            "<a href='{}'>{date}</a>",
+            ctx.admin_url(&format!("revision.php?revision={}", revision.id))
+        );
     }
-    let modified = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&revision.post_modified_gmt).unwrap_or(0);
-    let mut text = rustpress_core::i18n::sprintf(&ctx.tr("%1$s %2$s, %3$s ago (%4$s)"), &[&gravatar, &name, &super::media_lib::human_time_diff(ctx, modified, ctx.env.now), &date]);
+    let modified =
+        rustpress_core::datetime::SiteTimezone::gmt_timestamp(&revision.post_modified_gmt)
+            .unwrap_or(0);
+    let mut text = rustpress_core::i18n::sprintf(
+        &ctx.tr("%1$s %2$s, %3$s ago (%4$s)"),
+        &[
+            &gravatar,
+            &name,
+            &super::media_lib::human_time_diff(ctx, modified, ctx.env.now),
+            &date,
+        ],
+    );
     if revision.post_name.contains("autosave") {
         text = rustpress_core::i18n::sprintf(&ctx.tr("%s [Autosave]"), &[&text]);
     }
@@ -489,7 +867,12 @@ async fn revision_title(ctx: &Ctx<'_>, revision: &Post, parent: &Post) -> String
 /// `post_comment_meta_box()`: the comments of the post are loaded by Ajax.
 async fn comments_box(ctx: &Ctx<'_>, post: &Post) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let total = ctx.env.db.comment_count_all_types(post.id).await.unwrap_or(0);
+    let total = ctx
+        .env
+        .db
+        .comment_count_all_types(post.id)
+        .await
+        .unwrap_or(0);
     let mut out = format!(
         "<input type=\"hidden\" id=\"add_comment_nonce\" name=\"add_comment_nonce\" value=\"{}\" />\t<p class=\"hide-if-no-js\" id=\"add-new-comment\"><button type=\"button\" class=\"button\" onclick=\"window.commentReply && commentReply.addcomment({});\">{}</button></p>\n\t<input type=\"hidden\" id=\"_ajax_fetch_list_nonce\" name=\"_ajax_fetch_list_nonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" /><table class=\"widefat fixed striped table-view-list comments wp-list-table comments-box\" style=\"display:none;\">\n\t<tbody id=\"the-comment-list\"\n\t\t data-wp-lists='list:comment'\t\t>\n\t\t\t</tbody>\n</table>\n\t\t",
         ctx.create_nonce("get-comments"),
@@ -497,9 +880,12 @@ async fn comments_box(ctx: &Ctx<'_>, post: &Post) -> String {
         tr("Add Comment"),
         ctx.create_nonce("fetch-list-WP_Post_Comments_List_Table"),
         super::referer_field_value(&ctx.request.request_uri),
-        );
+    );
     if total < 1 {
-        out.push_str(&format!("<p id=\"no-comments\">{}</p>", tr("No comments yet.")));
+        out.push_str(&format!(
+            "<p id=\"no-comments\">{}</p>",
+            tr("No comments yet.")
+        ));
     } else {
         let hidden = super::common::hidden_meta_boxes(ctx, &post.post_type, &post.post_type).await;
         if !hidden.iter().any(|h| h == "commentsdiv") {
@@ -524,14 +910,27 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
     let name = tax.name.as_str();
     let terms = db.terms(name).await.unwrap_or_default();
     // A new post has no category yet; the default one is given when it is saved.
-    let selected: Vec<u64> = if post.id != 0 { db.terms_for_post(post.id, Some(name)).await.unwrap_or_default().into_iter().map(|t| t.term_id).collect() } else { Vec::new() };
+    let selected: Vec<u64> = if post.id != 0 {
+        db.terms_for_post(post.id, Some(name))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| t.term_id)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let assigned = selected.clone();
     // `wp_popular_terms_checklist()`: the ten most used, in the order of the database.
     let popular_terms = db.popular_terms(name, 10).await.unwrap_or_default();
     let popular: Vec<&rustpress_db::Term> = popular_terms.iter().collect();
     let popular_ids: Vec<u64> = popular.iter().map(|t| t.term_id).collect();
     let item = |t: &rustpress_db::Term, checked: bool| {
-        let class = if popular_ids.contains(&t.term_id) { " class=\"popular-category\"" } else { "" };
+        let class = if popular_ids.contains(&t.term_id) {
+            " class=\"popular-category\""
+        } else {
+            ""
+        };
         format!(
             "<li id='in-{name}-{id}-1'{class}><label class=\"selectit\"><input value=\"{id}\" type=\"checkbox\" name=\"{input}[]\" id=\"in-{name}-{id}-2\"{} /> {}</label>",
             if checked { " checked='checked'" } else { "" },
@@ -540,13 +939,25 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
             input = tax.input_name()
         )
     };
-    fn tree(terms: &[rustpress_db::Term], parent: u64, selected: &[u64], item: &dyn Fn(&rustpress_db::Term, bool) -> String, skip: &[u64], out: &mut String) {
-        let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent && !skip.contains(&t.term_id)).collect();
+    fn tree(
+        terms: &[rustpress_db::Term],
+        parent: u64,
+        selected: &[u64],
+        item: &dyn Fn(&rustpress_db::Term, bool) -> String,
+        skip: &[u64],
+        out: &mut String,
+    ) {
+        let mut children: Vec<&rustpress_db::Term> = terms
+            .iter()
+            .filter(|t| t.parent == parent && !skip.contains(&t.term_id))
+            .collect();
         children.sort_by_key(|t| t.name.to_lowercase());
         for term in children {
             out.push('\n');
             out.push_str(&item(term, selected.contains(&term.term_id)));
-            let has_children = terms.iter().any(|t| t.parent == term.term_id && !skip.contains(&t.term_id));
+            let has_children = terms
+                .iter()
+                .any(|t| t.parent == term.term_id && !skip.contains(&t.term_id));
             if has_children {
                 out.push_str("<ul class='children'>\n");
                 tree(terms, term.term_id, selected, item, skip, out);
@@ -557,7 +968,10 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
     }
     let mut list = String::new();
     // Checked terms first, flat.
-    let checked_terms: Vec<&rustpress_db::Term> = terms.iter().filter(|t| selected.contains(&t.term_id)).collect();
+    let checked_terms: Vec<&rustpress_db::Term> = terms
+        .iter()
+        .filter(|t| selected.contains(&t.term_id))
+        .collect();
     for term in &checked_terms {
         list.push('\n');
         list.push_str(&item(term, true));
@@ -582,7 +996,10 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
             }
         }
     };
-    let orphans: Vec<&rustpress_db::Term> = terms.iter().filter(|t| !skip.contains(&t.term_id) && !shown(t)).collect();
+    let orphans: Vec<&rustpress_db::Term> = terms
+        .iter()
+        .filter(|t| !skip.contains(&t.term_id) && !shown(t))
+        .collect();
     let mut parents: Vec<u64> = Vec::new();
     for term in &orphans {
         if !parents.contains(&term.parent) {
@@ -605,12 +1022,21 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
             id = term.term_id
         ));
     }
-    let mut parent_options = format!("\t<option value='-1'>&mdash; {} &mdash;</option>\n", tax.label(ctx, "parent_item", "Parent Category", "Parent Category"));
+    let mut parent_options = format!(
+        "\t<option value='-1'>&mdash; {} &mdash;</option>\n",
+        tax.label(ctx, "parent_item", "Parent Category", "Parent Category")
+    );
     fn parent_tree(terms: &[rustpress_db::Term], parent: u64, level: usize, out: &mut String) {
-        let mut children: Vec<&rustpress_db::Term> = terms.iter().filter(|t| t.parent == parent).collect();
+        let mut children: Vec<&rustpress_db::Term> =
+            terms.iter().filter(|t| t.parent == parent).collect();
         children.sort_by_key(|t| t.name.to_lowercase());
         for term in children {
-            out.push_str(&format!("\t<option class=\"level-{level}\" value=\"{}\">{}{}</option>\n", term.term_id, "&nbsp;".repeat(level * 3), esc_html(&term.name)));
+            out.push_str(&format!(
+                "\t<option class=\"level-{level}\" value=\"{}\">{}{}</option>\n",
+                term.term_id,
+                "&nbsp;".repeat(level * 3),
+                esc_html(&term.name)
+            ));
             parent_tree(terms, term.term_id, level + 1, out);
         }
     }
@@ -620,7 +1046,12 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
         format!(
             "\t\t\t<div id=\"{name}-adder\" class=\"wp-hidden-children\">\n\t\t\t\t<a id=\"{name}-add-toggle\" href=\"#{name}-add\" class=\"hide-if-no-js taxonomy-add-new\">\n\t\t\t\t\t+ {add_new}\t\t\t\t</a>\n\t\t\t\t<p id=\"{name}-add\" class=\"category-add wp-hidden-child\">\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"new{name}\">{add_new}</label>\n\t\t\t\t\t<input type=\"text\" name=\"new{name}\" id=\"new{name}\" class=\"form-required form-input-tip\" value=\"{}\" aria-required=\"true\" />\n\t\t\t\t\t<label class=\"screen-reader-text\" for=\"new{name}_parent\">\n\t\t\t\t\t\t{}\t\t\t\t\t</label>\n\t\t\t\t\t<select  name='new{name}_parent' id='new{name}_parent' class='postform'>\n{parent_options}</select>\n\t\t\t\t\t<input type=\"button\" id=\"{name}-add-submit\" data-wp-lists=\"add:{name}checklist:{name}-add\" class=\"button category-add-submit\" value=\"{add_new}\" />\n\t\t\t\t\t<input type=\"hidden\" id=\"_ajax_nonce-add-{name}\" name=\"_ajax_nonce-add-{name}\" value=\"{}\" />\t\t\t\t\t<span id=\"{name}-ajax-response\"></span>\n\t\t\t\t</p>\n\t\t\t</div>\n\t\t",
             esc_attr(&tax.label(ctx, "new_item_name", "New Category Name", "New Tag Name")),
-            tax.label(ctx, "parent_item_colon", "Parent Category:", "Parent Category:"),
+            tax.label(
+                ctx,
+                "parent_item_colon",
+                "Parent Category:",
+                "Parent Category:"
+            ),
             ctx.create_nonce(&format!("add-{name}"))
         )
     } else {
@@ -646,18 +1077,34 @@ pub struct TaxBox {
 impl TaxBox {
     /// `get_taxonomy_labels()`: the registration's label, else the default of categories or of tags.
     pub fn label(&self, ctx: &Ctx<'_>, key: &str, hierarchical: &str, flat: &str) -> String {
-        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
+        let given = |k: &str| {
+            self.labels
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+                .filter(|v| !v.is_empty())
+        };
         let name = given("name").or_else(|| given("label"));
         let value = match key {
             "all_items" => given("all_items").or_else(|| given("menu_name")).or(name),
             other => given(other),
         };
-        value.unwrap_or_else(|| ctx.tr(if self.hierarchical { hierarchical } else { flat }))
+        value.unwrap_or_else(|| {
+            ctx.tr(if self.hierarchical {
+                hierarchical
+            } else {
+                flat
+            })
+        })
     }
 
     /// The name of the form field: `post_category` for categories, `tax_input[{$taxonomy}]` else.
     fn input_name(&self) -> String {
-        if self.name == "category" { "post_category".to_owned() } else { format!("tax_input[{}]", self.name) }
+        if self.name == "category" {
+            "post_category".to_owned()
+        } else {
+            format!("tax_input[{}]", self.name)
+        }
     }
 }
 
@@ -667,15 +1114,36 @@ pub fn tax_boxes(ctx: &Ctx<'_>, post_type: &str) -> Vec<TaxBox> {
     let site = ctx.site();
     let mut out = Vec::new();
     if post_type == "post" {
-        out.push(TaxBox { name: "category".into(), hierarchical: true, labels: vec![("name".into(), site.tr("Categories")), ("all_items".into(), site.tr("All Categories"))] });
-        out.push(TaxBox { name: "post_tag".into(), hierarchical: false, labels: vec![("name".into(), site.tr("Tags")), ("all_items".into(), site.tr("All Tags"))] });
+        out.push(TaxBox {
+            name: "category".into(),
+            hierarchical: true,
+            labels: vec![
+                ("name".into(), site.tr("Categories")),
+                ("all_items".into(), site.tr("All Categories")),
+            ],
+        });
+        out.push(TaxBox {
+            name: "post_tag".into(),
+            hierarchical: false,
+            labels: vec![
+                ("name".into(), site.tr("Tags")),
+                ("all_items".into(), site.tr("All Tags")),
+            ],
+        });
     }
     for tax in site.types.admin_taxonomies() {
         if !tax.show_ui || !tax.object_types.iter().any(|t| t == post_type) || !tax.meta_box {
             continue;
         }
-        let hierarchical = site.types.taxonomy(&tax.name).is_some_and(|t| t.hierarchical);
-        out.push(TaxBox { name: tax.name.clone(), hierarchical, labels: tax.labels.clone() });
+        let hierarchical = site
+            .types
+            .taxonomy(&tax.name)
+            .is_some_and(|t| t.hierarchical);
+        out.push(TaxBox {
+            name: tax.name.clone(),
+            hierarchical,
+            labels: tax.labels.clone(),
+        });
     }
     out
 }
@@ -684,17 +1152,47 @@ pub fn tax_boxes(ctx: &Ctx<'_>, post_type: &str) -> Vec<TaxBox> {
 async fn tags_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
     let name = tax.name.as_str();
     let tr = |s: &str| ctx.tr(s);
-    let tags = if post.id != 0 { ctx.env.db.terms_for_post(post.id, Some(name)).await.unwrap_or_default() } else { Vec::new() };
+    let tags = if post.id != 0 {
+        ctx.env
+            .db
+            .terms_for_post(post.id, Some(name))
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     // `get_terms_to_edit()` joins with a plain comma; the box puts the delimiter of the language and a space.
-    let names = esc_attr(&tags.iter().map(|t| t.name.clone()).collect::<Vec<_>>().join(",")).replace(',', &format!("{} ", ctx.site().trx(",", "tag delimiter")));
+    let names = esc_attr(
+        &tags
+            .iter()
+            .map(|t| t.name.clone())
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+    .replace(',', &format!("{} ", ctx.site().trx(",", "tag delimiter")));
     let inner = format!(
         "<div class=\"tagsdiv\" id=\"{name}\">\n\t<div class=\"jaxtag\">\n\t<div class=\"nojs-tags hide-if-js\">\n\t\t<label for=\"tax-input-{name}\">{}</label>\n\t\t<p><textarea name=\"tax_input[{name}]\" rows=\"3\" cols=\"20\" class=\"the-tags\" id=\"tax-input-{name}\"  aria-describedby=\"new-tag-{name}-desc\">{}</textarea></p>\n\t</div>\n\t\t<div class=\"ajaxtag hide-if-no-js\">\n\t\t<label class=\"screen-reader-text\" for=\"new-tag-{name}\">{}</label>\n\t\t<input data-wp-taxonomy=\"{name}\" type=\"text\" id=\"new-tag-{name}\" name=\"newtag[{name}]\" class=\"newtag form-input-tip\" size=\"16\" autocomplete=\"off\" aria-describedby=\"new-tag-{name}-desc\" value=\"\" />\n\t\t<input type=\"button\" class=\"button tagadd\" value=\"{}\" />\n\t</div>\n\t<p class=\"howto\" id=\"new-tag-{name}-desc\">{}</p>\n\t\t</div>\n\t<ul class=\"tagchecklist\" role=\"list\"></ul>\n</div>\n\t<p class=\"hide-if-no-js\"><button type=\"button\" class=\"button-link tagcloud-link\" id=\"link-{name}\" aria-expanded=\"false\">{}</button></p>\n\t",
-        tax.label(ctx, "add_or_remove_items", "Add or remove categories", "Add or remove tags"),
+        tax.label(
+            ctx,
+            "add_or_remove_items",
+            "Add or remove categories",
+            "Add or remove tags"
+        ),
         names,
         tax.label(ctx, "add_new_item", "Add Category", "Add Tag"),
         tr("Add"),
-        tax.label(ctx, "separate_items_with_commas", "Separate tags with commas", "Separate tags with commas"),
-        tax.label(ctx, "choose_from_most_used", "Choose from the most used tags", "Choose from the most used tags")
+        tax.label(
+            ctx,
+            "separate_items_with_commas",
+            "Separate tags with commas",
+            "Separate tags with commas"
+        ),
+        tax.label(
+            ctx,
+            "choose_from_most_used",
+            "Choose from the most used tags",
+            "Choose from the most used tags"
+        )
     );
     inner
 }
@@ -704,11 +1202,41 @@ async fn page_attributes_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Str
     let tr = |s: &str| ctx.tr(s);
     let mut out = String::new();
     if info.hierarchical {
-        let pages = ctx.env.db.posts(&PostQuery { post_types: vec![post.post_type.clone()], statuses: vec!["publish".into()], order_by: rustpress_db::OrderBy::MenuOrderTitle, order: rustpress_db::Order::Asc, ..Default::default() }).await.unwrap_or_default();
-        fn tree(pages: &[Post], parent: u64, level: usize, current: u64, selected: u64, out: &mut String) {
-            for page in pages.iter().filter(|p| p.post_parent == parent && p.id != current) {
+        let pages = ctx
+            .env
+            .db
+            .posts(&PostQuery {
+                post_types: vec![post.post_type.clone()],
+                statuses: vec!["publish".into()],
+                order_by: rustpress_db::OrderBy::MenuOrderTitle,
+                order: rustpress_db::Order::Asc,
+                ..Default::default()
+            })
+            .await
+            .unwrap_or_default();
+        fn tree(
+            pages: &[Post],
+            parent: u64,
+            level: usize,
+            current: u64,
+            selected: u64,
+            out: &mut String,
+        ) {
+            for page in pages
+                .iter()
+                .filter(|p| p.post_parent == parent && p.id != current)
+            {
                 let pad = "&nbsp;".repeat(level * 3);
-                out.push_str(&format!("\t<option class=\"level-{level}\" value=\"{}\"{}>{pad}{}</option>\n", page.id, if page.id == selected { " selected=\"selected\"" } else { "" }, esc_html(&page.post_title)));
+                out.push_str(&format!(
+                    "\t<option class=\"level-{level}\" value=\"{}\"{}>{pad}{}</option>\n",
+                    page.id,
+                    if page.id == selected {
+                        " selected=\"selected\""
+                    } else {
+                        ""
+                    },
+                    esc_html(&page.post_title)
+                ));
                 tree(pages, page.id, level + 1, current, selected, out);
             }
         }
@@ -726,12 +1254,30 @@ async fn page_attributes_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Str
     }
     let templates = super::inline_edit::page_templates(ctx, info);
     if !templates.is_empty() && ctx.site().settings.page_for_posts != post.id {
-        let current = ctx.env.db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().unwrap_or_default();
+        let current = ctx
+            .env
+            .db
+            .post_meta_value(post.id, "_wp_page_template")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let mut sorted = templates.clone();
         sorted.sort_by(|a, b| a.1.cmp(&b.1));
         let options: String = sorted
             .iter()
-            .map(|(name, title)| format!("\n\t<option value='{}' {}>{}</option>", esc_attr(name), if !current.is_empty() && &current == name { " selected='selected'" } else { "" }, esc_html(title)))
+            .map(|(name, title)| {
+                format!(
+                    "\n\t<option value='{}' {}>{}</option>",
+                    esc_attr(name),
+                    if !current.is_empty() && &current == name {
+                        " selected='selected'"
+                    } else {
+                        ""
+                    },
+                    esc_html(title)
+                )
+            })
             .collect();
         out.push_str(&format!(
             "<p class=\"post-attributes-label-wrapper page-template-label-wrapper\"><label class=\"post-attributes-label\" for=\"page_template\">{}</label>\n\t\t</p>\n<select name=\"page_template\" id=\"page_template\">\n\t\t<option value=\"default\">{}</option>\n\t\t{options}</select>\n",
@@ -748,7 +1294,10 @@ async fn page_attributes_box(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Str
         ));
         // The page screen has help tabs.
         if info.name == "page" {
-            out.push_str(&format!("<p class=\"post-attributes-help-text\">{}</p>\n\t\t\t", tr("Need help? Use the Help tab above the screen title.")));
+            out.push_str(&format!(
+                "<p class=\"post-attributes-help-text\">{}</p>\n\t\t\t",
+                tr("Need help? Use the Help tab above the screen title.")
+            ));
         }
     }
     out
@@ -760,26 +1309,48 @@ fn excerpt_box(ctx: &Ctx<'_>, post: &Post) -> String {
         "<label class=\"screen-reader-text\" for=\"excerpt\">\n\t{}</label><textarea rows=\"1\" cols=\"40\" name=\"excerpt\" id=\"excerpt\">{}</textarea>\n<p>\n\t{}</p>\n\t",
         tr("Excerpt"),
         esc_textarea(&post.post_excerpt),
-        rustpress_core::i18n::sprintf(&tr("Excerpts are optional hand-crafted summaries of your content that can be used in your theme. <a href=\"%s\">Learn more about manual excerpts</a>."), &[&tr("https://wordpress.org/documentation/article/what-is-an-excerpt-classic-editor/")])
+        rustpress_core::i18n::sprintf(
+            &tr(
+                "Excerpts are optional hand-crafted summaries of your content that can be used in your theme. <a href=\"%s\">Learn more about manual excerpts</a>."
+            ),
+            &[&tr(
+                "https://wordpress.org/documentation/article/what-is-an-excerpt-classic-editor/"
+            )]
+        )
     );
     inner
 }
 
 fn discussion_box(ctx: &Ctx<'_>, post: &Post) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let open = |s: &str| if s == "open" { " checked='checked'" } else { "" };
+    let open = |s: &str| {
+        if s == "open" {
+            " checked='checked'"
+        } else {
+            ""
+        }
+    };
     let inner = format!(
         "<input name=\"advanced_view\" type=\"hidden\" value=\"1\" />\n<p class=\"meta-options\">\n\t<label for=\"comment_status\" class=\"selectit\"><input name=\"comment_status\" type=\"checkbox\" id=\"comment_status\" value=\"open\" {} /> {}</label><br />\n\t<label for=\"ping_status\" class=\"selectit\"><input name=\"ping_status\" type=\"checkbox\" id=\"ping_status\" value=\"open\" {} />\n\t\t{}\t</label>\n\t</p>\n\t",
         open(&post.comment_status),
         tr("Allow comments"),
         open(&post.ping_status),
-        rustpress_core::i18n::sprintf(&tr("Allow <a href=\"%s\">trackbacks and pingbacks</a>"), &["https://wordpress.org/documentation/article/introduction-to-blogging/#managing-comments"])
+        rustpress_core::i18n::sprintf(
+            &tr("Allow <a href=\"%s\">trackbacks and pingbacks</a>"),
+            &[
+                "https://wordpress.org/documentation/article/introduction-to-blogging/#managing-comments"
+            ]
+        )
     );
     inner
 }
 
 fn slug_box(ctx: &Ctx<'_>, post: &Post) -> String {
-    format!("<label class=\"screen-reader-text\" for=\"post_name\">\n\t{}</label><input name=\"post_name\" type=\"text\" class=\"large-text\" id=\"post_name\" value=\"{}\" />\n\t", ctx.tr("Slug"), esc_attr(&post.post_name))
+    format!(
+        "<label class=\"screen-reader-text\" for=\"post_name\">\n\t{}</label><input name=\"post_name\" type=\"text\" class=\"large-text\" id=\"post_name\" value=\"{}\" />\n\t",
+        ctx.tr("Slug"),
+        esc_attr(&post.post_name)
+    )
 }
 
 async fn author_box(ctx: &Ctx<'_>, post: &Post) -> String {
@@ -789,33 +1360,96 @@ async fn author_box(ctx: &Ctx<'_>, post: &Post) -> String {
         options.push_str(&format!(
             "\t<option value='{}'{}>{}</option>\n",
             user.id,
-            if user.id == post.post_author { " selected='selected'" } else { "" },
+            if user.id == post.post_author {
+                " selected='selected'"
+            } else {
+                ""
+            },
             esc_html(&format!("{} ({})", user.display_name, user.user_login))
         ));
     }
-    format!("<label class=\"screen-reader-text\" for=\"post_author_override\">\n\t{}</label>\n\t<select name='post_author_override' id='post_author_override' class=''>\n{options}</select>", ctx.tr("Author"))
+    format!(
+        "<label class=\"screen-reader-text\" for=\"post_author_override\">\n\t{}</label>\n\t<select name='post_author_override' id='post_author_override' class=''>\n{options}</select>",
+        ctx.tr("Author")
+    )
 }
 
 /// The messages after saving (`$messages` of `edit-form-advanced.php`).
 fn message_text(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, number: u32) -> Option<String> {
     let site = ctx.site();
-    if let Some(message) = site.plugins.post_updated_message(site, post, number, &|action| ctx.create_nonce(action)) {
+    if let Some(message) = site
+        .plugins
+        .post_updated_message(site, post, number, &|action| ctx.create_nonce(action))
+    {
         return message;
     }
     let tr = |s: &str| ctx.tr(s);
     let page = info.name == "page";
-    let permalink = site.home_url(&if page { format!("?page_id={}", post.id) } else { format!("?p={}", post.id) });
+    let permalink = site.home_url(&if page {
+        format!("?page_id={}", post.id)
+    } else {
+        format!("?p={}", post.id)
+    });
     let preview = format!("{permalink}&preview=true");
-    let view = if site.is_post_type_viewable(&info.name) { format!(" <a href=\"{}\">{}</a>", esc_url(&permalink), if page { tr("View page") } else { tr("View post") }) } else { String::new() };
-    let preview_link = |url: &str| if site.is_post_type_viewable(&info.name) { format!(" <a target=\"_blank\" href=\"{}\">{}</a>", esc_url(url), if page { tr("Preview page") } else { tr("Preview post") }) } else { String::new() };
+    let view = if site.is_post_type_viewable(&info.name) {
+        format!(
+            " <a href=\"{}\">{}</a>",
+            esc_url(&permalink),
+            if page {
+                tr("View page")
+            } else {
+                tr("View post")
+            }
+        )
+    } else {
+        String::new()
+    };
+    let preview_link = |url: &str| {
+        if site.is_post_type_viewable(&info.name) {
+            format!(
+                " <a target=\"_blank\" href=\"{}\">{}</a>",
+                esc_url(url),
+                if page {
+                    tr("Preview page")
+                } else {
+                    tr("Preview post")
+                }
+            )
+        } else {
+            String::new()
+        }
+    };
     let scheduled = {
         let ts = site.timezone.local_timestamp(&post.post_date).unwrap_or(0);
-        format!("<strong>{}</strong>", rustpress_core::i18n::sprintf(&tr("%1$s at %2$s"), &[&site.date(&site.trx("M j, Y", "publish box date format"), ts), &site.date(&site.trx("H:i", "publish box time format"), ts)]))
+        format!(
+            "<strong>{}</strong>",
+            rustpress_core::i18n::sprintf(
+                &tr("%1$s at %2$s"),
+                &[
+                    &site.date(&site.trx("M j, Y", "publish box date format"), ts),
+                    &site.date(&site.trx("H:i", "publish box time format"), ts)
+                ]
+            )
+        )
     };
     let (updated, published, saved, submitted, scheduled_text, draft_updated) = if page {
-        (tr("Page updated."), tr("Page published."), tr("Page saved."), tr("Page submitted."), tr("Page scheduled for: %s."), tr("Page draft updated."))
+        (
+            tr("Page updated."),
+            tr("Page published."),
+            tr("Page saved."),
+            tr("Page submitted."),
+            tr("Page scheduled for: %s."),
+            tr("Page draft updated."),
+        )
     } else {
-        (tr("Post updated."), tr("Post published."), tr("Post saved."), tr("Post submitted."), tr("Post scheduled for: %s."), tr("Post draft updated."))
+        (
+            tr("Post updated."),
+            tr("Post published."),
+            tr("Post saved."),
+            tr("Post submitted."),
+            tr("Post scheduled for: %s."),
+            tr("Post draft updated."),
+        )
     };
     Some(match number {
         1 => format!("{updated}{view}"),
@@ -825,7 +1459,11 @@ fn message_text(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, number: u32) -> Opt
         6 => format!("{published}{view}"),
         7 => saved,
         8 => format!("{submitted}{}", preview_link(&preview)),
-        9 => format!("{}{}", rustpress_core::i18n::sprintf(&scheduled_text, &[&scheduled]), preview_link(&permalink)),
+        9 => format!(
+            "{}{}",
+            rustpress_core::i18n::sprintf(&scheduled_text, &[&scheduled]),
+            preview_link(&permalink)
+        ),
         10 => format!("{draft_updated}{}", preview_link(&preview)),
         _ => return None,
     })
@@ -837,42 +1475,97 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let tr = |s: &str| ctx.tr(s);
     let db = ctx.env.db;
     let (edit_title, add_title) = labels(ctx, info);
-    let title = if is_new { add_title.clone() } else { edit_title };
+    let title = if is_new {
+        add_title.clone()
+    } else {
+        edit_title
+    };
     // `admin-header.php` names the post in the window title.
     let window_title = match rustpress_blocks::content::the_title_in_admin(site, post) {
-        post_title if !is_new && !post_title.is_empty() => rustpress_core::i18n::sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&title, &post_title]),
+        post_title if !is_new && !post_title.is_empty() => {
+            rustpress_core::i18n::sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&title, &post_title])
+        }
         _ => title.clone(),
     };
     let sticky = sticky_ids(ctx).contains(&post.id);
-    let post_title = if post.post_status == "auto-draft" { String::new() } else { post.post_title.clone() };
+    let post_title = if post.post_status == "auto-draft" {
+        String::new()
+    } else {
+        post.post_title.clone()
+    };
     let supports = |feature: &str| site.post_type_supports(&info.name, feature);
 
     // `wp_check_post_lock()` and `wp_set_post_lock()` of post.php; post-new.php sets none.
-    let holder = match if is_new { None } else { super::ajax::post_lock_holder(ctx.env, &ctx.user, post.id).await } {
+    let holder = match if is_new {
+        None
+    } else {
+        super::ajax::post_lock_holder(ctx.env, &ctx.user, post.id).await
+    } {
         Some(id) => db.user(id).await.ok().flatten(),
         None => None,
     };
     let lock = format!("{}:{}", ctx.env.now, ctx.user.id);
     let locks = !is_new && holder.is_none();
     if locks && let Some(writer) = ctx.env.writer {
-        writer.update_post_meta(post.id, "_edit_lock", &lock).await.or_log();
+        writer
+            .update_post_meta(post.id, "_edit_lock", &lock)
+            .await
+            .or_log();
     }
 
     let mut h = String::from("<div class=\"wrap\">\n<h1 class=\"wp-heading-inline\">\n");
     h.push_str(&esc_html(&title));
     h.push_str("</h1>\n\n");
-    let new_file = if info.name == "post" { "post-new.php".to_owned() } else { format!("post-new.php?post_type={}", info.name) };
-    if !is_new && ctx.can(if info.name == "page" { "edit_pages" } else { "edit_posts" }) {
-        h.push_str(&format!(" <a href=\"{}\" class=\"page-title-action\">{}</a>", esc_url(&ctx.admin_url(&new_file)), esc_html(&add_title)));
+    let new_file = if info.name == "post" {
+        "post-new.php".to_owned()
+    } else {
+        format!("post-new.php?post_type={}", info.name)
+    };
+    if !is_new
+        && ctx.can(if info.name == "page" {
+            "edit_pages"
+        } else {
+            "edit_posts"
+        })
+    {
+        h.push_str(&format!(
+            " <a href=\"{}\" class=\"page-title-action\">{}</a>",
+            esc_url(&ctx.admin_url(&new_file)),
+            esc_html(&add_title)
+        ));
     }
     h.push_str("\n<hr class=\"wp-header-end\">\n\n");
-    if let Some(number) = ctx.request.get("message").and_then(|m| m.parse::<u32>().ok())
+    if let Some(number) = ctx
+        .request
+        .get("message")
+        .and_then(|m| m.parse::<u32>().ok())
         && let Some(text) = message_text(ctx, post, info, number)
     {
-        h.push_str(&notices::notice(&text, "success", true, "message", &["updated"], true));
+        h.push_str(&notices::notice(
+            &text,
+            "success",
+            true,
+            "message",
+            &["updated"],
+            true,
+        ));
     }
-    let lost = format!("<span class=\"spinner\"></span> {} <span class=\"hide-if-no-sessionstorage\">{}</span>", tr("<strong>Connection lost.</strong> Saving has been disabled until you are reconnected."), tr("This post is being backed up in your browser, just in case."));
-    h.push_str(notices::notice(&lost, "", false, "lost-connection-notice", &["error", "hidden"], true).trim_end_matches('\n'));
+    let lost = format!(
+        "<span class=\"spinner\"></span> {} <span class=\"hide-if-no-sessionstorage\">{}</span>",
+        tr("<strong>Connection lost.</strong> Saving has been disabled until you are reconnected."),
+        tr("This post is being backed up in your browser, just in case.")
+    );
+    h.push_str(
+        notices::notice(
+            &lost,
+            "",
+            false,
+            "lost-connection-notice",
+            &["error", "hidden"],
+            true,
+        )
+        .trim_end_matches('\n'),
+    );
     h.push_str("<form name=\"post\" action=\"post.php\" method=\"post\" id=\"post\"\n>\n");
     h.push_str(&ctx.nonce_field(&format!("update-post_{}", post.id)));
     let referer = ctx.request.get("referredby").unwrap_or_default();
@@ -885,7 +1578,9 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         esc_url(referer)
     ));
     if locks {
-        h.push_str(&format!("<input type=\"hidden\" id=\"active_post_lock\" value=\"{lock}\" />\n\t"));
+        h.push_str(&format!(
+            "<input type=\"hidden\" id=\"active_post_lock\" value=\"{lock}\" />\n\t"
+        ));
     }
     if post.post_status != "draft" {
         h.push_str("<input type=\"hidden\" name=\"_wp_original_http_referer\" value=\"\" />");
@@ -893,7 +1588,10 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if post.post_status == "auto-draft" {
         h.push_str("<input type='hidden' id='auto_draft' name='auto_draft' value='1' />");
     }
-    h.push_str(&format!("<input type='hidden' id='post_ID' name='post_ID' value='{}' />", post.id));
+    h.push_str(&format!(
+        "<input type='hidden' id='post_ID' name='post_ID' value='{}' />",
+        post.id
+    ));
     h.push_str(&format!(
         "<input type=\"hidden\" id=\"meta-box-order-nonce\" name=\"meta-box-order-nonce\" value=\"{}\" /><input type=\"hidden\" id=\"closedpostboxesnonce\" name=\"closedpostboxesnonce\" value=\"{}\" />\n",
         ctx.create_nonce("meta-box-order"),
@@ -902,12 +1600,19 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     // `edit_form_top`.
     if !site.plugins.is_empty() {
         let parts = ctx.plugin_parts();
-        let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+        let mut plugin_ctx =
+            ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
         plugin_ctx.edited_post = Some(post);
-        h.push_str(&site.plugins.edit_form_top(&plugin_ctx, post).await.unwrap_or_else(|e| {
-            tracing::error!(error = %e, "plugin edit_form_top failed");
-            String::new()
-        }));
+        h.push_str(
+            &site
+                .plugins
+                .edit_form_top(&plugin_ctx, post)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "plugin edit_form_top failed");
+                    String::new()
+                }),
+        );
     }
     let screen_id = info.name.clone();
     let columns = super::common::layout_columns(ctx, &screen_id, 2).await;
@@ -916,12 +1621,16 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     let mut boxes = register_meta_boxes(ctx, post, info, is_new, sticky).await;
     let plugin_boxes = {
         let parts = ctx.plugin_parts();
-        let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+        let mut plugin_ctx =
+            ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
         plugin_ctx.edited_post = Some(post);
-        site.plugins.post_meta_boxes(&plugin_ctx, post).await.unwrap_or_else(|e| {
-            tracing::error!(error = %e, "plugin post meta boxes failed");
-            rustpress_core::native::PostMetaBoxes::default()
-        })
+        site.plugins
+            .post_meta_boxes(&plugin_ctx, post)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "plugin post meta boxes failed");
+                rustpress_core::native::PostMetaBoxes::default()
+            })
     };
     boxes.retain(|b| !plugin_boxes.removed.contains(&b.id));
     // `WP_Privacy_Policy_Content::notice()`: the edit screen of the privacy policy page points to the guide.
@@ -935,7 +1644,13 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         );
         notices::notice(&message, "warning", false, "", &["inline", "wp-pp-notice"], true).trim_end_matches('\n').to_owned()
     });
-    boxes.extend(plugin_boxes.boxes.iter().cloned().map(super::meta_boxes::MetaBox::from_plugin));
+    boxes.extend(
+        plugin_boxes
+            .boxes
+            .iter()
+            .cloned()
+            .map(super::meta_boxes::MetaBox::from_plugin),
+    );
     let state = super::meta_boxes::BoxState::load(ctx, &screen_id, &info.name).await;
     if supports("title") {
         h.push_str(&format!(
@@ -947,14 +1662,36 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             h.push_str(&format!("\t\t\t<a href=\"#content\" class=\"button-secondary screen-reader-text skiplink\" onclick=\"if (tinymce) {{ tinymce.execCommand( 'mceFocus', false, 'content' ); }}\">{}</a>\n", tr("Skip to Editor")));
         }
         h.push_str("\t\t</div>\n\t<div class=\"inside\">\n\t");
-        let can_publish = ctx.can(if info.name == "page" { "publish_pages" } else { "publish_posts" });
-        let slug_box = site.is_post_type_viewable(&info.name) && !(post.post_status == "pending" && !can_publish);
+        let can_publish = ctx.can(if info.name == "page" {
+            "publish_pages"
+        } else {
+            "publish_posts"
+        });
+        let slug_box = site.is_post_type_viewable(&info.name)
+            && !(post.post_status == "pending" && !can_publish);
         if slug_box {
             h.push_str("\t<div id=\"edit-slug-box\" class=\"hide-if-no-js\">\n\t\t\t");
         }
         if slug_box && post.post_status != "auto-draft" {
-            let content = ctx.env.writer.map(|writer| crate::content::Content { site, db, writer, user: &ctx.user, now: ctx.env.now });
-            h.push_str(&super::common::sample_permalink_html(site, content.as_ref(), ctx.can("manage_options"), post, None, None, &tr).await);
+            let content = ctx.env.writer.map(|writer| crate::content::Content {
+                site,
+                db,
+                writer,
+                user: &ctx.user,
+                now: ctx.env.now,
+            });
+            h.push_str(
+                &super::common::sample_permalink_html(
+                    site,
+                    content.as_ref(),
+                    ctx.can("manage_options"),
+                    post,
+                    None,
+                    None,
+                    &tr,
+                )
+                .await,
+            );
         }
         if slug_box {
             h.push_str("\t</div>\n\t\t\t");
@@ -962,10 +1699,16 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         h.push_str(&format!("</div>\n\t<input type=\"hidden\" id=\"samplepermalinknonce\" name=\"samplepermalinknonce\" value=\"{}\" /></div><!-- /titlediv -->\n", ctx.create_nonce("samplepermalink")));
     }
     // `edit_form_after_title`: after the indentation of the `<?php` that follows the title.
-    let mut after_title: String = privacy_notice.as_ref().filter(|_| plugin_boxes.privacy_notice_after_title).cloned().unwrap_or_default();
+    let mut after_title: String = privacy_notice
+        .as_ref()
+        .filter(|_| plugin_boxes.privacy_notice_after_title)
+        .cloned()
+        .unwrap_or_default();
     after_title.extend(plugin_boxes.after_title.iter().map(|part| match part {
         rustpress_core::native::FormPart::Html(html) => html.clone(),
-        rustpress_core::native::FormPart::MetaBoxes(context) => super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state),
+        rustpress_core::native::FormPart::MetaBoxes(context) => {
+            super::meta_boxes::do_meta_boxes(ctx, &boxes, context, &state)
+        }
     }));
     let mut editor_indented = true;
     if !after_title.is_empty() {
@@ -975,28 +1718,85 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         }
         h.push_str(&after_title);
     }
-    let expand_setting = super::common::user_setting(ctx, "editor_expand").await.is_none_or(|v| v == "on");
+    let expand_setting = super::common::user_setting(ctx, "editor_expand")
+        .await
+        .is_none_or(|v| v == "on");
     let mut editor_preinit = String::new();
     let mut editor_scripts: Vec<String> = Vec::new();
     let mut editor_footer = String::new();
     if supports("editor") {
-        let rich_editing = db.user_meta(ctx.user.id, "rich_editing").await.ok().flatten();
+        let rich_editing = db
+            .user_meta(ctx.user.id, "rich_editing")
+            .await
+            .ok()
+            .flatten();
         // The body class of the editor: the post format (where the type has formats) and the page template.
         let mut post_classes = String::new();
         if supports("post-formats") {
-            let format = db.terms_for_post(post.id, Some("post_format")).await.unwrap_or_default().first().and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
-            post_classes.push_str(&format!(" post-format-{}", rustpress_core::formatting::sanitize_html_class(format.as_deref().unwrap_or("standard"))));
+            let format = db
+                .terms_for_post(post.id, Some("post_format"))
+                .await
+                .unwrap_or_default()
+                .first()
+                .and_then(|t| t.slug.strip_prefix("post-format-").map(str::to_owned));
+            post_classes.push_str(&format!(
+                " post-format-{}",
+                rustpress_core::formatting::sanitize_html_class(
+                    format.as_deref().unwrap_or("standard")
+                )
+            ));
         }
-        let template = db.post_meta_value(post.id, "_wp_page_template").await.ok().flatten().filter(|t| !t.is_empty()).unwrap_or_else(|| "default".to_owned());
-        let template = template.rsplit('/').next().unwrap_or_default().trim_end_matches(".php").replace('.', "-");
-        post_classes.push_str(&format!(" page-template-{}", rustpress_core::formatting::sanitize_html_class(&template)));
-        let mut editor = super::editor::classic_editor(ctx, &post.post_content, &info.name, &post.post_status, &post_classes, rich_editing.as_deref());
+        let template = db
+            .post_meta_value(post.id, "_wp_page_template")
+            .await
+            .ok()
+            .flatten()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "default".to_owned());
+        let template = template
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(".php")
+            .replace('.', "-");
+        post_classes.push_str(&format!(
+            " page-template-{}",
+            rustpress_core::formatting::sanitize_html_class(&template)
+        ));
+        let mut editor = super::editor::classic_editor(
+            ctx,
+            &post.post_content,
+            &info.name,
+            &post.post_status,
+            &post_classes,
+            rich_editing.as_deref(),
+        );
         // `wp_editor_expand` and the distraction-free mode, not on phones; the media button with `upload_files`.
         let mobile = super::common::wp_is_mobile(ctx);
-        let expand = !mobile && super::common::user_setting(ctx, "editor_expand").await.is_none_or(|v| v == "on");
-        let mut html = editor.html.replacen("\t<div id=\"postdivrich\" class=\"postarea\">\n", &format!("\t<div id=\"postdivrich\" class=\"postarea{}\">\n\n", if expand { " wp-editor-expand" } else { "" }), 1);
+        let expand = !mobile
+            && super::common::user_setting(ctx, "editor_expand")
+                .await
+                .is_none_or(|v| v == "on");
+        let mut html = editor.html.replacen(
+            "\t<div id=\"postdivrich\" class=\"postarea\">\n",
+            &format!(
+                "\t<div id=\"postdivrich\" class=\"postarea{}\">\n\n",
+                if expand { " wp-editor-expand" } else { "" }
+            ),
+            1,
+        );
         if !mobile {
-            html = html.replacen(" wp-editor-wrap html-active\"", " wp-editor-wrap html-active has-dfw\"", 1).replacen(" wp-editor-wrap tmce-active\"", " wp-editor-wrap tmce-active has-dfw\"", 1);
+            html = html
+                .replacen(
+                    " wp-editor-wrap html-active\"",
+                    " wp-editor-wrap html-active has-dfw\"",
+                    1,
+                )
+                .replacen(
+                    " wp-editor-wrap tmce-active\"",
+                    " wp-editor-wrap tmce-active has-dfw\"",
+                    1,
+                );
         }
         if ctx.can("upload_files") {
             html = html.replacen(
@@ -1011,7 +1811,10 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         editor.html = html;
         // The distraction-free button, and the quicktags of the comment reply form printed further down.
         if !mobile {
-            editor.preinit = editor.preinit.replacen("code,more,close\"}", "code,more,close,dfw\"}", 1);
+            editor.preinit =
+                editor
+                    .preinit
+                    .replacen("code,more,close\"}", "code,more,close,dfw\"}", 1);
         }
         if supports("comments") {
             editor.preinit = editor.preinit.replacen(
@@ -1020,22 +1823,46 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
                 1,
             );
         }
-        h.push_str(if editor_indented { &editor.html } else { editor.html.strip_prefix('\t').unwrap_or(&editor.html) });
+        h.push_str(if editor_indented {
+            &editor.html
+        } else {
+            editor.html.strip_prefix('\t').unwrap_or(&editor.html)
+        });
         editor_scripts = editor.scripts.clone();
         editor_footer = editor.init.clone();
         editor_preinit = editor.preinit.clone();
         let last_edit = if post.post_status == "auto-draft" {
             String::new()
         } else {
-            let ts = site.timezone.local_timestamp(&post.post_modified).unwrap_or(0);
+            let ts = site
+                .timezone
+                .local_timestamp(&post.post_modified)
+                .unwrap_or(0);
             let (date, time) = (site.date(&tr("F j, Y"), ts), site.date(&tr("g:i a"), ts));
-            let last_user = match db.post_meta_value(post.id, "_edit_last").await.ok().flatten().and_then(|v| v.parse::<u64>().ok()) {
-                Some(id) => db.users_by_ids(&[id]).await.unwrap_or_default().into_iter().next(),
+            let last_user = match db
+                .post_meta_value(post.id, "_edit_last")
+                .await
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                Some(id) => db
+                    .users_by_ids(&[id])
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next(),
                 None => None,
             };
             let text = match last_user {
-                Some(user) => rustpress_core::i18n::sprintf(&tr("Last edited by %1$s on %2$s at %3$s"), &[&esc_html(&user.display_name), &date, &time]),
-                None => rustpress_core::i18n::sprintf(&tr("Last edited on %1$s at %2$s"), &[&date, &time]),
+                Some(user) => rustpress_core::i18n::sprintf(
+                    &tr("Last edited by %1$s on %2$s at %3$s"),
+                    &[&esc_html(&user.display_name), &date, &time],
+                ),
+                None => rustpress_core::i18n::sprintf(
+                    &tr("Last edited on %1$s at %2$s"),
+                    &[&date, &time],
+                ),
             };
             format!("<span id=\"last-edit\">{text}</span>")
         };
@@ -1047,16 +1874,33 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     // The indentation of the `<?php` that closes the editor's branch.
     h.push_str(if supports("editor") { "\t" } else { "" });
     h.push_str("</div><!-- /post-body-content -->\n\n<div id=\"postbox-container-1\" class=\"postbox-container\">\n");
-    h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "side", &state));
+    h.push_str(&super::meta_boxes::do_meta_boxes(
+        ctx, &boxes, "side", &state,
+    ));
     h.push_str("</div>\n<div id=\"postbox-container-2\" class=\"postbox-container\">\n");
-    h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "normal", &state));
+    h.push_str(&super::meta_boxes::do_meta_boxes(
+        ctx, &boxes, "normal", &state,
+    ));
     // `edit_form_advanced`/`edit_page_form`: `WP_Embed::maybe_run_ajax_cache()` after a save.
-    if ctx.request.get("message").is_some_and(|m| !m.is_empty() && m != "0") {
+    if ctx
+        .request
+        .get("message")
+        .is_some_and(|m| !m.is_empty() && m != "0")
+    {
         let ajax = ctx.admin_url("admin-ajax.php");
-        let relative = ajax.find("://").and_then(|at| ajax[at + 3..].find('/').map(|slash| ajax[at + 3 + slash..].to_owned())).unwrap_or(ajax);
+        let relative = ajax
+            .find("://")
+            .and_then(|at| {
+                ajax[at + 3..]
+                    .find('/')
+                    .map(|slash| ajax[at + 3 + slash..].to_owned())
+            })
+            .unwrap_or(ajax);
         h.push_str(&format!("<script>\n\tjQuery( function($) {{\n\t\t$.get(\"{}?action=oembed-cache&post={}\");\n\t}} );\n</script>\n\t\t", esc_url(&relative), post.id));
     }
-    h.push_str(&super::meta_boxes::do_meta_boxes(ctx, &boxes, "advanced", &state));
+    h.push_str(&super::meta_boxes::do_meta_boxes(
+        ctx, &boxes, "advanced", &state,
+    ));
     h.push_str("</div>\n</div><!-- /post-body -->\n<br class=\"clear\" />\n</div><!-- /poststuff -->\n</form>\n</div>\n\n");
     if supports("comments") {
         h.push_str(&super::comments::reply_form_single(ctx));
@@ -1073,16 +1917,33 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if let Some(hidden) = &plugin_boxes.hidden_editor {
         let editor_post = super::editor::EditorPost::of(ctx, post).await;
         // Without an editor of its own the page has not printed the `editor-buttons` style yet.
-        let (html, entry) = super::editor::default_editor_for(ctx, &hidden.id, "", !supports("editor"), Some(&editor_post));
+        let (html, entry) = super::editor::default_editor_for(
+            ctx,
+            &hidden.id,
+            "",
+            !supports("editor"),
+            Some(&editor_post),
+        );
         footer_first = format!("{}{html}{}", hidden.before, hidden.after);
         if !supports("editor") {
             lone_editor = Some(entry.tinymce.is_some());
             lone_entry = Some(entry.clone());
         }
         if let Some(mce) = &entry.tinymce {
-            editor_preinit = editor_preinit.replacen("}},\n\t\t\tqtInit:", &format!("}},'{}':{mce}}},\n\t\t\tqtInit:", entry.id), 1);
+            editor_preinit = editor_preinit.replacen(
+                "}},\n\t\t\tqtInit:",
+                &format!("}},'{}':{mce}}},\n\t\t\tqtInit:", entry.id),
+                1,
+            );
         }
-        editor_preinit = editor_preinit.replacen("}},\n\t\t\tref:", &format!("}},'{}':{{id:\"{}\",buttons:\"{}\"}}}},\n\t\t\tref:", entry.id, entry.id, entry.quicktags), 1);
+        editor_preinit = editor_preinit.replacen(
+            "}},\n\t\t\tref:",
+            &format!(
+                "}},'{}':{{id:\"{}\",buttons:\"{}\"}}}},\n\t\t\tref:",
+                entry.id, entry.id, entry.quicktags
+            ),
+            1,
+        );
     }
     // `_WP_Editors::editor_js()` prints the settings in the footer, before the scripts that start the editors.
     let editor_footer = match lone_entry {
@@ -1091,18 +1952,37 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
         None => format!("{editor_preinit}{editor_footer}"),
     };
 
-    let (parent_file, mut submenu_file) = if info.name == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", info.name), format!("edit.php?post_type={}", info.name)) };
+    let (parent_file, mut submenu_file) = if info.name == "post" {
+        ("edit.php".to_owned(), "edit.php".to_owned())
+    } else {
+        (
+            format!("edit.php?post_type={}", info.name),
+            format!("edit.php?post_type={}", info.name),
+        )
+    };
     // post-new.php marks "Add New" in the menu.
     if is_new {
-        submenu_file = if info.name == "post" { "post-new.php".to_owned() } else { format!("post-new.php?post_type={}", info.name) };
+        submenu_file = if info.name == "post" {
+            "post-new.php".to_owned()
+        } else {
+            format!("post-new.php?post_type={}", info.name)
+        };
     }
     let file = if is_new { "post-new.php" } else { "post.php" };
     let help = edit_help(ctx, info);
-    let view_item = if !is_new && site.is_post_type_viewable(&info.name) && post.post_status != "auto-draft" {
-        Some((if info.name == "page" { tr("View Page") } else { tr("View Post") }, site.permalink(post).await.unwrap_or_default()))
-    } else {
-        None
-    };
+    let view_item =
+        if !is_new && site.is_post_type_viewable(&info.name) && post.post_status != "auto-draft" {
+            Some((
+                if info.name == "page" {
+                    tr("View Page")
+                } else {
+                    tr("View Post")
+                },
+                site.permalink(post).await.unwrap_or_default(),
+            ))
+        } else {
+            None
+        };
     let options = crate::chrome::ScreenOptions {
         meta_boxes: Some(super::meta_boxes::prefs(&boxes, &state)),
         layout_columns: Some((2, columns)),
@@ -1112,20 +1992,42 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
             String::new()
         } else {
             let parts = ctx.plugin_parts();
-            let mut plugin_ctx = ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
+            let mut plugin_ctx =
+                ctx.plugin_context(&parts, if is_new { "post-new.php" } else { "post.php" });
             plugin_ctx.screen_id = &info.name;
             plugin_ctx.typenow = &info.name;
             plugin_ctx.edited_post = Some(post);
-            site.plugins.screen_settings(&plugin_ctx, String::new()).await.unwrap_or_else(|e| {
-                tracing::error!(error = %e, "plugin screen_settings failed");
-                String::new()
-            })
+            site.plugins
+                .screen_settings(&plugin_ctx, String::new())
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "plugin screen_settings failed");
+                    String::new()
+                })
         },
         ..Default::default()
     };
     let view_preview = (view_item.is_some() && post.post_status == "draft").then_some(post.id);
-    let view_item = view_item.map(|(label, url)| if view_preview.is_some() { (label, super::common::preview_url(&url)) } else { (label, url) });
-    let screen = Screen { file: file.into(), parent_file, submenu_file: Some(submenu_file), post_type: info.name.clone(), title: window_title, help: Some(help), view_item, view_preview, options: Some(options), edited_post: Some(post.clone()), ..Default::default() };
+    let view_item = view_item.map(|(label, url)| {
+        if view_preview.is_some() {
+            (label, super::common::preview_url(&url))
+        } else {
+            (label, url)
+        }
+    });
+    let screen = Screen {
+        file: file.into(),
+        parent_file,
+        submenu_file: Some(submenu_file),
+        post_type: info.name.clone(),
+        title: window_title,
+        help: Some(help),
+        view_item,
+        view_preview,
+        options: Some(options),
+        edited_post: Some(post.clone()),
+        ..Default::default()
+    };
     // The order of the enqueues: post.php/post-new.php (autosave, the comment scripts), edit-form-advanced.php (post,
     // editor-expand, thickbox and the media library for featured images), then what `_WP_Editors::enqueue_scripts()`
     // adds when the footer is printed.
@@ -1144,27 +2046,53 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if mobile {
         early.push("jquery-touch-punch".into());
     }
-    let thumbnail_support = supports("thumbnail") && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails"));
+    let thumbnail_support = supports("thumbnail")
+        && (ctx.env.block_theme || ctx.env.theme.adds_theme_support("post-thumbnails"));
     if thumbnail_support {
         early.push("thickbox".into());
     }
     let media_buttons = supports("editor") && ctx.can("upload_files");
     let mut footer_time: Vec<String> = Vec::new();
-    if editor_scripts.iter().any(|s| s == "editor") && editor_scripts.iter().any(|s| s == "wp-tinymce") {
+    if editor_scripts.iter().any(|s| s == "editor")
+        && editor_scripts.iter().any(|s| s == "wp-tinymce")
+    {
         footer_time.push("editor".into());
     }
     if supports("editor") || supports("comments") {
-        footer_time.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+        footer_time.extend([
+            "quicktags".into(),
+            "wplink".into(),
+            "jquery-ui-autocomplete".into(),
+        ]);
     }
     if media_buttons {
         footer_time.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
     }
     // `array_keys( $shortcode_tags )`: WordPress's, then the plugins'.
-    let mut word_count_shortcodes: Vec<String> = ["wp_caption", "caption", "gallery", "playlist", "audio", "video", "embed"].iter().map(|s| (*s).to_owned()).collect();
+    let mut word_count_shortcodes: Vec<String> = [
+        "wp_caption",
+        "caption",
+        "gallery",
+        "playlist",
+        "audio",
+        "video",
+        "embed",
+    ]
+    .iter()
+    .map(|s| (*s).to_owned())
+    .collect();
     word_count_shortcodes.extend(site.plugins.shortcode_tags().into_iter().map(str::to_owned));
     let localize = vec![
-        ("autosave".to_owned(), "autosaveL10n".to_owned(), serde_json::json!({"autosaveInterval": "60", "blog_id": "1"})),
-        ("word-count".to_owned(), "wordCountL10n".to_owned(), serde_json::json!({"type": "words", "shortcodes": word_count_shortcodes})),
+        (
+            "autosave".to_owned(),
+            "autosaveL10n".to_owned(),
+            serde_json::json!({"autosaveInterval": "60", "blog_id": "1"}),
+        ),
+        (
+            "word-count".to_owned(),
+            "wordCountL10n".to_owned(),
+            serde_json::json!({"type": "words", "shortcodes": word_count_shortcodes}),
+        ),
     ];
     let mut assets = Assets {
         early_scripts: early,
@@ -1183,11 +2111,15 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     };
     // `admin_footer`: the lock dialog of post.php, the media templates, the backup notice, the list tables' arguments.
     assets.pre_footer = match &holder {
-        Some(holder) => super::meta_boxes::post_locked_dialog(ctx, post, holder, &all_items_label(ctx, info)).await,
+        Some(holder) => {
+            super::meta_boxes::post_locked_dialog(ctx, post, holder, &all_items_label(ctx, info))
+                .await
+        }
         None => super::meta_boxes::post_lock_dialog(ctx, &info.name, &all_items_label(ctx, info)),
     };
     // A plugin's box that needs the media library calls `wp_enqueue_media()` without a post while it is printed.
-    let plugin_media = !thumbnail_support && !media_buttons && plugin_boxes.media && ctx.can("upload_files");
+    let plugin_media =
+        !thumbnail_support && !media_buttons && plugin_boxes.media && ctx.can("upload_files");
     let mut late_templates = String::new();
     if thumbnail_support || media_buttons || plugin_media {
         let mut media = Assets::default();
@@ -1216,40 +2148,115 @@ async fn form(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo, is_new: bool) -> Admi
     if let Some(rich) = lone_editor {
         if rich {
             assets.post_header_scripts.push("editor".into());
-            assets.inline.push(("editor".into(), "window.wp.oldEditor = window.wp.editor;".into(), "after".into()));
+            assets.inline.push((
+                "editor".into(),
+                "window.wp.oldEditor = window.wp.editor;".into(),
+                "after".into(),
+            ));
         }
-        assets.late_scripts.retain(|h| !matches!(h.as_str(), "quicktags" | "wplink" | "jquery-ui-autocomplete"));
-        assets.post_header_scripts.extend(["quicktags".into(), "wplink".into(), "jquery-ui-autocomplete".into()]);
+        assets.late_scripts.retain(|h| {
+            !matches!(
+                h.as_str(),
+                "quicktags" | "wplink" | "jquery-ui-autocomplete"
+            )
+        });
+        assets.post_header_scripts.extend([
+            "quicktags".into(),
+            "wplink".into(),
+            "jquery-ui-autocomplete".into(),
+        ]);
         if ctx.can("upload_files") {
-            assets.post_header_scripts.extend(["thickbox".into(), "media-upload".into(), "wp-embed".into()]);
+            assets.post_header_scripts.extend([
+                "thickbox".into(),
+                "media-upload".into(),
+                "wp-embed".into(),
+            ]);
             assets.post_header_styles.push("thickbox".into());
         }
     }
-    let comment_tables = usize::from(boxes.iter().any(|b| b.id == "commentsdiv")) + usize::from(supports("comments"));
-    assets.pre_footer.push_str(&super::meta_boxes::edit_footer_notices(ctx, &screen_id, comment_tables));
+    let comment_tables = usize::from(boxes.iter().any(|b| b.id == "commentsdiv"))
+        + usize::from(supports("comments"));
+    assets
+        .pre_footer
+        .push_str(&super::meta_boxes::edit_footer_notices(
+            ctx,
+            &screen_id,
+            comment_tables,
+        ));
     assets.pre_footer.push_str(&late_templates);
     render(ctx, &screen, &h, &assets).await
 }
 
 /// `post-new.php`.
 pub async fn post_new(ctx: &Ctx<'_>) -> AdminResponse {
-    let post_type = ctx.request.get("post_type").filter(|t| !t.is_empty()).unwrap_or("post").to_owned();
+    let post_type = ctx
+        .request
+        .get("post_type")
+        .filter(|t| !t.is_empty())
+        .unwrap_or("post")
+        .to_owned();
     let Some(info) = type_info(ctx, &post_type) else {
         return super::common::die_plain(ctx, "Invalid post type.");
     };
-    if !ctx.can(if info.name == "page" { "edit_pages" } else { "edit_posts" }) {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<h1>{}</h1><p>{}</p>", ctx.tr("You need a higher level of permission."), ctx.tr("Sorry, you are not allowed to create posts as this user.")));
+    if !ctx.can(if info.name == "page" {
+        "edit_pages"
+    } else {
+        "edit_posts"
+    }) {
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<h1>{}</h1><p>{}</p>",
+                ctx.tr("You need a higher level of permission."),
+                ctx.tr("Sorry, you are not allowed to create posts as this user.")
+            ),
+        );
     }
     let Some(content) = content_for(ctx) else {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>");
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            "<p>RustPress was started without write access.</p>",
+        );
     };
-    let data = PostData { post_title: Some(if ctx.site().post_type_supports(&info.name, "title") { ctx.tr("Auto Draft") } else { String::new() }), post_type: Some(info.name.clone()), post_status: Some("auto-draft".into()), post_author: Some(ctx.user.id), ..Default::default() };
-    let id = match content.insert_post(&PostData { post_content: Some(String::new()), ..data }).await {
+    let data = PostData {
+        post_title: Some(if ctx.site().post_type_supports(&info.name, "title") {
+            ctx.tr("Auto Draft")
+        } else {
+            String::new()
+        }),
+        post_type: Some(info.name.clone()),
+        post_status: Some("auto-draft".into()),
+        post_author: Some(ctx.user.id),
+        ..Default::default()
+    };
+    let id = match content
+        .insert_post(&PostData {
+            post_content: Some(String::new()),
+            ..data
+        })
+        .await
+    {
         Ok(id) => id,
-        Err(e) => return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string()))),
+        Err(e) => {
+            return die(
+                ctx.env,
+                500,
+                "WordPress &rsaquo; Error",
+                &format!("<p>{}</p>", esc_html(&e.to_string())),
+            );
+        }
     };
     let Ok(Some(post)) = ctx.env.db.post(id).await else {
-        return die(ctx.env, 500, "WordPress &rsaquo; Error", "<p>The new post could not be read.</p>");
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            "<p>The new post could not be read.</p>",
+        );
     };
     if super::block_editor::uses_block_editor(ctx, &post).await {
         return super::block_editor::render_editor(ctx, &post, &info).await;
@@ -1262,8 +2269,16 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     let action = request.request("action").unwrap_or_default().to_owned();
-    let post_id: u64 = request.get("post").or(request.post_field("post_ID")).and_then(|p| p.parse().ok()).unwrap_or(0);
-    let post = if post_id != 0 { ctx.env.db.post(post_id).await.ok().flatten() } else { None };
+    let post_id: u64 = request
+        .get("post")
+        .or(request.post_field("post_ID"))
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(0);
+    let post = if post_id != 0 {
+        ctx.env.db.post(post_id).await.ok().flatten()
+    } else {
+        None
+    };
     let sendback = {
         match super::common::wp_get_referer(ctx) {
             Some(r) if !r.contains("post.php") && !r.contains("post-new.php") => {
@@ -1276,14 +2291,25 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             _ => {
                 let mut url = ctx.admin_url("edit.php");
                 if let Some(post) = &post {
-                    url = if post.post_type == "attachment" { ctx.admin_url("upload.php") } else { add_query_arg(&url, "post_type", &post.post_type) };
+                    url = if post.post_type == "attachment" {
+                        ctx.admin_url("upload.php")
+                    } else {
+                        add_query_arg(&url, "post_type", &post.post_type)
+                    };
                 }
                 url
             }
         }
     };
     let can_delete = |post: &Post| ctx.user.can_delete_post(post);
-    let ays = || die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+    let ays = || {
+        die(
+            ctx.env,
+            403,
+            &tr("An error occurred."),
+            &tr("The link you followed has expired."),
+        )
+    };
     match action.as_str() {
         "post-quickdraft-save" => super::dashboard::quickdraft_save(ctx).await,
         "edit" => {
@@ -1292,33 +2318,72 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
                 return redirect(&ctx.admin_url("post.php"));
             }
             let Some(post) = post else {
-                return die(ctx.env, 404, "WordPress &rsaquo; Error", &tr("You attempted to edit an item that does not exist. Perhaps it was deleted?"));
+                return die(
+                    ctx.env,
+                    404,
+                    "WordPress &rsaquo; Error",
+                    &tr(
+                        "You attempted to edit an item that does not exist. Perhaps it was deleted?",
+                    ),
+                );
             };
             // "Take over" in the dialog of a locked post.
-            if request.get("get-post-lock").is_some_and(|v| !v.is_empty()) && ctx.user.can_edit_post(&post) && post.post_status != "trash" {
+            if request.get("get-post-lock").is_some_and(|v| !v.is_empty())
+                && ctx.user.can_edit_post(&post)
+                && post.post_status != "trash"
+            {
                 if !ctx.verify_nonce(&format!("lock-post_{post_id}")) {
                     return ays();
                 }
                 if let Some(writer) = ctx.env.writer {
-                    writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
+                    writer
+                        .update_post_meta(
+                            post_id,
+                            "_edit_lock",
+                            &format!("{}:{}", ctx.env.now, ctx.user.id),
+                        )
+                        .await
+                        .or_log();
                 }
                 return redirect(&ctx.admin_url(&format!("post.php?post={post_id}&action=edit")));
             }
             if post.post_type == "attachment" {
                 if !(ctx.user.can_edit_post(&post)) {
-                    return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit this item."));
+                    return die(
+                        ctx.env,
+                        403,
+                        "WordPress &rsaquo; Error",
+                        &tr("Sorry, you are not allowed to edit this item."),
+                    );
                 }
                 return super::attachment_edit::form(ctx, &post).await;
             }
             let Some(info) = type_info(ctx, &post.post_type) else {
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit posts in this post type."));
+                return die(
+                    ctx.env,
+                    403,
+                    "WordPress &rsaquo; Error",
+                    &tr("Sorry, you are not allowed to edit posts in this post type."),
+                );
             };
             let may_edit = ctx.user.can_edit_post(&post);
             if !may_edit {
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", &tr("Sorry, you are not allowed to edit this item."));
+                return die(
+                    ctx.env,
+                    403,
+                    "WordPress &rsaquo; Error",
+                    &tr("Sorry, you are not allowed to edit this item."),
+                );
             }
             if post.post_status == "trash" {
-                return die(ctx.env, 409, "WordPress &rsaquo; Error", &tr("You cannot edit this item because it is in the Trash. Please restore it and try again."));
+                return die(
+                    ctx.env,
+                    409,
+                    "WordPress &rsaquo; Error",
+                    &tr(
+                        "You cannot edit this item because it is in the Trash. Please restore it and try again.",
+                    ),
+                );
             }
             if super::block_editor::uses_block_editor(ctx, &post).await {
                 return super::block_editor::render_editor(ctx, &post, &info).await;
@@ -1341,44 +2406,95 @@ pub async fn post_php(ctx: &Ctx<'_>) -> AdminResponse {
             let Some(post) = post else {
                 let message = match action.as_str() {
                     "trash" => tr("The item you are trying to move to the Trash no longer exists."),
-                    "untrash" => tr("The item you are trying to restore from the Trash no longer exists."),
+                    "untrash" => {
+                        tr("The item you are trying to restore from the Trash no longer exists.")
+                    }
                     _ => tr("This item has already been deleted."),
                 };
-                return die(ctx.env, 410, "WordPress &rsaquo; Error", &format!("<p>{message}</p>"));
+                return die(
+                    ctx.env,
+                    410,
+                    "WordPress &rsaquo; Error",
+                    &format!("<p>{message}</p>"),
+                );
             };
             if !can_delete(&post) {
                 let message = match action.as_str() {
                     "trash" => tr("Sorry, you are not allowed to move this item to the Trash."),
-                    "untrash" => tr("Sorry, you are not allowed to restore this item from the Trash."),
+                    "untrash" => {
+                        tr("Sorry, you are not allowed to restore this item from the Trash.")
+                    }
                     _ => tr("Sorry, you are not allowed to delete this item."),
                 };
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{message}</p>"));
+                return die(
+                    ctx.env,
+                    403,
+                    "WordPress &rsaquo; Error",
+                    &format!("<p>{message}</p>"),
+                );
             }
             let Some(content) = content_for(ctx) else {
-                return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>");
+                return die(
+                    ctx.env,
+                    403,
+                    "WordPress &rsaquo; Error",
+                    "<p>RustPress was started without write access.</p>",
+                );
             };
             match action.as_str() {
                 "trash" => {
                     if !content.trash_post(post_id).await.unwrap_or(false) {
-                        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in moving the item to Trash.")));
+                        return die(
+                            ctx.env,
+                            500,
+                            "WordPress &rsaquo; Error",
+                            &format!("<p>{}</p>", tr("Error in moving the item to Trash.")),
+                        );
                     }
-                    redirect(&add_query_arg(&add_query_arg(&sendback, "trashed", "1"), "ids", &post_id.to_string()))
+                    redirect(&add_query_arg(
+                        &add_query_arg(&sendback, "trashed", "1"),
+                        "ids",
+                        &post_id.to_string(),
+                    ))
                 }
                 "untrash" => {
                     if !content.untrash_post(post_id).await.unwrap_or(false) {
-                        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in restoring the item from Trash.")));
+                        return die(
+                            ctx.env,
+                            500,
+                            "WordPress &rsaquo; Error",
+                            &format!("<p>{}</p>", tr("Error in restoring the item from Trash.")),
+                        );
                     }
-                    redirect(&add_query_arg(&add_query_arg(&sendback, "untrashed", "1"), "ids", &post_id.to_string()))
+                    redirect(&add_query_arg(
+                        &add_query_arg(&sendback, "untrashed", "1"),
+                        "ids",
+                        &post_id.to_string(),
+                    ))
                 }
                 _ if post.post_type == "attachment" => {
-                    if !content.delete_attachment(post_id, super::ajax_media::uploads_dir(ctx.env)).await.unwrap_or(false) {
-                        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in deleting the item.")));
+                    if !content
+                        .delete_attachment(post_id, super::ajax_media::uploads_dir(ctx.env))
+                        .await
+                        .unwrap_or(false)
+                    {
+                        return die(
+                            ctx.env,
+                            500,
+                            "WordPress &rsaquo; Error",
+                            &format!("<p>{}</p>", tr("Error in deleting the item.")),
+                        );
                     }
                     redirect(&add_query_arg(&sendback, "deleted", "1"))
                 }
                 _ => {
                     if !content.delete_post(post_id, true).await.unwrap_or(false) {
-                        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Error in deleting the item.")));
+                        return die(
+                            ctx.env,
+                            500,
+                            "WordPress &rsaquo; Error",
+                            &format!("<p>{}</p>", tr("Error in deleting the item.")),
+                        );
                     }
                     redirect(&add_query_arg(&sendback, "deleted", "1"))
                 }
@@ -1395,23 +2511,61 @@ struct PluginInsertHooks<'a> {
 }
 
 impl PluginInsertHooks<'_> {
-    async fn with_post<T>(&self, post_id: u64, default: T, f: impl AsyncFnOnce(&rustpress_core::native::PostSaved<'_>) -> rustpress_core::Result<T>) -> rustpress_core::Result<T> {
-        let Some(post) = self.ctx.site.db.post(post_id).await? else { return Ok(default) };
-        f(&rustpress_core::native::PostSaved { ctx: self.ctx, writer: self.writer, post: &post }).await
+    async fn with_post<T>(
+        &self,
+        post_id: u64,
+        default: T,
+        f: impl AsyncFnOnce(&rustpress_core::native::PostSaved<'_>) -> rustpress_core::Result<T>,
+    ) -> rustpress_core::Result<T> {
+        let Some(post) = self.ctx.site.db.post(post_id).await? else {
+            return Ok(default);
+        };
+        f(&rustpress_core::native::PostSaved {
+            ctx: self.ctx,
+            writer: self.writer,
+            post: &post,
+        })
+        .await
     }
 }
 
 impl rustpress_content::content::InsertHooks for PluginInsertHooks<'_> {
-    fn save_post(&self, post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
-        Box::pin(self.with_post(post_id, (), async |saved| self.ctx.site.plugins.save_post(saved).await))
+    fn save_post(
+        &self,
+        post_id: u64,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(self.with_post(post_id, (), async |saved| {
+            self.ctx.site.plugins.save_post(saved).await
+        }))
     }
 
-    fn revision_post_has_changed(&self, post_id: u64, latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
-        Box::pin(self.with_post(post_id, changed, async move |saved| self.ctx.site.plugins.revision_post_has_changed(saved, latest_revision, changed).await))
+    fn revision_post_has_changed(
+        &self,
+        post_id: u64,
+        latest_revision: u64,
+        changed: bool,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
+        Box::pin(self.with_post(post_id, changed, async move |saved| {
+            self.ctx
+                .site
+                .plugins
+                .revision_post_has_changed(saved, latest_revision, changed)
+                .await
+        }))
     }
 
-    fn put_post_revision(&self, post_id: u64, revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
-        Box::pin(self.with_post(post_id, (), async move |saved| self.ctx.site.plugins.put_post_revision(saved, revision_id).await))
+    fn put_post_revision(
+        &self,
+        post_id: u64,
+        revision_id: u64,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+        Box::pin(self.with_post(post_id, (), async move |saved| {
+            self.ctx
+                .site
+                .plugins
+                .put_post_revision(saved, revision_id)
+                .await
+        }))
     }
 }
 
@@ -1420,25 +2574,61 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     let Some(post) = ctx.env.db.post(post_id).await.ok().flatten() else {
-        return die(ctx.env, 404, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid post ID.")));
+        return die(
+            ctx.env,
+            404,
+            "WordPress &rsaquo; Error",
+            &format!("<p>{}</p>", tr("Invalid post ID.")),
+        );
     };
     let Some(info) = type_info(ctx, &post.post_type) else {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>Invalid post type.</p>");
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            "<p>Invalid post type.</p>",
+        );
     };
     let page = info.name == "page";
     let may_edit = ctx.user.can_edit_post(&post);
     if !may_edit {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if page { tr("Sorry, you are not allowed to edit this page.") } else { tr("Sorry, you are not allowed to edit this post.") }));
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                if page {
+                    tr("Sorry, you are not allowed to edit this page.")
+                } else {
+                    tr("Sorry, you are not allowed to edit this post.")
+                }
+            ),
+        );
     }
     let Some(content) = content_for(ctx) else {
-        return die(ctx.env, 403, "WordPress &rsaquo; Error", "<p>RustPress was started without write access.</p>");
+        return die(
+            ctx.env,
+            403,
+            "WordPress &rsaquo; Error",
+            "<p>RustPress was started without write access.</p>",
+        );
     };
     let field = |name: &str| request.post_field(name);
     let has = |name: &str| field(name).is_some_and(|v| !v.is_empty());
-    let can_publish = ctx.can(if page { "publish_pages" } else { "publish_posts" });
+    let can_publish = ctx.can(if page {
+        "publish_pages"
+    } else {
+        "publish_posts"
+    });
 
     // Visibility
-    let mut status = field("post_status").filter(|s| !s.is_empty()).map(|s| s.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-')).collect::<String>());
+    let mut status = field("post_status").filter(|s| !s.is_empty()).map(|s| {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+            .collect::<String>()
+    });
     let mut password = field("post_password").map(str::to_owned);
     let mut sticky = has("sticky");
     match field("visibility") {
@@ -1476,10 +2666,19 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     if status.as_deref() == Some("private") && !can_publish {
         status = Some(previous.clone());
     }
-    if matches!(status.as_deref(), Some("publish" | "future")) && !can_publish && (!matches!(previous.as_str(), "publish" | "future")) {
+    if matches!(status.as_deref(), Some("publish" | "future"))
+        && !can_publish
+        && (!matches!(previous.as_str(), "publish" | "future"))
+    {
         status = Some("pending".into());
     }
-    let status = status.unwrap_or_else(|| if previous == "auto-draft" { "draft".into() } else { previous.clone() });
+    let status = status.unwrap_or_else(|| {
+        if previous == "auto-draft" {
+            "draft".into()
+        } else {
+            previous.clone()
+        }
+    });
     if !can_publish {
         password = None;
     }
@@ -1495,21 +2694,55 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         }
     }
     if edit_date || has("edit_date") {
-        let num = |name: &str| field(name).and_then(|v| v.trim().parse::<i64>().ok()).unwrap_or(0);
+        let num = |name: &str| {
+            field(name)
+                .and_then(|v| v.trim().parse::<i64>().ok())
+                .unwrap_or(0)
+        };
         let now_local = ctx.site().date("Y-m-d H:i:s", ctx.env.now);
-        let (cur_year, cur_month, cur_day): (i64, i64, i64) = (now_local[0..4].parse().unwrap_or(1970), now_local[5..7].parse().unwrap_or(1), now_local[8..10].parse().unwrap_or(1));
+        let (cur_year, cur_month, cur_day): (i64, i64, i64) = (
+            now_local[0..4].parse().unwrap_or(1970),
+            now_local[5..7].parse().unwrap_or(1),
+            now_local[8..10].parse().unwrap_or(1),
+        );
         let aa = if num("aa") <= 0 { cur_year } else { num("aa") };
         let mm = if num("mm") <= 0 { cur_month } else { num("mm") };
-        let jj = if num("jj") > 31 { 31 } else if num("jj") <= 0 { cur_day } else { num("jj") };
-        let hh = if num("hh") > 23 { num("hh") - 24 } else { num("hh") };
-        let mn = if num("mn") > 59 { num("mn") - 60 } else { num("mn") };
-        let ss = if num("ss") > 59 { num("ss") - 60 } else { num("ss") };
+        let jj = if num("jj") > 31 {
+            31
+        } else if num("jj") <= 0 {
+            cur_day
+        } else {
+            num("jj")
+        };
+        let hh = if num("hh") > 23 {
+            num("hh") - 24
+        } else {
+            num("hh")
+        };
+        let mn = if num("mn") > 59 {
+            num("mn") - 60
+        } else {
+            num("mn")
+        };
+        let ss = if num("ss") > 59 {
+            num("ss") - 60
+        } else {
+            num("ss")
+        };
         let date = format!("{aa:04}-{mm:02}-{jj:02} {hh:02}:{mn:02}:{ss:02}");
         if !crate::content::valid_date(&date) {
-            return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", tr("Invalid date.")));
+            return die(
+                ctx.env,
+                200,
+                "WordPress &rsaquo; Error",
+                &format!("<p>{}</p>", tr("Invalid date.")),
+            );
         }
         if post.post_date != date {
-            post_date_gmt = ctx.site().timezone.local_timestamp(&date).map(|ts| rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d H:i:s", ts));
+            post_date_gmt =
+                ctx.site().timezone.local_timestamp(&date).map(|ts| {
+                    rustpress_core::datetime::SiteTimezone::utc().format("Y-m-d H:i:s", ts)
+                });
             post_date = Some(date);
         } else {
             edit_date = false;
@@ -1517,39 +2750,113 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     }
 
     let categories: Option<Vec<u64>> = {
-        let list: Vec<u64> = request.form.iter().filter(|(k, _)| k == "post_category[]").filter_map(|(_, v)| v.parse().ok()).filter(|id| *id != 0).collect();
-        if request.form.iter().any(|(k, _)| k == "post_category[]") && ctx.can("manage_categories") || ctx.can("edit_posts") && request.form.iter().any(|(k, _)| k == "post_category[]") { Some(list) } else { None }
+        let list: Vec<u64> = request
+            .form
+            .iter()
+            .filter(|(k, _)| k == "post_category[]")
+            .filter_map(|(_, v)| v.parse().ok())
+            .filter(|id| *id != 0)
+            .collect();
+        if request.form.iter().any(|(k, _)| k == "post_category[]") && ctx.can("manage_categories")
+            || ctx.can("edit_posts") && request.form.iter().any(|(k, _)| k == "post_category[]")
+        {
+            Some(list)
+        } else {
+            None
+        }
     };
-    let tags: Option<Vec<String>> = field("tax_input[post_tag]").map(|raw| raw.split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect());
+    let tags: Option<Vec<String>> = field("tax_input[post_tag]").map(|raw| {
+        raw.split(',')
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect()
+    });
     // `edit_post()` turns `tax_input` into terms with the taxonomy's `meta_box_sanitize_cb`: the IDs of the checkboxes,
     // the names of the text input (`taxonomy_meta_box_sanitize_cb_input()`); `wp_insert_post()` drops the zeros.
     let mut tax_input: Vec<(String, Vec<TermRef>)> = Vec::new();
-    for tax in tax_boxes(ctx, &info.name).into_iter().filter(|t| t.name != "category" && t.name != "post_tag") {
+    for tax in tax_boxes(ctx, &info.name)
+        .into_iter()
+        .filter(|t| t.name != "category" && t.name != "post_tag")
+    {
         if tax.hierarchical {
             let key = format!("tax_input[{}][]", tax.name);
             if request.form.iter().any(|(k, _)| *k == key) {
-                let ids = request.form.iter().filter(|(k, _)| *k == key).filter_map(|(_, v)| v.trim().parse::<u64>().ok()).filter(|id| *id != 0).map(TermRef::Id).collect();
+                let ids = request
+                    .form
+                    .iter()
+                    .filter(|(k, _)| *k == key)
+                    .filter_map(|(_, v)| v.trim().parse::<u64>().ok())
+                    .filter(|id| *id != 0)
+                    .map(TermRef::Id)
+                    .collect();
                 tax_input.push((tax.name.clone(), ids));
             }
         } else if let Some(raw) = field(&format!("tax_input[{}]", tax.name)) {
             let comma = ctx.site().trx(",", "tag delimiter");
-            let raw = if comma != "," { raw.replace(&comma, ",") } else { raw.to_owned() };
-            let names = raw.trim_matches([' ', '\n', '\t', '\r', '\0', '\x0B', ',']).split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).map(TermRef::Name).collect();
+            let raw = if comma != "," {
+                raw.replace(&comma, ",")
+            } else {
+                raw.to_owned()
+            };
+            let names = raw
+                .trim_matches([' ', '\n', '\t', '\r', '\0', '\x0B', ','])
+                .split(',')
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .map(TermRef::Name)
+                .collect();
             tax_input.push((tax.name.clone(), names));
         }
     }
     let parent = field("parent_id").map(|p| p.parse::<u64>().unwrap_or(0));
     // `_wp_translate_postdata()`: the override, else the form's author, else the current user (the block editor's
     // meta box form has no author); another author needs `edit_others_posts`.
-    let intval = |v: &str| v.trim_start().chars().take_while(char::is_ascii_digit).collect::<String>().parse::<u64>().unwrap_or(0);
+    let intval = |v: &str| {
+        v.trim_start()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse::<u64>()
+            .unwrap_or(0)
+    };
     let given = |name: &str| field(name).filter(|v| !v.is_empty() && *v != "0");
-    let author_id = given("post_author_override").or_else(|| given("post_author")).map_or(ctx.user.id, intval);
-    if author_id != ctx.user.id && !ctx.can(if page { "edit_others_pages" } else { "edit_others_posts" }) {
-        return die(ctx.env, 500, "WordPress &rsaquo; Error", &format!("<p>{}</p>", if page { tr("Sorry, you are not allowed to edit pages as this user.") } else { tr("Sorry, you are not allowed to edit posts as this user.") }));
+    let author_id = given("post_author_override")
+        .or_else(|| given("post_author"))
+        .map_or(ctx.user.id, intval);
+    if author_id != ctx.user.id
+        && !ctx.can(if page {
+            "edit_others_pages"
+        } else {
+            "edit_others_posts"
+        })
+    {
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                if page {
+                    tr("Sorry, you are not allowed to edit pages as this user.")
+                } else {
+                    tr("Sorry, you are not allowed to edit posts as this user.")
+                }
+            ),
+        );
     }
     let author = Some(author_id);
     // `wp_insert_post()`: a template the theme does not have for the type becomes `default`.
-    let page_template = field("page_template").filter(|t| !t.is_empty()).map(|t| if t == "default" || super::inline_edit::page_templates(ctx, &info).iter().any(|(name, _)| name == t) { t.to_owned() } else { "default".to_owned() });
+    let page_template = field("page_template").filter(|t| !t.is_empty()).map(|t| {
+        if t == "default"
+            || super::inline_edit::page_templates(ctx, &info)
+                .iter()
+                .any(|(name, _)| name == t)
+        {
+            t.to_owned()
+        } else {
+            "default".to_owned()
+        }
+    });
     let data = PostData {
         id: Some(post_id),
         post_author: author,
@@ -1557,8 +2864,16 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         post_title: field("post_title").map(str::to_owned),
         post_excerpt: field("excerpt").map(str::to_owned),
         post_status: Some(status),
-        comment_status: Some(if field("comment_status").is_some() { "open".into() } else { "closed".into() }),
-        ping_status: Some(if field("ping_status").is_some() { "open".into() } else { "closed".into() }),
+        comment_status: Some(if field("comment_status").is_some() {
+            "open".into()
+        } else {
+            "closed".into()
+        }),
+        ping_status: Some(if field("ping_status").is_some() {
+            "open".into()
+        } else {
+            "closed".into()
+        }),
         post_password: password,
         post_name: field("post_name").map(str::to_owned),
         post_parent: parent,
@@ -1573,20 +2888,45 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
         ..Default::default()
     };
     if let Some(writer) = ctx.env.writer {
-        writer.update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string()).await.or_log();
+        writer
+            .update_post_meta(post_id, "_edit_last", &ctx.user.id.to_string())
+            .await
+            .or_log();
     }
     let parts = ctx.plugin_parts();
     let mut plugin_ctx = ctx.plugin_context(&parts, "post.php");
     plugin_ctx.edited_post = Some(&post);
     let saved = match ctx.env.writer {
-        Some(writer) => content.insert_post_with(&data, &PluginInsertHooks { ctx: &plugin_ctx, writer }).await,
+        Some(writer) => {
+            content
+                .insert_post_with(
+                    &data,
+                    &PluginInsertHooks {
+                        ctx: &plugin_ctx,
+                        writer,
+                    },
+                )
+                .await
+        }
         None => content.insert_post(&data).await,
     };
     if let Err(e) = saved {
-        return die(ctx.env, 200, "WordPress &rsaquo; Error", &format!("<p>{}</p>", esc_html(&e.to_string())));
+        return die(
+            ctx.env,
+            200,
+            "WordPress &rsaquo; Error",
+            &format!("<p>{}</p>", esc_html(&e.to_string())),
+        );
     }
     if let Some(writer) = ctx.env.writer {
-        writer.update_post_meta(post_id, "_edit_lock", &format!("{}:{}", ctx.env.now, ctx.user.id)).await.or_log();
+        writer
+            .update_post_meta(
+                post_id,
+                "_edit_lock",
+                &format!("{}:{}", ctx.env.now, ctx.user.id),
+            )
+            .await
+            .or_log();
         // Sticky posts
         if info.name == "post" && ctx.can("edit_others_posts") && can_publish {
             let mut ids = sticky_ids(ctx);
@@ -1596,15 +2936,39 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
                 ids.insert(0, post_id);
             }
             if ids != before {
-                let value = rustpress_phpser::Value::Array(ids.iter().enumerate().map(|(i, id)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Int(*id as i64))).collect());
-                writer.update_option("sticky_posts", &String::from_utf8_lossy(&rustpress_phpser::serialize(&value))).await.or_log();
+                let value = rustpress_phpser::Value::Array(
+                    ids.iter()
+                        .enumerate()
+                        .map(|(i, id)| {
+                            (
+                                rustpress_phpser::Key::Int(i as i64),
+                                rustpress_phpser::Value::Int(*id as i64),
+                            )
+                        })
+                        .collect(),
+                );
+                writer
+                    .update_option(
+                        "sticky_posts",
+                        &String::from_utf8_lossy(&rustpress_phpser::serialize(&value)),
+                    )
+                    .await
+                    .or_log();
             }
         }
     }
     let _ = (TermRef::Id(0), &parent);
 
     // `redirect_post()`
-    let new_status = ctx.env.db.post(post_id).await.ok().flatten().map(|p| p.post_status).unwrap_or_default();
+    let new_status = ctx
+        .env
+        .db
+        .post(post_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|p| p.post_status)
+        .unwrap_or_default();
     let message = if has("save") || has("publish") {
         match new_status.as_str() {
             "pending" => 8,
@@ -1621,16 +2985,25 @@ async fn edit_post(ctx: &Ctx<'_>, post_id: u64) -> AdminResponse {
     } else {
         4
     };
-    let location = add_query_arg(&super::common::edit_post_link(ctx, post_id, false).await, "message", &message.to_string());
+    let location = add_query_arg(
+        &super::common::edit_post_link(ctx, post_id, false).await,
+        "message",
+        &message.to_string(),
+    );
     if ctx.site().plugins.is_empty() {
         return redirect(&location);
     }
     // `redirect_post_location`.
     let parts = ctx.plugin_parts();
     let plugin_ctx = ctx.plugin_context(&parts, "post.php");
-    let location = ctx.site().plugins.redirect_post_location(&plugin_ctx, location.clone()).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin redirect_post_location failed");
-        location
-    });
+    let location = ctx
+        .site()
+        .plugins
+        .redirect_post_location(&plugin_ctx, location.clone())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin redirect_post_location failed");
+            location
+        });
     redirect(&location)
 }

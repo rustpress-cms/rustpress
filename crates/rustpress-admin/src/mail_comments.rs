@@ -15,17 +15,31 @@ pub struct PostAuthor<'a> {
 
 /// `wp_get_note_mentioned_user_ids()`: the `user-N` class of every `<span class="wp-note-mention …">`, once each.
 fn note_mentions(content: &str) -> Vec<u64> {
-    static SPAN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"(?i)<span\b[^>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#).expect("valid regex"));
+    static SPAN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"(?i)<span\b[^>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#)
+            .expect("valid regex")
+    });
     if !content.contains("wp-note-mention") {
         return Vec::new();
     }
     let mut ids = Vec::new();
     for caps in SPAN.captures_iter(content) {
-        let classes = caps.get(1).or(caps.get(2)).or(caps.get(3)).map_or("", |m| m.as_str());
-        if !classes.split_ascii_whitespace().any(|c| c == "wp-note-mention") {
+        let classes = caps
+            .get(1)
+            .or(caps.get(2))
+            .or(caps.get(3))
+            .map_or("", |m| m.as_str());
+        if !classes
+            .split_ascii_whitespace()
+            .any(|c| c == "wp-note-mention")
+        {
             continue;
         }
-        let id = classes.split_ascii_whitespace().find_map(|c| c.strip_prefix("user-").filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).and_then(|n| n.parse::<u64>().ok()));
+        let id = classes.split_ascii_whitespace().find_map(|c| {
+            c.strip_prefix("user-")
+                .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|n| n.parse::<u64>().ok())
+        });
         if let Some(id) = id.filter(|id| *id > 0)
             && !ids.contains(&id)
         {
@@ -38,45 +52,75 @@ fn note_mentions(content: &str) -> Vec<u64> {
 /// `gethostbyaddr()` without asking a name server: the loopback addresses are `localhost` (as in every `/etc/hosts`),
 /// any other address stays itself, like an address without a name.
 fn host_name(ip: &str) -> String {
-    if matches!(ip, "127.0.0.1" | "::1") { "localhost".to_owned() } else { ip.to_owned() }
+    if matches!(ip, "127.0.0.1" | "::1") {
+        "localhost".to_owned()
+    } else {
+        ip.to_owned()
+    }
 }
 
 impl MailCtx<'_> {
     /// `wp_new_comment_notify_moderator()` (with `moderators`, for a waiting comment) and
     /// `wp_new_comment_notify_postauthor()` (for an approved one): what `comment_post` runs after a new comment, and
     /// what an approving `wp_set_comment_status()` adds. `current_user` is who is signed in (0 for a visitor).
-    pub async fn new_comment_notify(&self, roles: &rustpress_auth::Roles, comment_id: u64, moderators: bool, current_user: u64) {
-        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return };
-        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else { return };
+    pub async fn new_comment_notify(
+        &self,
+        roles: &rustpress_auth::Roles,
+        comment_id: u64,
+        moderators: bool,
+        current_user: u64,
+    ) {
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else {
+            return;
+        };
+        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else {
+            return;
+        };
         let author_user = self.db.user(post.post_author).await.ok().flatten();
-        let author_caps = match self.db.auth_user_by_id(post.post_author).await.ok().flatten() {
-            Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user).await.ok(),
+        let author_caps = match self
+            .db
+            .auth_user_by_id(post.post_author)
+            .await
+            .ok()
+            .flatten()
+        {
+            Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user)
+                .await
+                .ok(),
             None => None,
         };
         let post_author = author_user.as_ref().map(|user| PostAuthor {
             user,
-            can_edit_comments: author_caps.as_ref().is_some_and(|c| c.can_edit_comment(Some(&post))),
+            can_edit_comments: author_caps
+                .as_ref()
+                .is_some_and(|c| c.can_edit_comment(Some(&post))),
             can_read: author_caps.as_ref().is_some_and(|c| c.can("read")),
         });
         if moderators && comment.comment_approved == "0" {
-            self.notify_moderator(comment_id, post_author.as_ref()).await;
+            self.notify_moderator(comment_id, post_author.as_ref())
+                .await;
         }
         // Notes are told whatever their status, unless `wp_notes_notify` is off.
         let notify = if comment.comment_type == "note" {
             self.site.options.string("wp_notes_notify", "1") != "0"
         } else {
-            comment.comment_approved == "1" && self.site.options.string("comments_notify", "1") != "0"
+            comment.comment_approved == "1"
+                && self.site.options.string("comments_notify", "1") != "0"
         };
         if notify {
-            self.notify_postauthor(comment_id, post_author.as_ref(), current_user).await;
+            self.notify_postauthor(comment_id, post_author.as_ref(), current_user)
+                .await;
         }
     }
 
     /// `wp_notify_note_mentions()` for a note that was created: every user it mentions who may edit it hears about
     /// it, except its own author and the author of the post (who hears anyway).
     pub async fn notify_note_mentions(&self, roles: &rustpress_auth::Roles, comment_id: u64) {
-        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return };
-        if comment.comment_type != "note" || self.site.options.string("wp_notes_notify", "1") == "0" {
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else {
+            return;
+        };
+        if comment.comment_type != "note" || self.site.options.string("wp_notes_notify", "1") == "0"
+        {
             return;
         }
         let post = self.db.post(comment.comment_post_id).await.ok().flatten();
@@ -85,9 +129,20 @@ impl MailCtx<'_> {
             if user_id == comment.user_id || user_id == post_author {
                 continue;
             }
-            let Some(user) = self.db.user(user_id).await.ok().flatten().filter(|u| !u.user_email.is_empty()) else { continue };
+            let Some(user) = self
+                .db
+                .user(user_id)
+                .await
+                .ok()
+                .flatten()
+                .filter(|u| !u.user_email.is_empty())
+            else {
+                continue;
+            };
             let may_edit = match self.db.auth_user_by_id(user_id).await.ok().flatten() {
-                Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user).await.is_ok_and(|caps| caps.can_edit_comment(post.as_ref())),
+                Some(auth_user) => rustpress_auth::CurrentUser::load(self.db, roles, &auth_user)
+                    .await
+                    .is_ok_and(|caps| caps.can_edit_comment(post.as_ref())),
                 None => false,
             };
             if !may_edit {
@@ -96,19 +151,47 @@ impl MailCtx<'_> {
             // `wp_send_note_notification()`.
             let sprintf = rustpress_core::i18n::sprintf;
             let blogname = self.sitename();
-            let title = post.as_ref().map(|p| specialchars_decode(&p.post_title)).unwrap_or_default();
-            let author = if comment.comment_author.is_empty() { self.tr("Someone") } else { comment.comment_author.clone() };
-            let content = specialchars_decode(&rustpress_core::formatting::wp_strip_all_tags(&comment.comment_content));
-            let mut lines = vec![sprintf(&self.tr("%1$s mentioned you in a note on \"%2$s\"."), &[&author, &title]), String::new()];
+            let title = post
+                .as_ref()
+                .map(|p| specialchars_decode(&p.post_title))
+                .unwrap_or_default();
+            let author = if comment.comment_author.is_empty() {
+                self.tr("Someone")
+            } else {
+                comment.comment_author.clone()
+            };
+            let content = specialchars_decode(&rustpress_core::formatting::wp_strip_all_tags(
+                &comment.comment_content,
+            ));
+            let mut lines = vec![
+                sprintf(
+                    &self.tr("%1$s mentioned you in a note on \"%2$s\"."),
+                    &[&author, &title],
+                ),
+                String::new(),
+            ];
             if !content.is_empty() {
                 lines.push(content);
             }
             if let Some(post) = &post {
                 lines.push(String::new());
-                lines.push(format!("{}: {}", self.tr("Edit This"), self.admin_url(&format!("post.php?post={}&action=edit", post.id))));
+                lines.push(format!(
+                    "{}: {}",
+                    self.tr("Edit This"),
+                    self.admin_url(&format!("post.php?post={}&action=edit", post.id))
+                ));
             }
-            let subject = sprintf(&self.tr("[%1$s] You were mentioned in a note on \"%2$s\""), &[&blogname, &title]);
-            self.send_with_headers(&user.user_email, &subject, &lines.join("\n"), "Content-Type: text/plain; charset=\"UTF-8\"").await;
+            let subject = sprintf(
+                &self.tr("[%1$s] You were mentioned in a note on \"%2$s\""),
+                &[&blogname, &title],
+            );
+            self.send_with_headers(
+                &user.user_email,
+                &subject,
+                &lines.join("\n"),
+                "Content-Type: text/plain; charset=\"UTF-8\"",
+            )
+            .await;
         }
     }
 
@@ -118,28 +201,64 @@ impl MailCtx<'_> {
 
     /// The host of the home address without `www.`: the sender `wordpress@host`.
     fn wp_email(&self) -> String {
-        let host = self.site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost"));
+        let host = self
+            .site
+            .settings
+            .home
+            .split_once("://")
+            .map_or("localhost", |(_, rest)| {
+                rest.split(['/', ':']).next().unwrap_or("localhost")
+            });
         format!("wordpress@{}", host.trim_start_matches("www."))
     }
 
     /// `wp_notify_postauthor()` for a comment: the author of the post hears about it. `current_user` is who is
     /// signed in (0 for a visitor).
-    pub async fn notify_postauthor(&self, comment_id: u64, post_author: Option<&PostAuthor<'_>>, current_user: u64) -> bool {
-        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return false };
-        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else { return false };
-        let Some(author) = post_author else { return false };
+    pub async fn notify_postauthor(
+        &self,
+        comment_id: u64,
+        post_author: Option<&PostAuthor<'_>>,
+        current_user: u64,
+    ) -> bool {
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else {
+            return false;
+        };
+        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else {
+            return false;
+        };
+        let Some(author) = post_author else {
+            return false;
+        };
         let email = author.user.user_email.clone();
-        if email.is_empty() || comment.user_id == post.post_author || current_user == post.post_author || !author.can_read {
+        if email.is_empty()
+            || comment.user_id == post.post_author
+            || current_user == post.post_author
+            || !author.can_read
+        {
             return false;
         }
-        let (ip, _agent) = self.db.comment_extra(comment_id).await.ok().flatten().unwrap_or_default();
+        let (ip, _agent) = self
+            .db
+            .comment_extra(comment_id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let blogname = self.sitename();
         let content = specialchars_decode(&comment.comment_content);
         let wp_email = self.wp_email();
-        let mut headers = if comment.comment_author.is_empty() { format!("From: \"{blogname}\" <{wp_email}>\n") } else { format!("From: \"{}\" <{wp_email}>\n", comment.comment_author) };
+        let mut headers = if comment.comment_author.is_empty() {
+            format!("From: \"{blogname}\" <{wp_email}>\n")
+        } else {
+            format!("From: \"{}\" <{wp_email}>\n", comment.comment_author)
+        };
         headers.push_str("Content-Type: text/plain; charset=\"UTF-8\"\n");
         if !comment.comment_author_email.is_empty() {
-            headers.push_str(&if comment.comment_author.is_empty() { format!("Reply-To: {}\n", comment.comment_author_email) } else { format!("Reply-To: \"{0}\" <{0}>\n", comment.comment_author_email) });
+            headers.push_str(&if comment.comment_author.is_empty() {
+                format!("Reply-To: {}\n", comment.comment_author_email)
+            } else {
+                format!("Reply-To: \"{0}\" <{0}>\n", comment.comment_author_email)
+            });
         }
         let tr = |s: &str| self.tr(s);
         let sprintf = rustpress_core::i18n::sprintf;
@@ -148,64 +267,174 @@ impl MailCtx<'_> {
         let (mut message, subject) = match comment.comment_type.as_str() {
             "trackback" | "pingback" => {
                 let (kind, all) = if comment.comment_type == "trackback" {
-                    (tr("New trackback on your post \"%s\""), tr("You can see all trackbacks on this post here:"))
+                    (
+                        tr("New trackback on your post \"%s\""),
+                        tr("You can see all trackbacks on this post here:"),
+                    )
                 } else {
-                    (tr("New pingback on your post \"%s\""), tr("You can see all pingbacks on this post here:"))
+                    (
+                        tr("New pingback on your post \"%s\""),
+                        tr("You can see all pingbacks on this post here:"),
+                    )
                 };
                 let mut m = format!("{}\r\n", sprintf(&kind, &[title]));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Website: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("URL: %s"), &[&comment.comment_author_url])));
-                m.push_str(&format!("{}\r\n\r\n", sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(
+                        &tr("Website: %1$s (IP address: %2$s, %3$s)"),
+                        &[&comment.comment_author, &ip, &domain]
+                    )
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("URL: %s"), &[&comment.comment_author_url])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n\r\n",
+                    sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])
+                ));
                 m.push_str(&format!("{all}\r\n"));
-                let subject = if comment.comment_type == "trackback" { sprintf(&tr("[%1$s] Trackback: \"%2$s\""), &[&blogname, title]) } else { sprintf(&tr("[%1$s] Pingback: \"%2$s\""), &[&blogname, title]) };
+                let subject = if comment.comment_type == "trackback" {
+                    sprintf(&tr("[%1$s] Trackback: \"%2$s\""), &[&blogname, title])
+                } else {
+                    sprintf(&tr("[%1$s] Pingback: \"%2$s\""), &[&blogname, title])
+                };
                 (m, subject)
             }
             "note" => {
-                let mut m = format!("{}\r\n", sprintf(&tr("New note on your post \"%s\""), &[title]));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Author: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Email: %s"), &[&comment.comment_author_email])));
-                let text = if content.is_empty() { tr("resolved/reopened") } else { content.clone() };
-                m.push_str(&format!("{}\r\n\r\n", sprintf(&tr("Note: %s"), &[&format!("\r\n{text}")])));
-                m.push_str(&format!("{}\r\n", tr("You can see all notes on this post here:")));
-                (m, sprintf(&tr("[%1$s] Note: \"%2$s\""), &[&blogname, title]))
+                let mut m = format!(
+                    "{}\r\n",
+                    sprintf(&tr("New note on your post \"%s\""), &[title])
+                );
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(
+                        &tr("Author: %1$s (IP address: %2$s, %3$s)"),
+                        &[&comment.comment_author, &ip, &domain]
+                    )
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("Email: %s"), &[&comment.comment_author_email])
+                ));
+                let text = if content.is_empty() {
+                    tr("resolved/reopened")
+                } else {
+                    content.clone()
+                };
+                m.push_str(&format!(
+                    "{}\r\n\r\n",
+                    sprintf(&tr("Note: %s"), &[&format!("\r\n{text}")])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    tr("You can see all notes on this post here:")
+                ));
+                (
+                    m,
+                    sprintf(&tr("[%1$s] Note: \"%2$s\""), &[&blogname, title]),
+                )
             }
             _ => {
-                let mut m = format!("{}\r\n", sprintf(&tr("New comment on your post \"%s\""), &[title]));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Author: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Email: %s"), &[&comment.comment_author_email])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("URL: %s"), &[&comment.comment_author_url])));
+                let mut m = format!(
+                    "{}\r\n",
+                    sprintf(&tr("New comment on your post \"%s\""), &[title])
+                );
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(
+                        &tr("Author: %1$s (IP address: %2$s, %3$s)"),
+                        &[&comment.comment_author, &ip, &domain]
+                    )
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("Email: %s"), &[&comment.comment_author_email])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("URL: %s"), &[&comment.comment_author_url])
+                ));
                 if comment.comment_parent != 0 && author.can_edit_comments {
-                    m.push_str(&format!("{}\r\n", sprintf(&tr("In reply to: %s"), &[&self.admin_url(&format!("comment.php?action=editcomment&c={}#wpbody-content", comment.comment_parent))])));
+                    m.push_str(&format!(
+                        "{}\r\n",
+                        sprintf(
+                            &tr("In reply to: %s"),
+                            &[&self.admin_url(&format!(
+                                "comment.php?action=editcomment&c={}#wpbody-content",
+                                comment.comment_parent
+                            ))]
+                        )
+                    ));
                 }
-                m.push_str(&format!("{}\r\n\r\n", sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])));
-                m.push_str(&format!("{}\r\n", tr("You can see all comments on this post here:")));
-                (m, sprintf(&tr("[%1$s] Comment: \"%2$s\""), &[&blogname, title]))
+                m.push_str(&format!(
+                    "{}\r\n\r\n",
+                    sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    tr("You can see all comments on this post here:")
+                ));
+                (
+                    m,
+                    sprintf(&tr("[%1$s] Comment: \"%2$s\""), &[&blogname, title]),
+                )
             }
         };
         if comment.comment_type == "note" {
             // `get_edit_post_link( …, 'url' )` for the author of the note, who may edit the post.
-            message.push_str(&format!("{}\r\n", self.admin_url(&format!("post.php?post={}&action=edit", post.id))));
-            return self.send_with_headers(&email, &subject, &message, &headers).await;
+            message.push_str(&format!(
+                "{}\r\n",
+                self.admin_url(&format!("post.php?post={}&action=edit", post.id))
+            ));
+            return self
+                .send_with_headers(&email, &subject, &message, &headers)
+                .await;
         }
         let permalink = self.site.permalink(&post).await.unwrap_or_default();
         message.push_str(&format!("{permalink}#comments\r\n\r\n"));
         let link = crate::screens::comments::comment_link_for(self.site, self.db, &comment).await;
         message.push_str(&format!("{}\r\n", sprintf(&tr("Permalink: %s"), &[&link])));
         if author.can_edit_comments {
-            message.push_str(&format!("{}\r\n", sprintf(&tr("Trash it: %s"), &[&self.admin_url(&format!("comment.php?action=trash&c={comment_id}#wpbody-content"))])));
-            message.push_str(&format!("{}\r\n", sprintf(&tr("Spam it: %s"), &[&self.admin_url(&format!("comment.php?action=spam&c={comment_id}#wpbody-content"))])));
+            message.push_str(&format!(
+                "{}\r\n",
+                sprintf(
+                    &tr("Trash it: %s"),
+                    &[&self.admin_url(&format!(
+                        "comment.php?action=trash&c={comment_id}#wpbody-content"
+                    ))]
+                )
+            ));
+            message.push_str(&format!(
+                "{}\r\n",
+                sprintf(
+                    &tr("Spam it: %s"),
+                    &[&self.admin_url(&format!(
+                        "comment.php?action=spam&c={comment_id}#wpbody-content"
+                    ))]
+                )
+            ));
         }
-        self.send_with_headers(&email, &subject, &message, &headers).await
+        self.send_with_headers(&email, &subject, &message, &headers)
+            .await
     }
 
     /// `wp_notify_moderator()`: the administrator (and the author of the post) hear about a comment that waits.
-    pub async fn notify_moderator(&self, comment_id: u64, post_author: Option<&PostAuthor<'_>>) -> bool {
+    pub async fn notify_moderator(
+        &self,
+        comment_id: u64,
+        post_author: Option<&PostAuthor<'_>>,
+    ) -> bool {
         let notify = self.site.options.string("moderation_notify", "1");
         if notify.is_empty() || notify == "0" {
             return true;
         }
-        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else { return true };
-        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else { return true };
+        let Some(comment) = self.db.comment_any(comment_id).await.ok().flatten() else {
+            return true;
+        };
+        let Some(post) = self.db.post(comment.comment_post_id).await.ok().flatten() else {
+            return true;
+        };
         let admin_email = self.site.options.string("admin_email", "");
         let mut emails = vec![admin_email.clone()];
         if let Some(author) = post_author
@@ -215,7 +444,13 @@ impl MailCtx<'_> {
         {
             emails.push(author.user.user_email.clone());
         }
-        let (ip, _agent) = self.db.comment_extra(comment_id).await.ok().flatten().unwrap_or_default();
+        let (ip, _agent) = self
+            .db
+            .comment_extra(comment_id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let waiting = self.db.count_comments_with_status("0").await.unwrap_or(0);
         let blogname = self.sitename();
         let content = specialchars_decode(&comment.comment_content);
@@ -227,36 +462,111 @@ impl MailCtx<'_> {
         let mut message = match comment.comment_type.as_str() {
             "trackback" | "pingback" => {
                 let (kind, excerpt) = if comment.comment_type == "trackback" {
-                    (tr("A new trackback on the post \"%s\" is waiting for your approval"), tr("Trackback excerpt: %s"))
+                    (
+                        tr("A new trackback on the post \"%s\" is waiting for your approval"),
+                        tr("Trackback excerpt: %s"),
+                    )
                 } else {
-                    (tr("A new pingback on the post \"%s\" is waiting for your approval"), tr("Pingback excerpt: %s"))
+                    (
+                        tr("A new pingback on the post \"%s\" is waiting for your approval"),
+                        tr("Pingback excerpt: %s"),
+                    )
                 };
                 let mut m = format!("{}\r\n{permalink}\r\n\r\n", sprintf(&kind, &[title]));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Website: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("URL: %s"), &[&comment.comment_author_url])));
-                m.push_str(&format!("{}\r\n\r\n", sprintf(&excerpt, &[&format!("\r\n{content}")])));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(
+                        &tr("Website: %1$s (IP address: %2$s, %3$s)"),
+                        &[&comment.comment_author, &ip, &domain]
+                    )
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("URL: %s"), &[&comment.comment_author_url])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n\r\n",
+                    sprintf(&excerpt, &[&format!("\r\n{content}")])
+                ));
                 m
             }
             _ => {
-                let mut m = format!("{}\r\n{permalink}\r\n\r\n", sprintf(&tr("A new comment on the post \"%s\" is waiting for your approval"), &[title]));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Author: %1$s (IP address: %2$s, %3$s)"), &[&comment.comment_author, &ip, &domain])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("Email: %s"), &[&comment.comment_author_email])));
-                m.push_str(&format!("{}\r\n", sprintf(&tr("URL: %s"), &[&comment.comment_author_url])));
+                let mut m = format!(
+                    "{}\r\n{permalink}\r\n\r\n",
+                    sprintf(
+                        &tr("A new comment on the post \"%s\" is waiting for your approval"),
+                        &[title]
+                    )
+                );
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(
+                        &tr("Author: %1$s (IP address: %2$s, %3$s)"),
+                        &[&comment.comment_author, &ip, &domain]
+                    )
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("Email: %s"), &[&comment.comment_author_email])
+                ));
+                m.push_str(&format!(
+                    "{}\r\n",
+                    sprintf(&tr("URL: %s"), &[&comment.comment_author_url])
+                ));
                 if comment.comment_parent != 0 {
-                    m.push_str(&format!("{}\r\n", sprintf(&tr("In reply to: %s"), &[&self.admin_url(&format!("comment.php?action=editcomment&c={}#wpbody-content", comment.comment_parent))])));
+                    m.push_str(&format!(
+                        "{}\r\n",
+                        sprintf(
+                            &tr("In reply to: %s"),
+                            &[&self.admin_url(&format!(
+                                "comment.php?action=editcomment&c={}#wpbody-content",
+                                comment.comment_parent
+                            ))]
+                        )
+                    ));
                 }
-                m.push_str(&format!("{}\r\n\r\n", sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])));
+                m.push_str(&format!(
+                    "{}\r\n\r\n",
+                    sprintf(&tr("Comment: %s"), &[&format!("\r\n{content}")])
+                ));
                 m
             }
         };
-        message.push_str(&format!("{}\r\n", sprintf(&tr("Approve it: %s"), &[&self.admin_url(&format!("comment.php?action=approve&c={comment_id}#wpbody-content"))])));
-        message.push_str(&format!("{}\r\n", sprintf(&tr("Trash it: %s"), &[&self.admin_url(&format!("comment.php?action=trash&c={comment_id}#wpbody-content"))])));
-        message.push_str(&format!("{}\r\n", sprintf(&tr("Spam it: %s"), &[&self.admin_url(&format!("comment.php?action=spam&c={comment_id}#wpbody-content"))])));
+        message.push_str(&format!(
+            "{}\r\n",
+            sprintf(
+                &tr("Approve it: %s"),
+                &[&self.admin_url(&format!(
+                    "comment.php?action=approve&c={comment_id}#wpbody-content"
+                ))]
+            )
+        ));
+        message.push_str(&format!(
+            "{}\r\n",
+            sprintf(
+                &tr("Trash it: %s"),
+                &[&self.admin_url(&format!(
+                    "comment.php?action=trash&c={comment_id}#wpbody-content"
+                ))]
+            )
+        ));
+        message.push_str(&format!(
+            "{}\r\n",
+            sprintf(
+                &tr("Spam it: %s"),
+                &[&self.admin_url(&format!(
+                    "comment.php?action=spam&c={comment_id}#wpbody-content"
+                ))]
+            )
+        ));
         message.push_str(&format!(
             "{}\r\n",
             sprintf(&self.site.trn("Currently %s comment is waiting for approval. Please visit the moderation panel:", "Currently %s comments are waiting for approval. Please visit the moderation panel:", waiting as i64), &[&self.site.number_i18n(waiting)])
         ));
-        message.push_str(&format!("{}\r\n", self.admin_url("edit-comments.php?comment_status=moderated#wpbody-content")));
+        message.push_str(&format!(
+            "{}\r\n",
+            self.admin_url("edit-comments.php?comment_status=moderated#wpbody-content")
+        ));
         let subject = sprintf(&tr("[%1$s] Please moderate: \"%2$s\""), &[&blogname, title]);
         for email in emails {
             self.send(&email, &subject, &message).await;

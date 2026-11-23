@@ -39,6 +39,7 @@ same HTML, headers, feeds, REST JSON, redirects and stored rows. So:
 cargo build -p rustpress-server
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings   # CI fails on warnings
+cargo fmt --all                                         # CI fails on unformatted code
 ```
 
 CI runs the same commands with `--locked`. Without the reference stack, the tests that need it print a note and skip
@@ -101,7 +102,8 @@ is how the diff report finds what to update.
 
 - **Language:** everything in the repository is in English (code, comments, PLAN.md, HISTORY.md, reports, `compat/known.toml`,
   commit messages and PR descriptions), except the German translations README.de.md and `site/de/`.
-- **Code:** match the surrounding code in naming, comment density and idiom. Doc comments name the PHP function or
+- **Code:** match the surrounding code in naming, comment density and idiom. The code is formatted with rustfmt's
+  default style (`cargo fmt --all` before a commit). Doc comments name the PHP function or
   hook a function stands for and say what differs, if anything. Prefer small, exact ports over general frameworks.
 - **Regex:** Rust's `regex` has no back references or look-arounds. Use `fancy-regex` where the PHP pattern needs
   them, and mind PCRE's character classes.

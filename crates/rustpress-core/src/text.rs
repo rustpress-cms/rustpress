@@ -31,7 +31,9 @@ fn url_host(url: &str) -> Option<String> {
 /// `_make_clickable_rel_attr()`.
 fn clickable_rel(url: &str, opts: &Clickable<'_>) -> String {
     let mut parts: Vec<&str> = Vec::new();
-    let scheme = url.split_once(':').map_or(String::new(), |(s, _)| s.to_ascii_lowercase());
+    let scheme = url
+        .split_once(':')
+        .map_or(String::new(), |(s, _)| s.to_ascii_lowercase());
     let internal = url_host(url).is_some_and(|h| h == opts.home_host.to_ascii_lowercase());
     if !internal && (scheme == "http" || scheme == "https") {
         parts.push("nofollow");
@@ -39,7 +41,11 @@ fn clickable_rel(url: &str, opts: &Clickable<'_>) -> String {
     if opts.comment {
         parts.push("ugc");
     }
-    if parts.is_empty() { String::new() } else { format!(" rel=\"{}\"", esc_attr(&parts.join(" "))) }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" rel=\"{}\"", esc_attr(&parts.join(" ")))
+    }
 }
 
 fn group<'a>(c: &'a fancy_regex::Captures<'_, str>, i: usize) -> &'a str {
@@ -73,10 +79,18 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
     for piece in pieces {
         if code_open.is_match(piece).unwrap_or(false) {
             nested += 1;
-        } else if nested > 0 && matches!(piece.to_ascii_lowercase().as_str(), "</code>" | "</pre>" | "</script>" | "</style>") {
+        } else if nested > 0
+            && matches!(
+                piece.to_ascii_lowercase().as_str(),
+                "</code>" | "</pre>" | "</script>" | "</style>"
+            )
+        {
             nested -= 1;
         }
-        if nested > 0 || piece.is_empty() || (piece.starts_with('<') && !scheme_tag.is_match(piece).unwrap_or(false)) {
+        if nested > 0
+            || piece.is_empty()
+            || (piece.starts_with('<') && !scheme_tag.is_match(piece).unwrap_or(false))
+        {
             out.push_str(piece);
             continue;
         }
@@ -101,13 +115,23 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
             if href.is_empty() {
                 return group(c, 0).to_owned();
             }
-            format!("{}<a href=\"{href}\"{}>{href}</a>{suffix}", group(c, 1), clickable_rel(&href, opts))
+            format!(
+                "{}<a href=\"{href}\"{}>{href}</a>{suffix}",
+                group(c, 1),
+                clickable_rel(&href, opts)
+            )
         });
-        let web = re!(r"([\t\n\x0B\x0C\r >])((?:[Ww][Ww][Ww]|[Ff][Tt][Pp])\.[A-Za-z0-9_\x{80}-\x{10FFFF}\#$%&~/.\-;:=,?@\[\]+]+)");
+        let web = re!(
+            r"([\t\n\x0B\x0C\r >])((?:[Ww][Ww][Ww]|[Ff][Tt][Pp])\.[A-Za-z0-9_\x{80}-\x{10FFFF}\#$%&~/.\-;:=,?@\[\]+]+)"
+        );
         let ret = web.replace_all(&ret, |c: &fancy_regex::Captures<'_, str>| {
             let mut dest = format!("http://{}", group(c, 2));
             let mut tail = String::new();
-            if let Some(last) = dest.chars().last().filter(|l| matches!(l, '.' | ',' | ';' | ':' | ')')) {
+            if let Some(last) = dest
+                .chars()
+                .last()
+                .filter(|l| matches!(l, '.' | ',' | ';' | ':' | ')'))
+            {
                 tail.push(last);
                 dest.pop();
             }
@@ -115,31 +139,50 @@ pub fn make_clickable(text: &str, opts: &Clickable<'_>) -> String {
             if dest.is_empty() {
                 return group(c, 0).to_owned();
             }
-            format!("{}<a href=\"{dest}\"{}>{dest}</a>{tail}", group(c, 1), clickable_rel(&dest, opts))
+            format!(
+                "{}<a href=\"{dest}\"{}>{dest}</a>{tail}",
+                group(c, 1),
+                clickable_rel(&dest, opts)
+            )
         });
         // `~i` without `/u` folds ASCII letters only (no Kelvin sign for `k`).
-        let email = re!(r"([\t\n\x0B\x0C\r >])([.0-9A-Za-z_+-]+)@((?:[0-9A-Za-z-]+\.)+[0-9A-Za-z]{2,})");
+        let email =
+            re!(r"([\t\n\x0B\x0C\r >])([.0-9A-Za-z_+-]+)@((?:[0-9A-Za-z-]+\.)+[0-9A-Za-z]{2,})");
         let ret = email.replace_all(&ret, |c: &fancy_regex::Captures<'_, str>| {
             let address = format!("{}@{}", group(c, 2), group(c, 3));
             format!("{}<a href=\"mailto:{address}\">{address}</a>", group(c, 1))
         });
         out.push_str(ret.get(1..ret.len().saturating_sub(1)).unwrap_or(""));
     }
-    re!(r"(?i)(<a([ \r\n\t]+[^>]+?>|>))<a [^>]+?>([^>]+?)</a></a>").replace_all(&out, "$1$3</a>").into_owned()
+    re!(r"(?i)(<a([ \r\n\t]+[^>]+?>|>))<a [^>]+?>([^>]+?)</a></a>")
+        .replace_all(&out, "$1$3</a>")
+        .into_owned()
 }
 
 /// `preg_replace_callback( $url_clickable, ... )`: [`make_clickable`]'s URL pattern, with its look-ahead
 /// `(?=\S{1,2000}\s)` tested after "://" (bytes and ASCII white space, as PCRE without `/u` reads it).
-fn replace_urls(url: &Regex, text: &str, mut replace: impl FnMut(&fancy_regex::Captures<'_, str>) -> String) -> String {
+fn replace_urls(
+    url: &Regex,
+    text: &str,
+    mut replace: impl FnMut(&fancy_regex::Captures<'_, str>) -> String,
+) -> String {
     let mut out = String::with_capacity(text.len());
     let (mut copied, mut from) = (0, 0);
     while from < text.len() {
-        let Ok(Some(caps)) = url.captures_from_pos(text, from) else { break };
-        let (Some(whole), Some(link)) = (caps.get(0), caps.get(2)) else { break };
+        let Ok(Some(caps)) = url.captures_from_pos(text, from) else {
+            break;
+        };
+        let (Some(whole), Some(link)) = (caps.get(0), caps.get(2)) else {
+            break;
+        };
         let after = link.start() + link.as_str().find("://").unwrap_or(0) + 3;
         if !url_fits(&text.as_bytes()[after..]) {
             // No match starts here; PCRE tries the next offset.
-            from = whole.start() + text[whole.start()..].chars().next().map_or(1, char::len_utf8);
+            from = whole.start()
+                + text[whole.start()..]
+                    .chars()
+                    .next()
+                    .map_or(1, char::len_utf8);
             continue;
         }
         out.push_str(&text[copied..whole.start()]);
@@ -153,7 +196,9 @@ fn replace_urls(url: &Regex, text: &str, mut replace: impl FnMut(&fancy_regex::C
 
 /// `(?=\S{1,2000}\s)` without `/u`: 1 to 2000 bytes that are not white space, then white space.
 fn url_fits(rest: &[u8]) -> bool {
-    let space = rest.iter().position(|b| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r'));
+    let space = rest
+        .iter()
+        .position(|b| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r'));
     space.is_some_and(|at| (1..=2000).contains(&at))
 }
 
@@ -206,12 +251,16 @@ const SMILIES: &[(&str, &str)] = &[
 
 /// `(?<=wp_spaces_regexp()|^)`.
 fn space_before(before: &str) -> bool {
-    before.is_empty() || before.ends_with(['\r', '\n', '\t', ' ', '\u{a0}']) || before.ends_with("&nbsp;")
+    before.is_empty()
+        || before.ends_with(['\r', '\n', '\t', ' ', '\u{a0}'])
+        || before.ends_with("&nbsp;")
 }
 
 /// `(?=wp_spaces_regexp()|$)`.
 fn space_after(after: &str) -> bool {
-    after.is_empty() || after.starts_with(['\r', '\n', '\t', ' ', '\u{a0}']) || after.starts_with("&nbsp;")
+    after.is_empty()
+        || after.starts_with(['\r', '\n', '\t', ' ', '\u{a0}'])
+        || after.starts_with("&nbsp;")
 }
 
 /// `convert_smilies()`; `includes_url` is `includes_url()` of the site.
@@ -235,7 +284,10 @@ pub fn convert_smilies(text: &str, includes_url: &str) -> String {
         rest = &rest[chunk.len()..];
         if is_tag {
             if ignore.is_none() {
-                ignore = tags_to_ignore.iter().copied().find(|name| chunk[1..].starts_with(name));
+                ignore = tags_to_ignore
+                    .iter()
+                    .copied()
+                    .find(|name| chunk[1..].starts_with(name));
             }
             if let Some(name) = ignore
                 && chunk.strip_prefix("</").and_then(|c| c.strip_suffix('>')) == Some(name)
@@ -252,7 +304,13 @@ pub fn convert_smilies(text: &str, includes_url: &str) -> String {
         let mut i = 0;
         while i < chunk.len() {
             let here = &chunk[i..];
-            let hit = if space_before(&chunk[..i]) { ordered.iter().find(|(smiley, _)| here.starts_with(*smiley) && space_after(&here[smiley.len()..])) } else { None };
+            let hit = if space_before(&chunk[..i]) {
+                ordered.iter().find(|(smiley, _)| {
+                    here.starts_with(*smiley) && space_after(&here[smiley.len()..])
+                })
+            } else {
+                None
+            };
             match hit {
                 Some((smiley, image)) => {
                     if image.ends_with(".png") {
@@ -277,7 +335,6 @@ pub fn convert_smilies(text: &str, includes_url: &str) -> String {
     output
 }
 
-
 // ------------------------------------------------------------------- emoji
 
 /// The emoji lists of `_wp_emoji_list()`, read from WordPress's `formatting.php`: entities and partials.
@@ -285,10 +342,18 @@ fn emoji_lists(formatting_php: &str) -> &'static (Vec<String>, Vec<String>) {
     static LISTS: OnceLock<(Vec<String>, Vec<String>)> = OnceLock::new();
     LISTS.get_or_init(|| {
         let list = |name: &str| -> Vec<String> {
-            let Some(start) = formatting_php.find(&format!("${name} = array(")) else { return Vec::new() };
+            let Some(start) = formatting_php.find(&format!("${name} = array(")) else {
+                return Vec::new();
+            };
             let rest = &formatting_php[start..];
-            let Some(end) = rest.find(");") else { return Vec::new() };
-            re!(r"'([^']*)'").captures_iter(&rest[..end]).flatten().map(|c| c[1].to_owned()).collect()
+            let Some(end) = rest.find(");") else {
+                return Vec::new();
+            };
+            re!(r"'([^']*)'")
+                .captures_iter(&rest[..end])
+                .flatten()
+                .map(|c| c[1].to_owned())
+                .collect()
         };
         (list("entities"), list("partials"))
     })
@@ -296,7 +361,12 @@ fn emoji_lists(formatting_php: &str) -> &'static (Vec<String>, Vec<String>) {
 
 /// `html_entity_decode()` of an emoji entity such as `&#x1f468;&#x200d;&#x2764;`.
 fn decode_emoji_entities(entity: &str) -> String {
-    entity.split(';').filter_map(|part| part.strip_prefix("&#x")).filter_map(|hex| u32::from_str_radix(hex, 16).ok()).filter_map(char::from_u32).collect()
+    entity
+        .split(';')
+        .filter_map(|part| part.strip_prefix("&#x"))
+        .filter_map(|hex| u32::from_str_radix(hex, 16).ok())
+        .filter_map(char::from_u32)
+        .collect()
 }
 
 /// `wp_staticize_emoji()`: emoji characters become images (`the_content_feed`).
@@ -320,7 +390,11 @@ pub fn staticize_emoji(text: &str, formatting_php: &str) -> String {
         }
         text = encoded;
     }
-    let possible: Vec<(&String, String)> = entities.iter().filter(|e| text.contains(e.as_str())).map(|e| (e, decode_emoji_entities(e))).collect();
+    let possible: Vec<(&String, String)> = entities
+        .iter()
+        .filter(|e| text.contains(e.as_str()))
+        .map(|e| (e, decode_emoji_entities(e)))
+        .collect();
     if possible.is_empty() {
         return text;
     }
@@ -329,11 +403,18 @@ pub fn staticize_emoji(text: &str, formatting_php: &str) -> String {
     let mut ignore: Option<&str> = None;
     let mut rest = text.as_str();
     while !rest.is_empty() {
-        let (chunk, is_tag) = if rest.starts_with('<') { rest.find('>').map_or((rest, false), |e| (&rest[..=e], true)) } else { (&rest[..rest.find('<').unwrap_or(rest.len())], false) };
+        let (chunk, is_tag) = if rest.starts_with('<') {
+            rest.find('>')
+                .map_or((rest, false), |e| (&rest[..=e], true))
+        } else {
+            (&rest[..rest.find('<').unwrap_or(rest.len())], false)
+        };
         rest = &rest[chunk.len()..];
         if is_tag {
             if ignore.is_none() {
-                ignore = ["code", "pre", "style", "script", "textarea"].into_iter().find(|n| chunk == format!("<{n}>"));
+                ignore = ["code", "pre", "style", "script", "textarea"]
+                    .into_iter()
+                    .find(|n| chunk == format!("<{n}>"));
             }
             if let Some(name) = ignore
                 && chunk == format!("</{name}>")
@@ -349,8 +430,13 @@ pub fn staticize_emoji(text: &str, formatting_php: &str) -> String {
                 if !content.contains(entity.as_str()) {
                     continue;
                 }
-                let file = entity.replace(";&#x", "-").replace("&#x", "").replace(';', "");
-                let image = format!("<img src=\"{cdn}{file}.png\" alt=\"{ch}\" class=\"wp-smiley\" style=\"height: 1em; max-height: 1em;\" />");
+                let file = entity
+                    .replace(";&#x", "-")
+                    .replace("&#x", "")
+                    .replace(';', "");
+                let image = format!(
+                    "<img src=\"{cdn}{file}.png\" alt=\"{ch}\" class=\"wp-smiley\" style=\"height: 1em; max-height: 1em;\" />"
+                );
                 content = content.replace(entity.as_str(), &image);
             }
         }
@@ -362,19 +448,34 @@ pub fn staticize_emoji(text: &str, formatting_php: &str) -> String {
 mod tests {
     use super::*;
 
-    const OPTS: Clickable<'static> = Clickable { home_host: "localhost", comment: true };
+    const OPTS: Clickable<'static> = Clickable {
+        home_host: "localhost",
+        comment: true,
+    };
 
     #[test]
     fn urls_and_emails_become_links() {
-        assert_eq!(make_clickable("Link http://example.com/a, mehr", &OPTS), "Link <a href=\"http://example.com/a\" rel=\"nofollow ugc\">http://example.com/a</a>, mehr");
-        assert_eq!(make_clickable("<a href=\"http://x.y/\">http://x.y/</a>", &OPTS), "<a href=\"http://x.y/\">http://x.y/</a>");
+        assert_eq!(
+            make_clickable("Link http://example.com/a, mehr", &OPTS),
+            "Link <a href=\"http://example.com/a\" rel=\"nofollow ugc\">http://example.com/a</a>, mehr"
+        );
+        assert_eq!(
+            make_clickable("<a href=\"http://x.y/\">http://x.y/</a>", &OPTS),
+            "<a href=\"http://x.y/\">http://x.y/</a>"
+        );
         assert!(make_clickable("a@b.de", &OPTS).contains("mailto:a@b.de"));
     }
 
     #[test]
     fn smilies_need_spaces_around_them() {
         assert_eq!(convert_smilies("Hallo :) Welt", ""), "Hallo \u{1F642} Welt");
-        assert_eq!(convert_smilies("Ohne:)Leerzeichen", ""), "Ohne:)Leerzeichen");
-        assert_eq!(convert_smilies("<code>:)</code> :)", ""), "<code>:)</code> \u{1F642}");
+        assert_eq!(
+            convert_smilies("Ohne:)Leerzeichen", ""),
+            "Ohne:)Leerzeichen"
+        );
+        assert_eq!(
+            convert_smilies("<code>:)</code> :)", ""),
+            "<code>:)</code> \u{1F642}"
+        );
     }
 }

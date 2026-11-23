@@ -46,7 +46,10 @@ pub(super) fn loose_eq_int(value: &Value, n: i64) -> bool {
         Value::Int(v) => *v == n,
         Value::Bool(b) => *b == (n != 0),
         Value::Float(f) => *f == n as f64,
-        Value::Str(b) => String::from_utf8_lossy(b).trim().parse::<f64>().is_ok_and(|f| f == n as f64),
+        Value::Str(b) => String::from_utf8_lossy(b)
+            .trim()
+            .parse::<f64>()
+            .is_ok_and(|f| f == n as f64),
         Value::Null => n == 0,
         _ => false,
     }
@@ -63,7 +66,10 @@ pub(super) fn strings(value: &Value) -> Vec<String> {
 /// The value of `key` of an array (`$value[ $key ] ?? null`).
 pub(super) fn item<'v>(value: &'v Value, key: &str) -> Option<&'v Value> {
     match value {
-        Value::Array(items) => items.iter().find(|(k, _)| key_string(k) == key).map(|(_, v)| v),
+        Value::Array(items) => items
+            .iter()
+            .find(|(k, _)| key_string(k) == key)
+            .map(|(_, v)| v),
         _ => None,
     }
 }
@@ -148,8 +154,14 @@ const DEFAULTS: &[(&str, Default)] = &[
     ("enable_iapi_navigation", Default::False),
     ("a_b_testing", Default::False),
     ("dont_use_placeholders", Default::False),
-    ("blocked_content_text", Default::T("Click to accept {category} cookies and enable this content")),
-    ("blocked_content_text_per_service", Default::T("Click 'I agree' to enable {service}")),
+    (
+        "blocked_content_text",
+        Default::T("Click to accept {category} cookies and enable this content"),
+    ),
+    (
+        "blocked_content_text_per_service",
+        Default::T("Click 'I agree' to enable {service}"),
+    ),
     ("agree_text_per_service", Default::T("I agree")),
     ("placeholder_style", Default::Str("minimal")),
     ("google-maps-format", Default::Str("1280x920")),
@@ -186,13 +198,23 @@ pub struct Options {
 
 /// `get_option( $name )`, also of an option that is not autoloaded; `None` when it does not exist.
 pub(super) async fn option(site: &Site, name: &str) -> Option<Value> {
-    site.options.fetch(&site.db, name).await.ok().flatten().map(|raw| rustpress_core::options::maybe_unserialize(&raw))
+    site.options
+        .fetch(&site.db, name)
+        .await
+        .ok()
+        .flatten()
+        .map(|raw| rustpress_core::options::maybe_unserialize(&raw))
 }
 
 /// The values of a scanned list (`array_filter()` of the option, a string as a list of one).
 async fn detected(site: &Site, name: &str) -> Vec<String> {
     match option(site, name).await {
-        Some(Value::Array(items)) => items.iter().map(|(_, v)| v).filter(|v| truthy(v)).map(php_string).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|(_, v)| v)
+            .filter(|v| truthy(v))
+            .map(php_string)
+            .collect(),
         Some(v) if truthy(&v) => vec![php_string(&v)],
         _ => Vec::new(),
     }
@@ -201,7 +223,10 @@ async fn detected(site: &Site, name: &str) -> Vec<String> {
 impl Options {
     pub async fn load(site: &Site, cached_blocked_scripts: bool) -> Self {
         let stored = match option(site, "cmplz_options").await {
-            Some(Value::Array(items)) => items.iter().map(|(k, v)| (key_string(k), v.clone())).collect(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|(k, v)| (key_string(k), v.clone()))
+                .collect(),
             _ => Vec::new(),
         };
         let i18n = site.i18n();
@@ -240,18 +265,31 @@ impl Options {
             cached_blocked_scripts: false,
             translate: Box::new(str::to_owned),
             translate_x: Box::new(|text, _| text.to_owned()),
-            translate_n: Box::new(|single, plural, n| if n == 1 { single.to_owned() } else { plural.to_owned() }),
+            translate_n: Box::new(|single, plural, n| {
+                if n == 1 {
+                    single.to_owned()
+                } else {
+                    plural.to_owned()
+                }
+            }),
             translate_core: Box::new(str::to_owned),
         }
     }
 
     /// `cmplz_get_option( $id )`: the stored value; a missing one or `false` takes the field's default.
     pub fn get(&self, id: &str) -> Value {
-        let value = self.stored.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone()).unwrap_or(Value::Bool(false));
+        let value = self
+            .stored
+            .iter()
+            .find(|(k, _)| k == id)
+            .map(|(_, v)| v.clone())
+            .unwrap_or(Value::Bool(false));
         if !matches!(value, Value::Bool(false)) {
             return value;
         }
-        let Some((_, default)) = DEFAULTS.iter().find(|(k, _)| *k == id) else { return value };
+        let Some((_, default)) = DEFAULTS.iter().find(|(k, _)| *k == id) else {
+            return value;
+        };
         let default = match default {
             Default::Str(v) => s(v),
             Default::T(v) => s(&(self.translate)(v)),
@@ -264,22 +302,46 @@ impl Options {
 
     /// `cmplz_get_option( $id, false )`: the stored value, `false` when there is none (no default).
     pub fn stored(&self, id: &str) -> Value {
-        self.stored.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone()).unwrap_or(Value::Bool(false))
+        self.stored
+            .iter()
+            .find(|(k, _)| k == id)
+            .map(|(_, v)| v.clone())
+            .unwrap_or(Value::Bool(false))
     }
 
     /// `cmplz_set_default()`, the `cmplz_default_value` filter, for the fields the website reads.
     fn set_default(&self, id: &str, value: Value) -> Value {
-        let list = |items: &[String]| Value::Array(items.iter().enumerate().map(|(i, v)| (Key::Int(i as i64), s(v))).collect());
+        let list = |items: &[String]| {
+            Value::Array(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (Key::Int(i as i64), s(v)))
+                    .collect(),
+            )
+        };
         match id {
             "compile_statistics" if !self.detected_stats.is_empty() => s(&self.detected_stats[0]),
             "country_company" => {
                 let code = self.locale.get(3..5).unwrap_or_default();
-                if super::regions::COUNTRIES.contains(&code) { s(code) } else { value }
+                if super::regions::COUNTRIES.contains(&code) {
+                    s(code)
+                } else {
+                    value
+                }
             }
             "uses_social_media" if !self.detected_social_media.is_empty() => s("yes"),
-            "socialmedia_on_site" if !self.detected_social_media.is_empty() => list(&self.detected_social_media),
-            "uses_thirdparty_services" if !self.detected_thirdparty.is_empty() || self.cached_blocked_scripts => s("yes"),
-            "thirdparty_services_on_site" if !self.detected_thirdparty.is_empty() => list(&self.detected_thirdparty),
+            "socialmedia_on_site" if !self.detected_social_media.is_empty() => {
+                list(&self.detected_social_media)
+            }
+            "uses_thirdparty_services"
+                if !self.detected_thirdparty.is_empty() || self.cached_blocked_scripts =>
+            {
+                s("yes")
+            }
+            "thirdparty_services_on_site" if !self.detected_thirdparty.is_empty() => {
+                list(&self.detected_thirdparty)
+            }
             _ => value,
         }
     }
@@ -302,7 +364,12 @@ impl Options {
     /// `cmplz_get_regions()`: the selected regions (a single string in the free plugin), empty ones dropped.
     pub fn regions(&self) -> Vec<String> {
         match self.get("regions") {
-            Value::Array(items) => items.iter().map(|(_, v)| v).filter(|v| truthy(v)).map(php_string).collect(),
+            Value::Array(items) => items
+                .iter()
+                .map(|(_, v)| v)
+                .filter(|v| truthy(v))
+                .map(php_string)
+                .collect(),
             v if truthy(&v) => vec![php_string(&v)],
             _ => Vec::new(),
         }
@@ -315,7 +382,9 @@ impl Options {
 
     /// `cmplz_uses_thirdparty( $name )`.
     pub fn uses_thirdparty(&self, name: &str) -> bool {
-        if self.is("uses_thirdparty_services", "yes") && in_array(&self.get("thirdparty_services_on_site"), name) {
+        if self.is("uses_thirdparty_services", "yes")
+            && in_array(&self.get("thirdparty_services_on_site"), name)
+        {
             return true;
         }
         self.is("uses_social_media", "yes") && in_array(&self.get("socialmedia_on_site"), name)
@@ -328,7 +397,10 @@ impl Options {
 
     /// `cmplz_uses_marketing_cookies()`.
     pub fn uses_marketing_cookies(&self) -> bool {
-        self.is("uses_ad_cookies", "yes") || self.is("uses_firstparty_marketing_cookies", "yes") || self.is("uses_thirdparty_services", "yes") || self.is("uses_social_media", "yes")
+        self.is("uses_ad_cookies", "yes")
+            || self.is("uses_firstparty_marketing_cookies", "yes")
+            || self.is("uses_thirdparty_services", "yes")
+            || self.is("uses_social_media", "yes")
     }
 
     /// `__( $text, 'complianz-gdpr' )`.

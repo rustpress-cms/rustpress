@@ -61,7 +61,10 @@ fn write(out: &mut String, value: &Value, flags: Flags) {
                 return;
             }
             // PHP turns arrays with keys 0..n-1 into lists.
-            let is_list = map.keys().enumerate().all(|(i, k)| k.parse::<usize>().ok() == Some(i));
+            let is_list = map
+                .keys()
+                .enumerate()
+                .all(|(i, k)| k.parse::<usize>().ok() == Some(i));
             if is_list {
                 out.push('[');
                 for (i, item) in map.values().enumerate() {
@@ -110,8 +113,13 @@ fn write_pretty(out: &mut String, value: &Value, flags: Flags, depth: usize) {
             indent(out, depth);
             out.push(']');
         }
-        Value::Object(map) if !map.is_empty() && !(map.len() == 1 && map.contains_key(EMPTY_OBJECT_KEY)) => {
-            let is_list = map.keys().enumerate().all(|(i, k)| k.parse::<usize>().ok() == Some(i));
+        Value::Object(map)
+            if !map.is_empty() && !(map.len() == 1 && map.contains_key(EMPTY_OBJECT_KEY)) =>
+        {
+            let is_list = map
+                .keys()
+                .enumerate()
+                .all(|(i, k)| k.parse::<usize>().ok() == Some(i));
             out.push_str(if is_list { "[\n" } else { "{\n" });
             for (i, (key, item)) in map.iter().enumerate() {
                 if i > 0 {
@@ -136,7 +144,11 @@ fn number(n: &serde_json::Number) -> String {
     if let Some(f) = n.as_f64().filter(|_| n.is_f64()) {
         // PHP prints floats with the shortest round-trip form, integral ones as `1.0`.
         let s = format!("{f}");
-        return if s.contains('.') || s.contains('e') || s.contains("inf") || s.contains("NaN") { s } else { format!("{s}.0") };
+        return if s.contains('.') || s.contains('e') || s.contains("inf") || s.contains("NaN") {
+            s
+        } else {
+            format!("{s}.0")
+        };
     }
     n.to_string()
 }
@@ -184,7 +196,10 @@ mod tests {
 
     #[test]
     fn matches_php_json_encode() {
-        assert_eq!(encode(&json!({"type": "constrained", "a": [1, 2.5, true, null]})), r#"{"type":"constrained","a":[1,2.5,true,null]}"#);
+        assert_eq!(
+            encode(&json!({"type": "constrained", "a": [1, 2.5, true, null]})),
+            r#"{"type":"constrained","a":[1,2.5,true,null]}"#
+        );
         assert_eq!(encode(&json!("a/b\"c\\d")), r#""a\/b\"c\\d""#);
         let bs = '\\';
         let expected = format!("\"{bs}u00e4{bs}u00f6{bs}u20ac{bs}ud83d{bs}ude00\"");
@@ -202,7 +217,10 @@ mod tests {
 
     #[test]
     fn md5_prefix_is_eight_hex_digits() {
-        let id = unique_id_from_values(&json!([{"type": "default"}, true, null, false, "0.5em", null]), "wp-container-core-group-is-layout-");
+        let id = unique_id_from_values(
+            &json!([{"type": "default"}, true, null, false, "0.5em", null]),
+            "wp-container-core-group-is-layout-",
+        );
         assert!(id.starts_with("wp-container-core-group-is-layout-"));
         assert_eq!(id.len(), "wp-container-core-group-is-layout-".len() + 8);
     }

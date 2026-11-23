@@ -28,7 +28,13 @@ pub struct Block {
 
 impl Block {
     fn new(name: Option<String>, attrs: Map<String, Value>) -> Self {
-        Self { name, attrs, inner_blocks: Vec::new(), inner_html: String::new(), inner_content: Vec::new() }
+        Self {
+            name,
+            attrs,
+            inner_blocks: Vec::new(),
+            inner_html: String::new(),
+            inner_content: Vec::new(),
+        }
     }
 
     fn freeform(html: &str) -> Self {
@@ -87,7 +93,11 @@ pub fn block_delimiters(document: &str) -> Vec<Delimiter> {
             Some(token) => {
                 from = start + token.len;
                 if !matches!(token.kind, TokenKind::Closer) {
-                    delimiters.push(Delimiter { attrs: token.attrs, start, len: token.len });
+                    delimiters.push(Delimiter {
+                        attrs: token.attrs,
+                        start,
+                        len: token.len,
+                    });
                 }
             }
             None => from = start + 4,
@@ -101,7 +111,12 @@ pub fn block_delimiters(document: &str) -> Vec<Delimiter> {
 
 /// Parses a document into top-level blocks.
 pub fn parse_blocks(document: &str) -> Vec<Block> {
-    let mut parser = Parser { doc: document, offset: 0, output: Vec::new(), stack: Vec::new() };
+    let mut parser = Parser {
+        doc: document,
+        offset: 0,
+        output: Vec::new(),
+        stack: Vec::new(),
+    };
     while parser.proceed() {}
     parser.output
 }
@@ -191,16 +206,27 @@ impl Parser<'_> {
         if length == 0 {
             return;
         }
-        self.output.push(Block::freeform(&self.doc[self.offset..self.offset + length]));
+        self.output.push(Block::freeform(
+            &self.doc[self.offset..self.offset + length],
+        ));
     }
 
-    fn add_inner_block(&mut self, block: Block, token_start: usize, token_len: usize, last_offset: Option<usize>) {
+    fn add_inner_block(
+        &mut self,
+        block: Block,
+        token_start: usize,
+        token_len: usize,
+        last_offset: Option<usize>,
+    ) {
         let parent = self.stack.last_mut().expect("inner block needs a parent");
         parent.block.inner_blocks.push(block);
         let html = &self.doc[parent.prev_offset..token_start];
         if !html.is_empty() {
             parent.block.inner_html.push_str(html);
-            parent.block.inner_content.push(Content::Html(html.to_owned()));
+            parent
+                .block
+                .inner_content
+                .push(Content::Html(html.to_owned()));
         }
         parent.block.inner_content.push(Content::InnerBlock);
         parent.prev_offset = last_offset.unwrap_or(token_start + token_len);
@@ -217,7 +243,8 @@ impl Parser<'_> {
             top.block.inner_content.push(Content::Html(html.to_owned()));
         }
         if let Some(lead) = top.leading_html_start {
-            self.output.push(Block::freeform(&self.doc[lead..top.token_start]));
+            self.output
+                .push(Block::freeform(&self.doc[lead..top.token_start]));
         }
         self.output.push(top.block);
     }
@@ -258,7 +285,11 @@ fn read_name(bytes: &[u8], i: usize) -> Option<usize> {
         return None;
     }
     let mut j = i + 1;
-    while j < bytes.len() && (bytes[j].is_ascii_lowercase() || bytes[j].is_ascii_digit() || matches!(bytes[j], b'_' | b'-')) {
+    while j < bytes.len()
+        && (bytes[j].is_ascii_lowercase()
+            || bytes[j].is_ascii_digit()
+            || matches!(bytes[j], b'_' | b'-'))
+    {
         j += 1;
     }
     Some(j)
@@ -340,7 +371,13 @@ fn parse_delimiter(doc: &str, start: usize) -> Option<Token> {
         TokenKind::Opener
     };
     // The regexp does not allow `/` for closers with attributes; WordPress ignores that case too.
-    Some(Token { kind, name: full_name, attrs, start, len: i - start })
+    Some(Token {
+        kind,
+        name: full_name,
+        attrs,
+        start,
+        len: i - start,
+    })
 }
 
 #[cfg(test)]
@@ -353,8 +390,18 @@ mod tests {
 
     #[test]
     fn a_vertical_tab_is_not_delimiter_space() {
-        assert_eq!(names(&parse_blocks("<!--\x0bwp:paragraph -->x<!-- /wp:paragraph -->")), vec![None]);
-        assert_eq!(names(&parse_blocks("<!--\x0cwp:paragraph\t-->x<!--\r\n/wp:paragraph -->")), vec![Some("core/paragraph")]);
+        assert_eq!(
+            names(&parse_blocks(
+                "<!--\x0bwp:paragraph -->x<!-- /wp:paragraph -->"
+            )),
+            vec![None]
+        );
+        assert_eq!(
+            names(&parse_blocks(
+                "<!--\x0cwp:paragraph\t-->x<!--\r\n/wp:paragraph -->"
+            )),
+            vec![Some("core/paragraph")]
+        );
     }
 
     #[test]
@@ -368,7 +415,8 @@ mod tests {
 
     #[test]
     fn single_block_with_attrs() {
-        let blocks = parse_blocks("<!-- wp:heading {\"level\":3} -->\n<h3>T</h3>\n<!-- /wp:heading -->");
+        let blocks =
+            parse_blocks("<!-- wp:heading {\"level\":3} -->\n<h3>T</h3>\n<!-- /wp:heading -->");
         assert_eq!(blocks.len(), 1);
         let b = &blocks[0];
         assert_eq!(b.name.as_deref(), Some("core/heading"));
@@ -380,7 +428,10 @@ mod tests {
     #[test]
     fn namespaces_and_void_blocks() {
         let blocks = parse_blocks("<!-- wp:my-plugin/thing {\"a\":1} /--><!-- wp:separator /-->");
-        assert_eq!(names(&blocks), [Some("my-plugin/thing"), Some("core/separator")]);
+        assert_eq!(
+            names(&blocks),
+            [Some("my-plugin/thing"), Some("core/separator")]
+        );
         assert!(blocks[0].inner_html.is_empty());
         assert!(blocks[1].inner_content.is_empty());
     }
@@ -416,7 +467,8 @@ mod tests {
 
     #[test]
     fn deeply_nested_and_siblings() {
-        let doc = "<!-- wp:a --><!-- wp:b --><!-- wp:c /--><!-- /wp:b --><!-- wp:d /--><!-- /wp:a -->";
+        let doc =
+            "<!-- wp:a --><!-- wp:b --><!-- wp:c /--><!-- /wp:b --><!-- wp:d /--><!-- /wp:a -->";
         let blocks = parse_blocks(doc);
         assert_eq!(blocks.len(), 1);
         let a = &blocks[0];

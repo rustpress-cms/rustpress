@@ -23,13 +23,19 @@ pub struct Interactivity {
 impl Interactivity {
     /// `wp_interactivity_state( $ns, $data )`: merges recursively into the namespace.
     pub fn state(&mut self, namespace: &str, data: Value) {
-        let slot = self.state.entry(namespace.to_owned()).or_insert_with(|| Value::Object(Map::new()));
+        let slot = self
+            .state
+            .entry(namespace.to_owned())
+            .or_insert_with(|| Value::Object(Map::new()));
         merge(slot, data);
     }
 
     /// `wp_interactivity_config( $ns, $data )`.
     pub fn config(&mut self, namespace: &str, data: Value) {
-        let slot = self.config.entry(namespace.to_owned()).or_insert_with(|| Value::Object(Map::new()));
+        let slot = self
+            .config
+            .entry(namespace.to_owned())
+            .or_insert_with(|| Value::Object(Map::new()));
         merge(slot, data);
     }
 
@@ -44,7 +50,11 @@ impl Interactivity {
         let mut data = Map::new();
         data.insert(name.to_owned(), Value::Object(Map::new()));
         self.state(namespace, Value::Object(data));
-        if !self.closures.iter().any(|(n, p)| n == namespace && p == name) {
+        if !self
+            .closures
+            .iter()
+            .any(|(n, p)| n == namespace && p == name)
+        {
             self.closures.push((namespace.to_owned(), name.to_owned()));
         }
     }
@@ -52,15 +62,30 @@ impl Interactivity {
     /// The JSON of the `wp-script-module-data-@wordpress/interactivity` script, if there is any data.
     pub fn data_json(&self) -> Option<String> {
         let mut data = Map::new();
-        let config: Map<String, Value> = self.config.iter().filter(|(_, v)| !is_empty(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let config: Map<String, Value> = self
+            .config
+            .iter()
+            .filter(|(_, v)| !is_empty(v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         if !config.is_empty() {
             data.insert("config".into(), Value::Object(config));
         }
-        let state: Map<String, Value> = self.state.iter().filter(|(_, v)| !is_empty(v)).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let state: Map<String, Value> = self
+            .state
+            .iter()
+            .filter(|(_, v)| !is_empty(v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         if !state.is_empty() {
             data.insert("state".into(), Value::Object(state));
         }
-        let derived: Map<String, Value> = self.derived.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| (k.clone(), Value::from(v.clone()))).collect();
+        let derived: Map<String, Value> = self
+            .derived
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| (k.clone(), Value::from(v.clone())))
+            .collect();
         if !derived.is_empty() {
             data.insert("derivedStateClosures".into(), Value::Object(derived));
         }
@@ -68,7 +93,12 @@ impl Interactivity {
             return None;
         }
         // JSON_HEX_TAG | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE.
-        Some(serde_json::to_string(&Value::Object(data)).ok()?.replace('<', "\\u003C").replace('>', "\\u003E"))
+        Some(
+            serde_json::to_string(&Value::Object(data))
+                .ok()?
+                .replace('<', "\\u003C")
+                .replace('>', "\\u003E"),
+        )
     }
 
     /// The `<script>` element that carries the data, if there is any.
@@ -106,7 +136,9 @@ pub(crate) fn merge(target: &mut Value, source: Value) {
 /// The derived state callbacks of core blocks. `context` is the context of the namespace.
 fn run_closure(namespace: &str, path: &str, context: &Value) -> Value {
     match (namespace, path) {
-        ("core/accordion", "isOpen") => context.get("openByDefault").cloned().unwrap_or(Value::Null),
+        ("core/accordion", "isOpen") => {
+            context.get("openByDefault").cloned().unwrap_or(Value::Null)
+        }
         _ => Value::Null,
     }
 }
@@ -123,11 +155,24 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
-const DIRECTIVES: [&str; 8] = ["interactive", "router-region", "context", "bind", "class", "style", "text", "each"];
+const DIRECTIVES: [&str; 8] = [
+    "interactive",
+    "router-region",
+    "context",
+    "bind",
+    "class",
+    "style",
+    "text",
+    "each",
+];
 
 /// Tags whose closer the tag processor does not visit.
 fn visits_closer(name: &str) -> bool {
-    !is_void(name) && !matches!(name, "script" | "iframe" | "noembed" | "noframes" | "style" | "textarea" | "title" | "xmp")
+    !is_void(name)
+        && !matches!(
+            name,
+            "script" | "iframe" | "noembed" | "noframes" | "style" | "textarea" | "title" | "xmp"
+        )
 }
 
 #[derive(Debug)]
@@ -140,19 +185,33 @@ struct Parsed {
 /// `parse_directive_name()` for an attribute name that starts with `data-wp-`.
 fn parse_directive_name(attribute: &str) -> Option<Parsed> {
     let name = attribute.get(8..)?;
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return None;
     }
     let suffix_index = name.find("--");
     if suffix_index == Some(0) || name.starts_with('-') {
         return None;
     }
-    let Some(index) = suffix_index else { return Some(Parsed { prefix: name.to_owned(), suffix: None, unique_id: None }) };
+    let Some(index) = suffix_index else {
+        return Some(Parsed {
+            prefix: name.to_owned(),
+            suffix: None,
+            unique_id: None,
+        });
+    };
     let prefix = name[..index].to_owned();
     let remaining = &name[index..];
     if remaining.bytes().take_while(|b| *b == b'-').count() == 3 {
         let unique = &remaining[3..];
-        return Some(Parsed { prefix, suffix: None, unique_id: (!unique.is_empty()).then(|| unique.to_owned()) });
+        return Some(Parsed {
+            prefix,
+            suffix: None,
+            unique_id: (!unique.is_empty()).then(|| unique.to_owned()),
+        });
     }
     let suffix = &remaining[2..];
     if let Some(at) = suffix.find("---")
@@ -160,9 +219,17 @@ fn parse_directive_name(attribute: &str) -> Option<Parsed> {
     {
         let unique = &suffix[at + 3..];
         let own = &suffix[..at];
-        return Some(Parsed { prefix, suffix: (!own.is_empty()).then(|| own.to_owned()), unique_id: (!unique.is_empty()).then(|| unique.to_owned()) });
+        return Some(Parsed {
+            prefix,
+            suffix: (!own.is_empty()).then(|| own.to_owned()),
+            unique_id: (!unique.is_empty()).then(|| unique.to_owned()),
+        });
     }
-    Some(Parsed { prefix, suffix: (!suffix.is_empty()).then(|| suffix.to_owned()), unique_id: None })
+    Some(Parsed {
+        prefix,
+        suffix: (!suffix.is_empty()).then(|| suffix.to_owned()),
+        unique_id: None,
+    })
 }
 
 #[derive(Debug)]
@@ -178,13 +245,17 @@ struct Entry {
 /// `extract_directive_value()`: the namespace prefix and the decoded value.
 fn extract_value(raw: Option<&str>, default_namespace: Option<&str>) -> (Option<String>, Value) {
     let default = default_namespace.map(str::to_owned);
-    let Some(raw) = raw.filter(|r| !r.is_empty()) else { return (default, Value::Null) };
+    let Some(raw) = raw.filter(|r| !r.is_empty()) else {
+        return (default, Value::Null);
+    };
     let mut namespace = default;
     let mut value = raw;
     if let Some((head, tail)) = raw.split_once("::")
         && !tail.is_empty()
         && !head.is_empty()
-        && head.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
+        && head
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
     {
         namespace = Some(head.to_owned());
         value = tail;
@@ -209,27 +280,61 @@ impl Processor<'_> {
             if !attr.name.starts_with(&format!("data-wp-{prefix}")) {
                 continue;
             }
-            let Some(parsed) = parse_directive_name(&attr.name) else { continue };
+            let Some(parsed) = parse_directive_name(&attr.name) else {
+                continue;
+            };
             if parsed.prefix != prefix {
                 continue;
             }
-            let Some(value) = editor.get_attribute(&attr.name) else { continue };
+            let Some(value) = editor.get_attribute(&attr.name) else {
+                continue;
+            };
             let raw = (attr.value.is_some() || !value.is_empty()).then_some(value);
             let (namespace, value) = extract_value(raw, default.as_deref());
-            out.push(Entry { namespace, value, suffix: parsed.suffix, unique_id: parsed.unique_id, attribute_name: attr.name.clone() });
+            out.push(Entry {
+                namespace,
+                value,
+                suffix: parsed.suffix,
+                unique_id: parsed.unique_id,
+                attribute_name: attr.name.clone(),
+            });
         }
-        out.sort_by(|a, b| (a.suffix.as_deref().unwrap_or(""), a.unique_id.as_deref().unwrap_or("")).cmp(&(b.suffix.as_deref().unwrap_or(""), b.unique_id.as_deref().unwrap_or(""))));
+        out.sort_by(|a, b| {
+            (
+                a.suffix.as_deref().unwrap_or(""),
+                a.unique_id.as_deref().unwrap_or(""),
+            )
+                .cmp(&(
+                    b.suffix.as_deref().unwrap_or(""),
+                    b.unique_id.as_deref().unwrap_or(""),
+                ))
+        });
         out
     }
 
     /// `evaluate()`.
     fn evaluate(&mut self, entry: &Entry) -> Value {
-        let (Some(namespace), Value::String(path)) = (entry.namespace.as_deref().filter(|n| !n.is_empty()), &entry.value) else { return Value::Null };
+        let (Some(namespace), Value::String(path)) = (
+            entry.namespace.as_deref().filter(|n| !n.is_empty()),
+            &entry.value,
+        ) else {
+            return Value::Null;
+        };
         if path.is_empty() {
             return Value::Null;
         }
-        let context = self.contexts.last().and_then(|c| c.get(namespace)).cloned().unwrap_or(Value::Object(Map::new()));
-        let state = self.st.state.get(namespace).cloned().unwrap_or(Value::Object(Map::new()));
+        let context = self
+            .contexts
+            .last()
+            .and_then(|c| c.get(namespace))
+            .cloned()
+            .unwrap_or(Value::Object(Map::new()));
+        let state = self
+            .st
+            .state
+            .get(namespace)
+            .cloned()
+            .unwrap_or(Value::Object(Map::new()));
         let negate = path.starts_with('!');
         let path = path.strip_prefix('!').unwrap_or(path);
         let segments: Vec<&str> = path.split('.').collect();
@@ -255,7 +360,12 @@ impl Processor<'_> {
             }
             let next = match &current {
                 Value::Object(map) => map.get(*segment).filter(|v| !v.is_null()).cloned(),
-                Value::Array(items) => segment.parse::<usize>().ok().and_then(|i| items.get(i)).filter(|v| !v.is_null()).cloned(),
+                Value::Array(items) => segment
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| items.get(i))
+                    .filter(|v| !v.is_null())
+                    .cloned(),
                 _ => None,
             };
             let Some(next) = next else {
@@ -268,7 +378,11 @@ impl Processor<'_> {
             let state_path = closure_path.strip_prefix("state.");
             if segments[0] == "state"
                 && let Some(state_path) = state_path
-                && self.st.closures.iter().any(|(n, p)| n == namespace && p == state_path)
+                && self
+                    .st
+                    .closures
+                    .iter()
+                    .any(|(n, p)| n == namespace && p == state_path)
             {
                 current = run_closure(namespace, state_path, &context);
                 match self.st.derived.iter_mut().find(|(n, _)| n == namespace) {
@@ -277,14 +391,26 @@ impl Processor<'_> {
                             paths.push(closure_path.clone());
                         }
                     }
-                    None => self.st.derived.push((namespace.to_owned(), vec![closure_path.clone()])),
+                    None => self
+                        .st
+                        .derived
+                        .push((namespace.to_owned(), vec![closure_path.clone()])),
                 }
             }
         }
-        if negate { Value::Bool(!truthy(&current)) } else { current }
+        if negate {
+            Value::Bool(!truthy(&current))
+        } else {
+            current
+        }
     }
 
-    fn enter(&mut self, editor: &mut TagEditor, prefixes: &[&'static str], text: &mut Option<String>) {
+    fn enter(
+        &mut self,
+        editor: &mut TagEditor,
+        prefixes: &[&'static str],
+        text: &mut Option<String>,
+    ) {
         for prefix in DIRECTIVES {
             if !prefixes.contains(&prefix) {
                 continue;
@@ -319,13 +445,22 @@ impl Processor<'_> {
     }
 
     fn interactive(&mut self, editor: &TagEditor) {
-        let value = editor.get_attribute("data-wp-interactive").filter(|v| !v.is_empty());
+        let value = editor
+            .get_attribute("data-wp-interactive")
+            .filter(|v| !v.is_empty());
         let new_namespace = value.and_then(|v| match serde_json::from_str::<Value>(v) {
-            Ok(Value::Object(map)) => map.get("namespace").and_then(Value::as_str).map(str::to_owned),
+            Ok(Value::Object(map)) => map
+                .get("namespace")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             Ok(Value::Array(_)) => None,
             _ => Some(v.to_owned()),
         });
-        let valid = new_namespace.filter(|n| n.chars().next().is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/')));
+        let valid = new_namespace.filter(|n| {
+            n.chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
+        });
         let namespace = valid.or_else(|| self.namespaces.last().cloned().flatten());
         self.namespaces.push(namespace);
     }
@@ -336,8 +471,14 @@ impl Processor<'_> {
             if entry.suffix.is_some() {
                 continue;
             }
-            let Some(namespace) = entry.namespace else { continue };
-            let value = if entry.value.is_object() || entry.value.is_array() { entry.value } else { Value::Object(Map::new()) };
+            let Some(namespace) = entry.namespace else {
+                continue;
+            };
+            let value = if entry.value.is_object() || entry.value.is_array() {
+                entry.value
+            } else {
+                Value::Object(Map::new())
+            };
             let mut patch = Map::new();
             patch.insert(namespace, value);
             merge(&mut context, Value::Object(patch));
@@ -350,7 +491,9 @@ impl Processor<'_> {
 
     fn bind(&mut self, editor: &mut TagEditor) {
         for entry in self.entries(editor, "bind") {
-            let Some(name) = entry.suffix.clone().filter(|s| !s.is_empty()) else { continue };
+            let Some(name) = entry.suffix.clone().filter(|s| !s.is_empty()) else {
+                continue;
+            };
             if entry.unique_id.is_some() {
                 continue;
             }
@@ -382,7 +525,9 @@ impl Processor<'_> {
 
     fn class(&mut self, editor: &mut TagEditor) {
         for entry in self.entries(editor, "class") {
-            let Some(suffix) = entry.suffix.clone().filter(|s| !s.is_empty()) else { continue };
+            let Some(suffix) = entry.suffix.clone().filter(|s| !s.is_empty()) else {
+                continue;
+            };
             let class_name = match &entry.unique_id {
                 Some(id) => format!("{suffix}---{id}"),
                 None => suffix,
@@ -397,7 +542,9 @@ impl Processor<'_> {
 
     fn style(&mut self, editor: &mut TagEditor) {
         for entry in self.entries(editor, "style") {
-            let Some(property) = entry.suffix.clone().filter(|s| !s.is_empty()) else { continue };
+            let Some(property) = entry.suffix.clone().filter(|s| !s.is_empty()) else {
+                continue;
+            };
             if entry.unique_id.is_some() {
                 continue;
             }
@@ -415,7 +562,10 @@ impl Processor<'_> {
     }
 
     fn text(&mut self, editor: &TagEditor) -> Option<String> {
-        let entry = self.entries(editor, "text").into_iter().find(|e| e.suffix.is_none() && e.unique_id.is_none() && !is_empty_value(&e.value))?;
+        let entry = self
+            .entries(editor, "text")
+            .into_iter()
+            .find(|e| e.suffix.is_none() && e.unique_id.is_none() && !is_empty_value(&e.value))?;
         Some(match self.evaluate(&entry) {
             Value::String(s) => rustpress_core::formatting::esc_html(&s),
             Value::Number(n) => n.to_string(),
@@ -429,7 +579,20 @@ fn is_bindable_object_attribute(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     name.starts_with("aria-")
         || (name.starts_with("data-") && !name.starts_with("data-wp-"))
-        || matches!(name.as_str(), "class" | "dir" | "height" | "hidden" | "id" | "lang" | "role" | "style" | "tabindex" | "title" | "width")
+        || matches!(
+            name.as_str(),
+            "class"
+                | "dir"
+                | "height"
+                | "hidden"
+                | "id"
+                | "lang"
+                | "role"
+                | "style"
+                | "tabindex"
+                | "title"
+                | "width"
+        )
 }
 
 fn is_empty_value(value: &Value) -> bool {
@@ -470,7 +633,11 @@ pub fn process_directives(html: &str, st: &mut Interactivity) -> String {
 
 fn run(html: &str, st: &mut Interactivity) -> Option<String> {
     let all = tags(html, 0);
-    let mut processor = Processor { st, namespaces: Vec::new(), contexts: Vec::new() };
+    let mut processor = Processor {
+        st,
+        namespaces: Vec::new(),
+        contexts: Vec::new(),
+    };
     let mut stack: Vec<(String, Vec<&'static str>)> = Vec::new();
     // Replacements `(start, end, text)` in document order.
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -500,7 +667,11 @@ fn run(html: &str, st: &mut Interactivity) -> Option<String> {
             index += 1;
             continue;
         }
-        if tag.attrs.iter().any(|a| a.name.starts_with("data-wp-each-child")) {
+        if tag
+            .attrs
+            .iter()
+            .any(|a| a.name.starts_with("data-wp-each-child"))
+        {
             index = skip_balanced(&all, index);
             index += 1;
             continue;
@@ -610,20 +781,33 @@ mod tests {
     #[test]
     fn bound_attributes_without_state_are_removed() {
         let html = "<button data-wp-bind--aria-expanded=\"state.isSubmenuOpen\" aria-label=\"x\" aria-expanded=\"false\" class=\"c\" ><svg></svg></button>";
-        assert_eq!(run_one(html), "<button data-wp-bind--aria-expanded=\"state.isSubmenuOpen\" aria-label=\"x\"  class=\"c\" ><svg></svg></button>");
-        let html = "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" aria-expanded=\"false\">t</a>";
-        assert_eq!(run_one(html), "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" >t</a>");
+        assert_eq!(
+            run_one(html),
+            "<button data-wp-bind--aria-expanded=\"state.isSubmenuOpen\" aria-label=\"x\"  class=\"c\" ><svg></svg></button>"
+        );
+        let html =
+            "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" aria-expanded=\"false\">t</a>";
+        assert_eq!(
+            run_one(html),
+            "<a class=\"c\" data-wp-bind--aria-expanded=\"state.x\" >t</a>"
+        );
     }
 
     #[test]
     fn object_bindings_are_limited() {
         let html = "<object data-wp-bind--data=\"state.url\" data-wp-bind--aria-label=\"state.label\" type=\"application/pdf\"></object>";
-        assert_eq!(run_one(html), "<object  data-wp-bind--aria-label=\"state.label\" type=\"application/pdf\"></object>");
+        assert_eq!(
+            run_one(html),
+            "<object  data-wp-bind--aria-label=\"state.label\" type=\"application/pdf\"></object>"
+        );
     }
 
     #[test]
     fn markup_without_directives_is_unchanged() {
-        assert_eq!(run_one("<p aria-expanded=\"false\">x</p>"), "<p aria-expanded=\"false\">x</p>");
+        assert_eq!(
+            run_one("<p aria-expanded=\"false\">x</p>"),
+            "<p aria-expanded=\"false\">x</p>"
+        );
     }
 
     #[test]
@@ -636,7 +820,10 @@ mod tests {
             out,
             "<div data-wp-interactive=\"core/accordion\"><div class=\"is-open\" data-wp-context='{ \"openByDefault\": true }' data-wp-class--is-open=\"state.isOpen\"><button aria-expanded=\"true\" data-wp-bind--aria-expanded=\"state.isOpen\"></button></div></div>"
         );
-        assert_eq!(st.data_json().unwrap(), "{\"state\":{\"core/accordion\":{\"isOpen\":{}}},\"derivedStateClosures\":{\"core/accordion\":[\"state.isOpen\"]}}");
+        assert_eq!(
+            st.data_json().unwrap(),
+            "{\"state\":{\"core/accordion\":{\"isOpen\":{}}},\"derivedStateClosures\":{\"core/accordion\":[\"state.isOpen\"]}}"
+        );
     }
 
     #[test]
@@ -648,9 +835,23 @@ mod tests {
     #[test]
     fn directive_names() {
         let p = parse_directive_name("data-wp-bind--aria-expanded").unwrap();
-        assert_eq!((p.prefix.as_str(), p.suffix.as_deref(), p.unique_id.as_deref()), ("bind", Some("aria-expanded"), None));
+        assert_eq!(
+            (
+                p.prefix.as_str(),
+                p.suffix.as_deref(),
+                p.unique_id.as_deref()
+            ),
+            ("bind", Some("aria-expanded"), None)
+        );
         let p = parse_directive_name("data-wp-on--click---a").unwrap();
-        assert_eq!((p.prefix.as_str(), p.suffix.as_deref(), p.unique_id.as_deref()), ("on", Some("click"), Some("a")));
+        assert_eq!(
+            (
+                p.prefix.as_str(),
+                p.suffix.as_deref(),
+                p.unique_id.as_deref()
+            ),
+            ("on", Some("click"), Some("a"))
+        );
         assert!(parse_directive_name("data-wp---x").is_none());
     }
 }

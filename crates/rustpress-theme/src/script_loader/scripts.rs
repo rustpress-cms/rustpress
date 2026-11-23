@@ -57,8 +57,21 @@ impl Scripts {
     // ------------------------------------------------------------------ registration
 
     /// `$scripts->add()`.
-    pub fn add(&mut self, handle: &str, src: Option<&str>, deps: &[&str], ver: Ver, args: Option<Arg>) -> bool {
-        self.deps.add(handle, src.map(str::to_owned), deps.iter().map(|d| (*d).to_owned()).collect(), ver, args)
+    pub fn add(
+        &mut self,
+        handle: &str,
+        src: Option<&str>,
+        deps: &[&str],
+        ver: Ver,
+        args: Option<Arg>,
+    ) -> bool {
+        self.deps.add(
+            handle,
+            src.map(str::to_owned),
+            deps.iter().map(|d| (*d).to_owned()).collect(),
+            ver,
+            args,
+        )
     }
 
     pub fn enqueue(&mut self, handle: &str) {
@@ -74,7 +87,11 @@ impl Scripts {
         if data.is_empty() {
             return false;
         }
-        let position = if position == "after" { "after" } else { "before" };
+        let position = if position == "after" {
+            "after"
+        } else {
+            "before"
+        };
         let mut list = match self.deps.get_data(handle, position) {
             Some(Extra::List(list)) => list.clone(),
             _ => Vec::new(),
@@ -85,7 +102,11 @@ impl Scripts {
 
     /// `localize()` with the data already as JSON (`wp_json_encode( $l10n, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )`).
     pub fn localize(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
-        let handle = if handle == "jquery" { "jquery-core" } else { handle };
+        let handle = if handle == "jquery" {
+            "jquery-core"
+        } else {
+            handle
+        };
         let mut script = Self::l10n_script(object_name, l10n);
         if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
             && !data.is_empty()
@@ -98,13 +119,27 @@ impl Scripts {
     /// [`Scripts::localize`] for a page whose value takes the place of the one the loader registered for the same
     /// object (`userProfileL10n` with the user of the request).
     pub fn localize_over(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
-        let handle = if handle == "jquery" { "jquery-core" } else { handle };
+        let handle = if handle == "jquery" {
+            "jquery-core"
+        } else {
+            handle
+        };
         let prefix = format!("var {object_name} = ");
         if let Some(Extra::Text(data)) = self.deps.get_data(handle, "data")
             && data.lines().any(|line| line.starts_with(&prefix))
         {
             let script = Self::l10n_script(object_name, l10n);
-            let data = data.lines().map(|line| if line.starts_with(&prefix) { script.as_str() } else { line }).collect::<Vec<_>>().join("\n");
+            let data = data
+                .lines()
+                .map(|line| {
+                    if line.starts_with(&prefix) {
+                        script.as_str()
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
             return self.deps.add_data(handle, "data", Extra::Text(data));
         }
         self.localize(handle, object_name, l10n)
@@ -127,28 +162,40 @@ impl Scripts {
             for value in map.values_mut() {
                 // Every scalar becomes a string: `(string) $value`.
                 match value {
-                    Value::String(text) => *text = rustpress_core::formatting::html_entity_decode(text),
+                    Value::String(text) => {
+                        *text = rustpress_core::formatting::html_entity_decode(text)
+                    }
                     Value::Number(n) => *value = Value::String(n.to_string()),
-                    Value::Bool(b) => *value = Value::String(if *b { "1".into() } else { String::new() }),
+                    Value::Bool(b) => {
+                        *value = Value::String(if *b { "1".into() } else { String::new() })
+                    }
                     _ => {}
                 }
             }
         }
-        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
-        let json = rustpress_blocks::php_json::encode_with(&l10n, flags).replace('<', "\\u003C").replace('>', "\\u003E");
+        let flags = rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        };
+        let json = rustpress_blocks::php_json::encode_with(&l10n, flags)
+            .replace('<', "\\u003C")
+            .replace('>', "\\u003E");
         format!("var {object_name} = {json};")
     }
 
     /// Replaces what `localize()` printed before for `handle` (the settings of a script are
     /// registered with a filter result the loader cannot evaluate).
     pub fn relocalize(&mut self, handle: &str, object_name: &str, l10n: &Value) -> bool {
-        self.deps.add_data(handle, "data", Extra::Text(String::new()));
+        self.deps
+            .add_data(handle, "data", Extra::Text(String::new()));
         self.localize(handle, object_name, l10n)
     }
 
     /// `set_translations()`: the script needs `wp-i18n` and reads the JSON files of `domain`.
     pub fn set_translations(&mut self, handle: &str, domain: &str, path: &str) -> bool {
-        let Some(dep) = self.deps.get_mut(handle) else { return false };
+        let Some(dep) = self.deps.get_mut(handle) else {
+            return false;
+        };
         if !dep.deps.iter().any(|d| d == "wp-i18n") {
             dep.deps.push("wp-i18n".to_owned());
         }
@@ -205,15 +252,25 @@ impl Scripts {
         let concat = self.concat.trim_matches([',', ' ']).to_owned();
         if !concat.is_empty() {
             if !self.print_code.is_empty() {
-                let code = format!("{}\n//# sourceURL={}", self.print_code, rawurlencode(&format!("js-inline-concat-{concat}")));
+                let code = format!(
+                    "{}\n//# sourceURL={}",
+                    self.print_code,
+                    rawurlencode(&format!("js-inline-concat-{concat}"))
+                );
                 self.out.push_str(&inline_script_tag(&code, &[]));
             }
             let mut chunks = String::new();
             let bytes = concat.as_bytes();
             for (key, chunk) in bytes.chunks(128).enumerate() {
-                chunks.push_str(&format!("&load%5Bchunk_{key}%5D={}", String::from_utf8_lossy(chunk)));
+                chunks.push_str(&format!(
+                    "&load%5Bchunk_{key}%5D={}",
+                    String::from_utf8_lossy(chunk)
+                ));
             }
-            let src = format!("{}/wp-admin/load-scripts.php?c={zip}{chunks}&ver={}", self.base_url, self.default_version);
+            let src = format!(
+                "{}/wp-admin/load-scripts.php?c={zip}{chunks}&ver={}",
+                self.base_url, self.default_version
+            );
             self.out.push_str(&script_tag(&[("src", Attr::Text(src))]));
         }
         if !self.print_html.is_empty() {
@@ -228,7 +285,10 @@ impl Scripts {
         self.deps.all_deps(&queue, false, None);
         let to_do = self.deps.to_do.clone();
         for handle in to_do {
-            if !self.deps.done.contains(&handle) && self.deps.is_registered(&handle) && self.do_item(&handle, group) {
+            if !self.deps.done.contains(&handle)
+                && self.deps.is_registered(&handle)
+                && self.do_item(&handle, group)
+            {
                 self.deps.done.push(handle.clone());
             }
             self.deps.to_do.retain(|h| h != &handle);
@@ -251,7 +311,10 @@ impl Scripts {
     }
 
     fn are_all_dependents_in_footer(&self, handle: &str) -> bool {
-        self.deps.dependents(handle).iter().all(|d| self.deps.groups.get(d).is_none_or(|g| *g != 0))
+        self.deps
+            .dependents(handle)
+            .iter()
+            .all(|d| self.deps.groups.get(d).is_none_or(|g| *g != 0))
     }
 
     fn has_inline_script(&self, handle: &str, position: &str) -> bool {
@@ -264,9 +327,14 @@ impl Scripts {
         if intended.is_empty() {
             return String::new();
         }
-        let initial = if intended == "defer" { Some(vec!["defer"]) } else { None };
+        let initial = if intended == "defer" {
+            Some(vec!["defer"])
+        } else {
+            None
+        };
         let mut stored = std::collections::HashMap::new();
-        let eligible = self.filter_eligible_strategies(handle, initial, &mut Vec::new(), &mut stored);
+        let eligible =
+            self.filter_eligible_strategies(handle, initial, &mut Vec::new(), &mut stored);
         if eligible.is_empty() {
             String::new()
         } else if eligible.contains(&"async") {
@@ -276,7 +344,13 @@ impl Scripts {
         }
     }
 
-    fn filter_eligible_strategies(&self, handle: &str, eligible: Option<Vec<&'static str>>, checked: &mut Vec<String>, stored: &mut std::collections::HashMap<String, Vec<&'static str>>) -> Vec<&'static str> {
+    fn filter_eligible_strategies(
+        &self,
+        handle: &str,
+        eligible: Option<Vec<&'static str>>,
+        checked: &mut Vec<String>,
+        stored: &mut std::collections::HashMap<String, Vec<&'static str>>,
+    ) -> Vec<&'static str> {
         if let Some(result) = stored.get(handle) {
             return result.clone();
         }
@@ -285,7 +359,9 @@ impl Scripts {
             return eligible;
         }
         checked.push(handle.to_owned());
-        let Some(dep) = self.deps.get(handle) else { return eligible };
+        let Some(dep) = self.deps.get(handle) else {
+            return eligible;
+        };
         if !self.deps.is_enqueued(handle) {
             return eligible;
         }
@@ -310,7 +386,12 @@ impl Scripts {
     }
 
     /// `get_highest_fetchpriority_with_dependents()`.
-    fn highest_fetchpriority(&self, handle: &str, checked: &mut Vec<String>, stored: &mut std::collections::HashMap<String, &'static str>) -> Option<&'static str> {
+    fn highest_fetchpriority(
+        &self,
+        handle: &str,
+        checked: &mut Vec<String>,
+        stored: &mut std::collections::HashMap<String, &'static str>,
+    ) -> Option<&'static str> {
         const PRIORITIES: [&str; 3] = ["low", "auto", "high"];
         if let Some(result) = stored.get(handle) {
             return Some(result);
@@ -330,7 +411,8 @@ impl Scripts {
         if highest != PRIORITIES.len() - 1 {
             for dependent in self.deps.dependents(handle) {
                 if let Some(priority) = self.highest_fetchpriority(&dependent, checked, stored) {
-                    highest = highest.max(PRIORITIES.iter().position(|p| *p == priority).unwrap_or(1));
+                    highest =
+                        highest.max(PRIORITIES.iter().position(|p| *p == priority).unwrap_or(1));
                     if highest == PRIORITIES.len() - 1 {
                         break;
                     }
@@ -346,7 +428,10 @@ impl Scripts {
         match self.deps.get_data(handle, position) {
             Some(Extra::List(list)) if !list.is_empty() => {
                 let mut parts = list.clone();
-                parts.push(format!("//# sourceURL={}", rawurlencode(&format!("{handle}-js-{position}"))));
+                parts.push(format!(
+                    "//# sourceURL={}",
+                    rawurlencode(&format!("{handle}-js-{position}"))
+                ));
                 parts.join("\n").trim_matches('\n').to_owned()
             }
             _ => String::new(),
@@ -356,38 +441,64 @@ impl Scripts {
     /// `get_inline_script_tag()`.
     fn inline_script_tag_of(&self, handle: &str, position: &str) -> String {
         let js = self.inline_script_data(handle, position);
-        if js.is_empty() { String::new() } else { inline_script_tag(&js, &[("id", Attr::Text(format!("{handle}-js-{position}")))]) }
+        if js.is_empty() {
+            String::new()
+        } else {
+            inline_script_tag(
+                &js,
+                &[("id", Attr::Text(format!("{handle}-js-{position}")))],
+            )
+        }
     }
 
     /// `print_extra_script()`: the data of `localize()`. Returns the code when it is not printed.
     fn print_extra_script(&mut self, handle: &str, display: bool) -> Option<String> {
-        let Some(Extra::Text(data)) = self.deps.get_data(handle, "data").cloned() else { return None };
+        let Some(Extra::Text(data)) = self.deps.get_data(handle, "data").cloned() else {
+            return None;
+        };
         if data.is_empty() {
             return None;
         }
         let mut output = data;
         if !self.do_concat {
-            output.push_str(&format!("\n//# sourceURL={}", rawurlencode(&format!("{handle}-js-extra"))));
+            output.push_str(&format!(
+                "\n//# sourceURL={}",
+                rawurlencode(&format!("{handle}-js-extra"))
+            ));
         }
         if !display {
             return Some(output);
         }
-        self.out.push_str(&inline_script_tag(&output, &[("id", Attr::Text(format!("{handle}-js-extra")))]));
+        self.out.push_str(&inline_script_tag(
+            &output,
+            &[("id", Attr::Text(format!("{handle}-js-extra")))],
+        ));
         Some(String::new())
     }
 
     /// `print_translations()` as a tag, or an empty string.
     fn translations_tag(&self, handle: &str) -> String {
-        let Some(dep) = self.deps.get(handle) else { return String::new() };
-        let Some(domain) = dep.textdomain.as_deref().filter(|d| !d.is_empty()) else { return String::new() };
+        let Some(dep) = self.deps.get(handle) else {
+            return String::new();
+        };
+        let Some(domain) = dep.textdomain.as_deref().filter(|d| !d.is_empty()) else {
+            return String::new();
+        };
         let path = dep.translations_path.as_deref().unwrap_or_default();
-        let Some(loader) = &self.translations else { return String::new() };
-        let Some(json) = loader(handle, domain, path) else { return String::new() };
+        let Some(loader) = &self.translations else {
+            return String::new();
+        };
+        let Some(json) = loader(handle, domain, path) else {
+            return String::new();
+        };
         let output = format!(
             "( function( domain, translations ) {{\n\tvar localeData = translations.locale_data[ domain ] || translations.locale_data.messages;\n\tlocaleData[\"\"].domain = domain;\n\twp.i18n.setLocaleData( localeData, domain );\n}} )( \"{domain}\", {json} );\n//# sourceURL={}",
             rawurlencode(&format!("{handle}-js-translations"))
         );
-        inline_script_tag(&output, &[("id", Attr::Text(format!("{handle}-js-translations")))])
+        inline_script_tag(
+            &output,
+            &[("id", Attr::Text(format!("{handle}-js-translations")))],
+        )
     }
 
     /// `in_default_dir()`.
@@ -398,12 +509,16 @@ impl Scripts {
         if src.starts_with("/wp-includes/js/l10n") {
             return false;
         }
-        self.default_dirs.iter().any(|d| src.starts_with(d.as_str()))
+        self.default_dirs
+            .iter()
+            .any(|d| src.starts_with(d.as_str()))
     }
 
     /// `do_item()`.
     fn do_item(&mut self, handle: &str, group: i64) -> bool {
-        let Some(obj) = self.deps.get(handle).cloned() else { return false };
+        let Some(obj) = self.deps.get(handle).cloned() else {
+            return false;
+        };
         let handle_group = self.group_of(handle);
         if group == 0 && handle_group > 0 {
             self.in_footer.push(handle.to_owned());
@@ -417,7 +532,12 @@ impl Scripts {
         if !Self::is_delayed(&intended) {
             intended.clear();
         }
-        if group == 0 && handle_group == 0 && !intended.is_empty() && !Self::is_delayed(&strategy) && self.are_all_dependents_in_footer(handle) {
+        if group == 0
+            && handle_group == 0
+            && !intended.is_empty()
+            && !Self::is_delayed(&strategy)
+            && self.are_all_dependents_in_footer(handle)
+        {
             self.in_footer.push(handle.to_owned());
             return false;
         }
@@ -429,7 +549,13 @@ impl Scripts {
 
         let src = obj.src.clone().unwrap_or_default();
         if self.do_concat {
-            if obj.src.is_some() && self.in_default_dir(&src) && (!before_script.is_empty() || !after_script.is_empty() || translations_stop_concat || Self::is_delayed(&strategy)) {
+            if obj.src.is_some()
+                && self.in_default_dir(&src)
+                && (!before_script.is_empty()
+                    || !after_script.is_empty()
+                    || translations_stop_concat
+                    || Self::is_delayed(&strategy))
+            {
                 self.do_concat = false;
                 self.print_scripts();
                 self.reset();
@@ -455,7 +581,8 @@ impl Scripts {
             return true;
         }
         let mut src = src;
-        let absolute = src.starts_with("http://") || src.starts_with("https://") || src.starts_with("//");
+        let absolute =
+            src.starts_with("http://") || src.starts_with("https://") || src.starts_with("//");
         if !absolute && !(!self.content_url.is_empty() && src.starts_with(&self.content_url)) {
             src = format!("{}{src}", self.base_url);
         }
@@ -472,10 +599,17 @@ impl Scripts {
                 src.truncate(src.len() - fragment.len());
             }
             if !ver_to_add.is_empty() {
-                src.push_str(&format!("{}ver={}", if src.contains('?') { '&' } else { '?' }, rawurlencode(&ver_to_add)));
+                src.push_str(&format!(
+                    "{}ver={}",
+                    if src.contains('?') { '&' } else { '?' },
+                    rawurlencode(&ver_to_add)
+                ));
             }
             if !added_args.is_empty() {
-                src.push_str(&format!("{}{added_args}", if src.contains('?') { '&' } else { '?' }));
+                src.push_str(&format!(
+                    "{}{added_args}",
+                    if src.contains('?') { '&' } else { '?' }
+                ));
             }
             if let Some(fragment) = fragment {
                 src.push_str(&fragment);
@@ -485,9 +619,19 @@ impl Scripts {
         if src.is_empty() {
             return true;
         }
-        let mut attrs: Vec<(&str, Attr)> = vec![("src", Attr::Text(src)), ("id", Attr::Text(format!("{handle}-js")))];
+        let mut attrs: Vec<(&str, Attr)> = vec![
+            ("src", Attr::Text(src)),
+            ("id", Attr::Text(format!("{handle}-js"))),
+        ];
         if !strategy.is_empty() {
-            attrs.push((if strategy == "async" { "async" } else { "defer" }, Attr::Flag));
+            attrs.push((
+                if strategy == "async" {
+                    "async"
+                } else {
+                    "defer"
+                },
+                Attr::Flag,
+            ));
         }
         if !intended.is_empty() {
             attrs.push(("data-wp-strategy", Attr::Text(intended)));
@@ -496,14 +640,23 @@ impl Scripts {
             Some(Extra::Text(s)) if matches!(s.as_str(), "auto" | "low" | "high") => s.clone(),
             _ => "auto".to_owned(),
         };
-        let actual = self.highest_fetchpriority(handle, &mut Vec::new(), &mut std::collections::HashMap::new()).map_or_else(|| original.clone(), str::to_owned);
+        let actual = self
+            .highest_fetchpriority(
+                handle,
+                &mut Vec::new(),
+                &mut std::collections::HashMap::new(),
+            )
+            .map_or_else(|| original.clone(), str::to_owned);
         if actual != "auto" {
             attrs.push(("fetchpriority", Attr::Text(actual.clone())));
         }
         if original != actual {
             attrs.push(("data-wp-fetchpriority", Attr::Text(original)));
         }
-        let tag = format!("{translations}{before_script}{}{after_script}", script_tag(&attrs));
+        let tag = format!(
+            "{translations}{before_script}{}{after_script}",
+            script_tag(&attrs)
+        );
         if self.do_concat {
             self.print_html.push_str(&tag);
         } else {
@@ -520,7 +673,11 @@ impl Scripts {
             _ => self.default_version.clone(),
         };
         if let Some(args) = self.deps.args.get(handle) {
-            text = if text.is_empty() { args.clone() } else { format!("{text}&amp;{args}") };
+            text = if text.is_empty() {
+                args.clone()
+            } else {
+                format!("{text}&amp;{args}")
+            };
         }
         text
     }
@@ -532,10 +689,34 @@ mod tests {
 
     fn scripts() -> Scripts {
         let mut s = Scripts::new("http://example.org", "", "7.1");
-        s.add("jquery-core", Some("/wp-includes/js/jquery/jquery.min.js"), &[], Ver::Value("3.7.1".into()), Some(Arg::Int(1)));
-        s.add("jquery", None, &["jquery-core"], Ver::Value("3.7.1".into()), None);
-        s.add("hooks", Some("/wp-includes/js/dist/hooks.min.js"), &[], Ver::Value("abc".into()), None);
-        s.add("theme", Some("/wp-content/themes/x/theme.js"), &["jquery"], Ver::Default, None);
+        s.add(
+            "jquery-core",
+            Some("/wp-includes/js/jquery/jquery.min.js"),
+            &[],
+            Ver::Value("3.7.1".into()),
+            Some(Arg::Int(1)),
+        );
+        s.add(
+            "jquery",
+            None,
+            &["jquery-core"],
+            Ver::Value("3.7.1".into()),
+            None,
+        );
+        s.add(
+            "hooks",
+            Some("/wp-includes/js/dist/hooks.min.js"),
+            &[],
+            Ver::Value("abc".into()),
+            None,
+        );
+        s.add(
+            "theme",
+            Some("/wp-content/themes/x/theme.js"),
+            &["jquery"],
+            Ver::Default,
+            None,
+        );
         s
     }
 
@@ -546,7 +727,10 @@ mod tests {
         s.enqueue("hooks");
         let head = s.print_head_scripts(true);
         // The alias `jquery` is a head item, so its footer script `jquery-core` is pulled into the head.
-        assert!(head.contains("load%5Bchunk_0%5D=jquery-core,hooks&#038;ver=7.1"), "{head}");
+        assert!(
+            head.contains("load%5Bchunk_0%5D=jquery-core,hooks&#038;ver=7.1"),
+            "{head}"
+        );
         assert_eq!(head.matches("<script").count(), 1);
         assert_eq!(s.print_footer_scripts(true), "");
     }

@@ -39,7 +39,12 @@ impl ContactForm {
     pub fn from_post(post: &rustpress_db::Post, meta: &[(String, String)]) -> Self {
         let get = |key: &str| meta.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
         let prop = |name: &str| get(&format!("_{name}")).or_else(|| get(name));
-        let parsed = |name: &str| prop(name).map(|raw| rustpress_phpser::unserialize(raw.as_bytes()).unwrap_or(Value::Str(raw.into_bytes())));
+        let parsed = |name: &str| {
+            prop(name).map(|raw| {
+                rustpress_phpser::unserialize(raw.as_bytes())
+                    .unwrap_or(Value::Str(raw.into_bytes()))
+            })
+        };
         Self {
             id: post.id,
             name: post.post_name.clone(),
@@ -64,7 +69,8 @@ impl ContactForm {
 
     /// `additional_setting( $name, $max )`: the values of `name: value` lines of the additional settings.
     pub fn additional_setting(&self, name: &str, max: usize) -> Vec<String> {
-        static LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([a-zA-Z0-9_]+)[\t ]*:(.*)$").unwrap());
+        static LINE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^([a-zA-Z0-9_]+)[\t ]*:(.*)$").unwrap());
         let mut values = Vec::new();
         for setting in self.additional_settings.split('\n') {
             if let Some(c) = LINE.captures(setting) {
@@ -81,7 +87,9 @@ impl ContactForm {
 
     /// `is_true( $name )`.
     pub fn is_true(&self, name: &str) -> bool {
-        self.additional_setting(name, 1).first().is_some_and(|v| ["on", "true", "1"].contains(&v.as_str()))
+        self.additional_setting(name, 1)
+            .first()
+            .is_some_and(|v| ["on", "true", "1"].contains(&v.as_str()))
     }
 }
 
@@ -130,7 +138,10 @@ fn form_class(options: &HtmlOptions, demo: bool) -> String {
         class.push_str(" demo");
     }
     let mut unique: Vec<String> = Vec::new();
-    for c in class.split(' ').map(rustpress_core::formatting::sanitize_html_class) {
+    for c in class
+        .split(' ')
+        .map(rustpress_core::formatting::sanitize_html_class)
+    {
         if !c.is_empty() && c != "0" && !unique.contains(&c) {
             unique.push(c);
         }
@@ -139,15 +150,26 @@ fn form_class(options: &HtmlOptions, demo: bool) -> String {
 }
 
 /// `WPCF7_ContactForm::form_html()`; `r.tr` translates in the language of the form (`wpcf7_switch_locale()`).
-pub fn form_html(form: &ContactForm, options: &HtmlOptions, place: &Place<'_>, r: &mut Render<'_>) -> String {
+pub fn form_html(
+    form: &ContactForm,
+    options: &HtmlOptions,
+    place: &Place<'_>,
+    r: &mut Render<'_>,
+) -> String {
     static ID_CHARS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^A-Za-z0-9:._-]").unwrap());
     static LANG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^([a-z]+-[a-z]+)-").unwrap());
     if options.raw_form {
-        return format!("<pre class=\"wpcf7-raw-form\"><code>{}</code></pre>", esc_html(&form.form));
+        return format!(
+            "<pre class=\"wpcf7-raw-form\"><code>{}</code></pre>",
+            esc_html(&form.form)
+        );
     }
     if form.is_true("subscribers_only") && !place.logged_in {
         let text = (r.tr)("This contact form is available only for logged in users.");
-        return format!("<p class=\"wpcf7-subscribers-only\">{}</p>", rustpress_core::kses::kses_data(&text));
+        return format!(
+            "<p class=\"wpcf7-subscribers-only\">{}</p>",
+            rustpress_core::kses::kses_data(&text)
+        );
     }
     let unit_tag = match place.loop_post {
         Some(post) => format!("wpcf7-f{}-p{post}-o{}", form.id, place.count),
@@ -159,8 +181,14 @@ pub fn form_html(form: &ContactForm, options: &HtmlOptions, place: &Place<'_>, r
     }
     action_url.push('#');
     action_url.push_str(&unit_tag);
-    if action_url.starts_with("//") || (!action_url.starts_with('/') && !action_url.starts_with(place.home)) {
-        return format!("<p class=\"wpcf7-invalid-action-url\"><strong>{}</strong> {}</p>", esc_html(&(r.tr)("Error:")), esc_html(&(r.tr)("Invalid action URL is detected.")));
+    if action_url.starts_with("//")
+        || (!action_url.starts_with('/') && !action_url.starts_with(place.home))
+    {
+        return format!(
+            "<p class=\"wpcf7-invalid-action-url\"><strong>{}</strong> {}</p>",
+            esc_html(&(r.tr)("Error:")),
+            esc_html(&(r.tr)("Invalid action URL is detected."))
+        );
     }
     let mut lang = form.locale.replace('_', "-");
     if let Some(c) = LANG.captures(&lang) {
@@ -169,10 +197,28 @@ pub fn form_html(form: &ContactForm, options: &HtmlOptions, place: &Place<'_>, r
     let mut wrapper = Atts::default();
     wrapper.set("class", Att::str("wpcf7 no-js"));
     wrapper.set("id", Att::Str(unit_tag.clone()));
-    wrapper.set(if place.html_type == "text/html" { "lang" } else { "xml:lang" }, Att::Str(lang));
-    wrapper.set("dir", Att::str(if is_rtl_locale(&form.locale) { "rtl" } else { "ltr" }));
+    wrapper.set(
+        if place.html_type == "text/html" {
+            "lang"
+        } else {
+            "xml:lang"
+        },
+        Att::Str(lang),
+    );
+    wrapper.set(
+        "dir",
+        Att::str(if is_rtl_locale(&form.locale) {
+            "rtl"
+        } else {
+            "ltr"
+        }),
+    );
     // `id()` of a form that was never saved is null.
-    let id = if form.id == 0 { Att::Null } else { Att::Int(form.id as i64) };
+    let id = if form.id == 0 {
+        Att::Null
+    } else {
+        Att::Int(form.id as i64)
+    };
     wrapper.set("data-wpcf7-id", id);
     let mut html = format!("\n<div {}>", format_atts(&wrapper));
     html.push_str("\n<div class=\"screen-reader-response\"><p role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p> <ul></ul></div>\n");
@@ -180,15 +226,57 @@ pub fn form_html(form: &ContactForm, options: &HtmlOptions, place: &Place<'_>, r
     let name_attr = ID_CHARS.replace_all(&options.html_name, "").into_owned();
     let class = form_class(options, form.is_true("demo_mode"));
     let tags = form_tag::scan(&form.form);
-    let enctype = if tags.iter().any(|t| form_tag::features(&t.tag_type).file_uploading) { "multipart/form-data" } else { "" };
+    let enctype = if tags
+        .iter()
+        .any(|t| form_tag::features(&t.tag_type).file_uploading)
+    {
+        "multipart/form-data"
+    } else {
+        ""
+    };
     let mut atts = Atts::default();
     atts.set("action", Att::Str(esc_url(&action_url)));
     atts.set("method", Att::str("post"));
-    atts.set("class", if class.is_empty() { Att::Null } else { Att::Str(class) });
-    atts.set("id", if id_attr.is_empty() { Att::Null } else { Att::Str(id_attr) });
-    atts.set("name", if name_attr.is_empty() { Att::Null } else { Att::Str(name_attr) });
-    atts.set("aria-label", Att::Str(if options.html_title.is_empty() { (r.tr)("Contact form") } else { options.html_title.clone() }));
-    atts.set("enctype", if enctype.is_empty() { Att::Null } else { Att::str(enctype) });
+    atts.set(
+        "class",
+        if class.is_empty() {
+            Att::Null
+        } else {
+            Att::Str(class)
+        },
+    );
+    atts.set(
+        "id",
+        if id_attr.is_empty() {
+            Att::Null
+        } else {
+            Att::Str(id_attr)
+        },
+    );
+    atts.set(
+        "name",
+        if name_attr.is_empty() {
+            Att::Null
+        } else {
+            Att::Str(name_attr)
+        },
+    );
+    atts.set(
+        "aria-label",
+        Att::Str(if options.html_title.is_empty() {
+            (r.tr)("Contact form")
+        } else {
+            options.html_title.clone()
+        }),
+    );
+    atts.set(
+        "enctype",
+        if enctype.is_empty() {
+            Att::Null
+        } else {
+            Att::str(enctype)
+        },
+    );
     atts.set("autocomplete", Att::Null);
     atts.set("novalidate", Att::Bool(true));
     atts.set("data-status", Att::str("init"));
@@ -206,14 +294,25 @@ pub fn form_html(form: &ContactForm, options: &HtmlOptions, place: &Place<'_>, r
 /// `form_hidden_fields()`.
 fn hidden_fields(form: &ContactForm, unit_tag: &str, place: &Place<'_>) -> String {
     let mut fields: Vec<(&str, Att)> = vec![
-        ("_wpcf7", if form.id == 0 { Att::Null } else { Att::Int(form.id as i64) }),
+        (
+            "_wpcf7",
+            if form.id == 0 {
+                Att::Null
+            } else {
+                Att::Int(form.id as i64)
+            },
+        ),
         ("_wpcf7_version", Att::str(place.version)),
         ("_wpcf7_locale", Att::str(&form.locale)),
         ("_wpcf7_unit_tag", Att::str(unit_tag)),
-        ("_wpcf7_container_post", Att::Int(place.loop_post.unwrap_or(0) as i64)),
+        (
+            "_wpcf7_container_post",
+            Att::Int(place.loop_post.unwrap_or(0) as i64),
+        ),
         ("_wpcf7_posted_data_hash", Att::str("")),
     ];
-    if form.is_true("subscribers_only") && place.logged_in
+    if form.is_true("subscribers_only")
+        && place.logged_in
         && let Some(nonce) = &place.nonce
     {
         fields.push(("_wpnonce", Att::str(nonce)));

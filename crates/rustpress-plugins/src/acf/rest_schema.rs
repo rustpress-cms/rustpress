@@ -51,7 +51,11 @@ fn format_rest_choices(choices: Option<&Value>) -> Vec<Json> {
     };
     let keys: Vec<String> = items.iter().map(|(k, _)| key_text(k)).collect();
     let values: Vec<String> = items.iter().map(|(_, v)| strval(Some(v))).collect();
-    let chosen = if keys.iter().any(|k| !values.contains(k)) { keys } else { values };
+    let chosen = if keys.iter().any(|k| !values.contains(k)) {
+        keys
+    } else {
+        values
+    };
     let mut out: Vec<Json> = chosen.iter().map(|c| Json::String(c.clone())).collect();
     for choice in &chosen {
         if is_numeric(&super::php::string(choice)) {
@@ -70,9 +74,24 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
     let file = |schema: &mut Map<String, Json>| {
         schema.insert("type".into(), json!(["integer", "null"]));
         schema.insert("required".into(), required());
-        for (key, name, int) in [("min_width", "minWidth", true), ("min_height", "minHeight", true), ("min_size", "minSize", false), ("max_width", "maxWidth", true), ("max_height", "maxHeight", true), ("max_size", "maxSize", false), ("mime_types", "mimeTypes", false)] {
+        for (key, name, int) in [
+            ("min_width", "minWidth", true),
+            ("min_height", "minHeight", true),
+            ("min_size", "minSize", false),
+            ("max_width", "maxWidth", true),
+            ("max_height", "maxHeight", true),
+            ("max_size", "maxSize", false),
+            ("mime_types", "mimeTypes", false),
+        ] {
             if truthy(field.get(key)) {
-                schema.insert(name.into(), if int { json!(intval(field.get(key))) } else { php(field.get(key).unwrap_or(&Value::Null)) });
+                schema.insert(
+                    name.into(),
+                    if int {
+                        json!(intval(field.get(key)))
+                    } else {
+                        php(field.get(key).unwrap_or(&Value::Null))
+                    },
+                );
             }
         }
     };
@@ -106,7 +125,10 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
             if !truthy(field.get("allow_custom"))
                 && let Some(Json::Object(items)) = schema.get_mut("items")
             {
-                items.insert("enum".into(), Json::Array(format_rest_choices(field.get("choices"))));
+                items.insert(
+                    "enum".into(),
+                    Json::Array(format_rest_choices(field.get("choices"))),
+                );
             }
         }
         "date_picker" | "date_time_picker" | "time_picker" => {
@@ -121,7 +143,14 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
         }
         "email" | "url" | "oembed" => {
             schema = base(field);
-            schema.insert("format".into(), json!(if field.kind == "email" { "email" } else { "uri" }));
+            schema.insert(
+                "format".into(),
+                json!(if field.kind == "email" {
+                    "email"
+                } else {
+                    "uri"
+                }),
+            );
         }
         "file" | "image" => file(&mut schema),
         "google_map" => {
@@ -186,10 +215,16 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
             schema.insert("type".into(), json!(["number", "null"]));
             schema.insert("required".into(), required());
             if !empty("min") {
-                schema.insert("minimum".into(), json!(float(field.get("min").unwrap_or(&Value::Null))));
+                schema.insert(
+                    "minimum".into(),
+                    json!(float(field.get("min").unwrap_or(&Value::Null))),
+                );
             }
             if !empty("max") {
-                schema.insert("maximum".into(), json!(float(field.get("max").unwrap_or(&Value::Null))));
+                schema.insert(
+                    "maximum".into(),
+                    json!(float(field.get("max").unwrap_or(&Value::Null))),
+                );
             }
             if let Some(default) = field.get("default_value").filter(|v| is_numeric(v)) {
                 schema.insert("default".into(), json!(float(default)));
@@ -243,8 +278,22 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
         "range" => {
             schema.insert("type".into(), json!(["number", "null"]));
             schema.insert("required".into(), required());
-            schema.insert("minimum".into(), json!(if empty("min") { 0 } else { intval(field.get("min")) }));
-            schema.insert("maximum".into(), json!(if empty("max") { 100 } else { intval(field.get("max")) }));
+            schema.insert(
+                "minimum".into(),
+                json!(if empty("min") {
+                    0
+                } else {
+                    intval(field.get("min"))
+                }),
+            );
+            schema.insert(
+                "maximum".into(),
+                json!(if empty("max") {
+                    100
+                } else {
+                    intval(field.get("max"))
+                }),
+            );
             if let Some(default) = field.get("default_value").filter(|v| is_numeric(v)) {
                 schema.insert("default".into(), json!(intval(Some(default))));
             }
@@ -286,8 +335,15 @@ pub fn field_schema(site: &Site, can_upload: bool, field: &Field) -> Map<String,
 pub fn build(site: &Site, can_upload: bool, groups: &[&FieldGroup]) -> Json {
     let mut properties = Map::new();
     for group in groups {
-        for field in group.fields.iter().filter(|f| super::fields::show_in_rest(&f.kind)) {
-            properties.insert(field.name.clone(), Json::Object(field_schema(site, can_upload, field)));
+        for field in group
+            .fields
+            .iter()
+            .filter(|f| super::fields::show_in_rest(&f.kind))
+        {
+            properties.insert(
+                field.name.clone(),
+                Json::Object(field_schema(site, can_upload, field)),
+            );
         }
     }
     json!({"description": "ACF field data", "type": "object", "properties": properties})
@@ -301,7 +357,9 @@ pub(super) fn object_type_of(param: &str) -> &'static str {
         "comment" => "comment",
         "nav_menu_item" => "menu_item",
         "nav_menu" => "menu",
-        "page_parent" | "page_template" | "page_type" | "page" | "post_category" | "post_format" | "post_status" | "post_taxonomy" | "post_template" | "post_type" | "post" => "post",
+        "page_parent" | "page_template" | "page_type" | "page" | "post_category"
+        | "post_format" | "post_status" | "post_taxonomy" | "post_template" | "post_type"
+        | "post" => "post",
         "taxonomy" => "term",
         "user_form" | "user_role" => "user",
         "widget" => "widget",
@@ -325,7 +383,10 @@ pub fn object_type_has_field_group(group: &FieldGroup, object_type: &str, sub_ty
                     && !(rule.operator == "==" && sub_type != value)
                     && !(rule.operator == "!=" && sub_type == value)
             };
-            if (object_type == "post" && fits("post_type")) || (object_type == "term" && fits("taxonomy")) || matches!(object_type, "user" | "comment") {
+            if (object_type == "post" && fits("post_type"))
+                || (object_type == "term" && fits("taxonomy"))
+                || matches!(object_type, "user" | "comment")
+            {
                 matched = true;
             }
         }

@@ -23,18 +23,24 @@ pub struct Msg {
 
 impl Msg {
     pub fn new(id: &str) -> Self {
-        Self { id: id.to_owned(), args: Vec::new() }
+        Self {
+            id: id.to_owned(),
+            args: Vec::new(),
+        }
     }
 
     /// Adds plain text arguments (`%s`, `%d`, `%1$s`, ...).
     pub fn with(mut self, args: &[&str]) -> Self {
-        self.args.extend(args.iter().map(|a| MsgArg::Text((*a).to_owned())));
+        self.args
+            .extend(args.iter().map(|a| MsgArg::Text((*a).to_owned())));
         self
     }
 
     /// Adds a list argument for `%l` (`a, b, and c`).
     pub fn with_list(mut self, items: &[&str]) -> Self {
-        self.args.push(MsgArg::List(items.iter().map(|i| (*i).to_owned()).collect()));
+        self.args.push(MsgArg::List(
+            items.iter().map(|i| (*i).to_owned()).collect(),
+        ));
         self
     }
 
@@ -76,7 +82,11 @@ pub fn list_and(site: &Site, items: &[String]) -> String {
         [a, b] => format!("{a}{}{b}", separator("%1$s and %2$s")),
         [rest @ .., last] => {
             let between = separator("%1$s, %2$s");
-            format!("{}{}{last}", rest.join(&between), separator("%1$s, and %2$s"))
+            format!(
+                "{}{}{last}",
+                rest.join(&between),
+                separator("%1$s, and %2$s")
+            )
         }
     }
 }
@@ -106,12 +116,24 @@ pub struct RestError {
 
 impl RestError {
     pub fn new(code: &str, message: impl Into<Msg>, status: u16) -> Self {
-        Self { code: code.to_owned(), message: message.into(), status, param: None, after_permission: false, pre_dispatch: false, missing: Vec::new() }
+        Self {
+            code: code.to_owned(),
+            message: message.into(),
+            status,
+            param: None,
+            after_permission: false,
+            pre_dispatch: false,
+            missing: Vec::new(),
+        }
     }
 
     /// `rest_missing_callback_param`.
     pub fn missing_params(names: &[&str]) -> Self {
-        let mut error = Self::new("rest_missing_callback_param", Msg::new("Missing parameter(s): %s").with(&[&names.join(", ")]), 400);
+        let mut error = Self::new(
+            "rest_missing_callback_param",
+            Msg::new("Missing parameter(s): %s").with(&[&names.join(", ")]),
+            400,
+        );
         error.missing = names.iter().map(|n| (*n).to_owned()).collect();
         error
     }
@@ -122,9 +144,23 @@ impl RestError {
     }
 
     /// `rest_invalid_param` whose detail carries its own `WP_Error` data (the forbidden status case).
-    pub fn invalid_param_with_data(param: &str, message: impl Into<Msg>, code: &str, data: Value) -> Self {
-        let mut error = Self::new("rest_invalid_param", Msg::new("Invalid parameter(s): %s").with(&[param]), 400);
-        error.param = Some(Box::new(ParamError { param: param.to_owned(), message: message.into(), code: code.to_owned(), data }));
+    pub fn invalid_param_with_data(
+        param: &str,
+        message: impl Into<Msg>,
+        code: &str,
+        data: Value,
+    ) -> Self {
+        let mut error = Self::new(
+            "rest_invalid_param",
+            Msg::new("Invalid parameter(s): %s").with(&[param]),
+            400,
+        );
+        error.param = Some(Box::new(ParamError {
+            param: param.to_owned(),
+            message: message.into(),
+            code: code.to_owned(),
+            data,
+        }));
         error
     }
 
@@ -132,38 +168,39 @@ impl RestError {
     /// validating parameters or from the endpoint itself. WordPress then still sends `Allow: GET`
     /// (`rest_send_allow_header()`); errors of the permission check and unknown routes have none.
     pub fn passed_permission_check(&self) -> bool {
-        !self.pre_dispatch && (self.after_permission
-            || !matches!(
-            self.code.as_str(),
-            "rest_no_route"
-                | "rest_forbidden_context"
-                | "rest_cannot_read"
-                | "rest_cannot_read_post"
-                | "rest_post_invalid_id"
-                | "rest_post_incorrect_password"
-                | "rest_post_invalid_parent"
-                | "rest_comment_invalid_id"
-                | "rest_term_invalid"
-                | "rest_user_invalid_id"
-                | "rest_widget_type_invalid"
-                | "rest_block_type_invalid"
-                | "rest_user_cannot_view"
-                | "rest_cannot_view"
-                | "rest_forbidden_orderby"
-                | "rest_forbidden_who"
-                | "rest_forbidden"
-                | "rest_cannot_read_status"
-                | "rest_status_invalid"
-                | "rest_block_type_cannot_view"
-                | "rest_cannot_view_active_theme"
-                | "rest_cannot_view_themes"
-                | "rest_cannot_view_plugins"
-                | "rest_cannot_manage_widgets"
-                | "rest_cannot_manage_templates"
-                | "rest_cannot_read_global_styles"
-                | "rest_block_directory_cannot_view"
-                | "rest_pattern_directory_cannot_view"
-        ))
+        !self.pre_dispatch
+            && (self.after_permission
+                || !matches!(
+                    self.code.as_str(),
+                    "rest_no_route"
+                        | "rest_forbidden_context"
+                        | "rest_cannot_read"
+                        | "rest_cannot_read_post"
+                        | "rest_post_invalid_id"
+                        | "rest_post_incorrect_password"
+                        | "rest_post_invalid_parent"
+                        | "rest_comment_invalid_id"
+                        | "rest_term_invalid"
+                        | "rest_user_invalid_id"
+                        | "rest_widget_type_invalid"
+                        | "rest_block_type_invalid"
+                        | "rest_user_cannot_view"
+                        | "rest_cannot_view"
+                        | "rest_forbidden_orderby"
+                        | "rest_forbidden_who"
+                        | "rest_forbidden"
+                        | "rest_cannot_read_status"
+                        | "rest_status_invalid"
+                        | "rest_block_type_cannot_view"
+                        | "rest_cannot_view_active_theme"
+                        | "rest_cannot_view_themes"
+                        | "rest_cannot_view_plugins"
+                        | "rest_cannot_manage_widgets"
+                        | "rest_cannot_manage_templates"
+                        | "rest_cannot_read_global_styles"
+                        | "rest_block_directory_cannot_view"
+                        | "rest_pattern_directory_cannot_view"
+                ))
     }
 
     /// Marks an answer of `rest_pre_dispatch` (no `Allow` header).
@@ -187,7 +224,10 @@ impl RestError {
         if let Some(p) = &self.param {
             let message = p.message.render(site);
             data.insert("params".into(), json!({ p.param.as_str(): message }));
-            data.insert("details".into(), json!({ p.param.as_str(): {"code": p.code, "message": message, "data": p.data} }));
+            data.insert(
+                "details".into(),
+                json!({ p.param.as_str(): {"code": p.code, "message": message, "data": p.data} }),
+            );
         }
         json!({"code": self.code, "message": self.message.render(site), "data": Value::Object(data)})
     }

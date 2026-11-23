@@ -29,7 +29,9 @@ impl BlockThemePort for BluehostBlueprint {
     /// render; they are left out.
     fn block_stylesheets(&self, template_dir: &Path) -> Vec<BlockStylesheet> {
         let dir = template_dir.join("assets").join("block-styles");
-        let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Vec::new();
+        };
         let mut names: Vec<String> = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
@@ -52,8 +54,17 @@ impl BlockThemePort for BluehostBlueprint {
                     filename.clone()
                 };
                 let min = format!("assets/block-styles/{filename}.min.css");
-                let path = if rustpress_core::files::is_file(&template_dir.join(&min)) { min } else { format!("assets/block-styles/{filename}.css") };
-                Some(BlockStylesheet { block, handle: format!("nfd-block-{filename}"), path, theme_version: false })
+                let path = if rustpress_core::files::is_file(&template_dir.join(&min)) {
+                    min
+                } else {
+                    format!("assets/block-styles/{filename}.css")
+                };
+                Some(BlockStylesheet {
+                    block,
+                    handle: format!("nfd-block-{filename}"),
+                    path,
+                    theme_version: false,
+                })
             })
             .collect()
     }
@@ -61,13 +72,21 @@ impl BlockThemePort for BluehostBlueprint {
     /// `Back_Compat::enqueue_frontend_assets()`: the styles for sites that used YITH Wonder before, while its theme
     /// mods exist (`get_option( 'theme_mods_yith-wonder' )` is truthy).
     fn styles(&self, ctx: &ScriptContext<'_>) -> Vec<Asset> {
-        if !ctx.site.options.value("theme_mods_yith-wonder").is_some_and(|v| php_truthy(&v)) {
+        if !ctx
+            .site
+            .options
+            .value("theme_mods_yith-wonder")
+            .is_some_and(|v| php_truthy(&v))
+        {
             return Vec::new();
         }
-        let file = ["assets/back-compat/yith-wonder.min.css", "assets/back-compat/yith-wonder.css"]
-            .into_iter()
-            .find(|f| rustpress_core::files::is_file(&ctx.template_dir.join(f)))
-            .unwrap_or("assets/back-compat/yith-wonder.css");
+        let file = [
+            "assets/back-compat/yith-wonder.min.css",
+            "assets/back-compat/yith-wonder.css",
+        ]
+        .into_iter()
+        .find(|f| rustpress_core::files::is_file(&ctx.template_dir.join(f)))
+        .unwrap_or("assets/back-compat/yith-wonder.css");
         vec![Asset {
             handle: "bluehost-blueprint-legacy-yith-wonder".to_owned(),
             src: format!("{}/{file}", ctx.template_uri),

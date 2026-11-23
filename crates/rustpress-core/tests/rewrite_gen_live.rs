@@ -14,16 +14,27 @@ use rustpress_db::Db;
 
 #[tokio::test]
 async fn generated_rules_equal_the_stored_ones() {
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let Ok(db) = Db::connect(&url, "wp_").await else {
         eprintln!("no test database, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
     let site = Site::load(db).await.unwrap();
-    let stored = site.options.get("rewrite_rules").map(str::to_owned).unwrap_or_default();
+    let stored = site
+        .options
+        .get("rewrite_rules")
+        .map(str::to_owned)
+        .unwrap_or_default();
     let structure = site.options.string("permalink_structure", "");
-    let mut old_front = structure.find('%').map_or("", |at| &structure[..at]).to_owned();
+    let mut old_front = structure
+        .find('%')
+        .map_or("", |at| &structure[..at])
+        .to_owned();
     let mut types = site.types.clone();
     if let Ok(path) = std::env::var("RUSTPRESS_BASE_RULES") {
         let base = rustpress_phpser::unserialize(std::fs::read(path).unwrap().as_slice()).unwrap();
@@ -42,18 +53,24 @@ async fn generated_rules_equal_the_stored_ones() {
         category_base: &site.options.string("category_base", ""),
         tag_base: &site.options.string("tag_base", ""),
         page_on_front: site.options.u64("page_on_front", 0),
-        home_at_root: home.split_once("://").is_none_or(|(_, rest)| !rest.contains('/')),
+        home_at_root: home
+            .split_once("://")
+            .is_none_or(|(_, rest)| !rest.contains('/')),
         blog_public: site.options.string("blog_public", "1") != "0",
         types: &types,
     };
     let generated = rewrite_rules(&input);
-    let expected = rustpress_phpser::unserialize(stored.as_bytes()).unwrap_or(rustpress_phpser::Value::Array(Vec::new()));
+    let expected = rustpress_phpser::unserialize(stored.as_bytes())
+        .unwrap_or(rustpress_phpser::Value::Array(Vec::new()));
     let expected: Vec<(String, String)> = expected
         .as_array()
         .unwrap_or_default()
         .iter()
         .map(|(k, v)| match k {
-            rustpress_phpser::Key::Str(s) => (String::from_utf8_lossy(s).into_owned(), v.as_str().unwrap().to_owned()),
+            rustpress_phpser::Key::Str(s) => (
+                String::from_utf8_lossy(s).into_owned(),
+                v.as_str().unwrap().to_owned(),
+            ),
             rustpress_phpser::Key::Int(i) => (i.to_string(), v.as_str().unwrap().to_owned()),
         })
         .collect();

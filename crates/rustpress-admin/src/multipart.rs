@@ -32,7 +32,13 @@ pub fn boundary(content_type: &str) -> Option<String> {
 /// The parameters of a `Content-Disposition` header (`form-data; name="a"; filename="b"`), names lowercased. Quoted
 /// values may contain `;` and `\"`.
 fn disposition_params(headers: &str) -> Vec<(String, String)> {
-    let Some(line) = headers.lines().find(|l| l.trim_start().to_ascii_lowercase().starts_with("content-disposition:")) else { return Vec::new() };
+    let Some(line) = headers.lines().find(|l| {
+        l.trim_start()
+            .to_ascii_lowercase()
+            .starts_with("content-disposition:")
+    }) else {
+        return Vec::new();
+    };
     let value = line.split_once(':').map_or("", |(_, v)| v);
     let mut params = Vec::new();
     let mut chars = value.chars().peekable();
@@ -64,7 +70,9 @@ fn disposition_params(headers: &str) -> Vec<(String, String)> {
                 chars.next();
                 while let Some(c) = chars.next() {
                     match c {
-                        '\\' if chars.peek() == Some(&'"') || chars.peek() == Some(&'\\') => val.push(chars.next().unwrap_or(c)),
+                        '\\' if chars.peek() == Some(&'"') || chars.peek() == Some(&'\\') => {
+                            val.push(chars.next().unwrap_or(c))
+                        }
                         '"' => break,
                         _ => val.push(c),
                     }
@@ -89,7 +97,10 @@ fn disposition_params(headers: &str) -> Vec<(String, String)> {
 }
 
 fn header_param(headers: &str, name: &str) -> Option<String> {
-    disposition_params(headers).into_iter().find(|(n, _)| n == name).map(|(_, v)| v)
+    disposition_params(headers)
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v)
 }
 
 /// Splits a body into `(fields, files)`.
@@ -110,7 +121,10 @@ pub fn parse(boundary: &str, body: &[u8]) -> (Vec<(String, String)>, Vec<FilePar
             position += 2;
         }
         // The headers end with an empty line (CRLF, or LF from a lax client).
-        let (header_end, gap) = match (find(body, b"\r\n\r\n", position), find(body, b"\n\n", position)) {
+        let (header_end, gap) = match (
+            find(body, b"\r\n\r\n", position),
+            find(body, b"\n\n", position),
+        ) {
             (Some(crlf), Some(lf)) if lf + 1 < crlf => (lf, 2),
             (Some(crlf), _) => (crlf, 4),
             (None, Some(lf)) => (lf, 2),
@@ -118,16 +132,30 @@ pub fn parse(boundary: &str, body: &[u8]) -> (Vec<(String, String)>, Vec<FilePar
         };
         let headers = String::from_utf8_lossy(&body[position..header_end]).into_owned();
         let data_start = header_end + gap;
-        let Some(next) = find(body, &delimiter, data_start) else { break };
+        let Some(next) = find(body, &delimiter, data_start) else {
+            break;
+        };
         // The data ends before the CRLF in front of the next delimiter.
         let data_end = next.saturating_sub(2).max(data_start);
         let data = &body[data_start..data_end];
         let name = header_param(&headers, "name").unwrap_or_default();
         match header_param(&headers, "filename") {
             Some(filename) => {
-                let content_type = headers.lines().find_map(|l| l.to_lowercase().strip_prefix("content-type:").map(|v| v.trim().to_owned())).unwrap_or_default();
+                let content_type = headers
+                    .lines()
+                    .find_map(|l| {
+                        l.to_lowercase()
+                            .strip_prefix("content-type:")
+                            .map(|v| v.trim().to_owned())
+                    })
+                    .unwrap_or_default();
                 if !filename.is_empty() {
-                    files.push(FilePart { field: name, filename, content_type, bytes: data.to_vec() });
+                    files.push(FilePart {
+                        field: name,
+                        filename,
+                        content_type,
+                        bytes: data.to_vec(),
+                    });
                 }
             }
             None => fields.push((name, String::from_utf8_lossy(data).into_owned())),
@@ -146,10 +174,19 @@ mod tests {
 
     #[test]
     fn boundary_of_a_header_with_other_letters() {
-        assert_eq!(boundary("multipart/form-data; boundary=XX").as_deref(), Some("XX"));
-        assert_eq!(boundary("Multipart/Form-Data; charset=x; Boundary=\"a b\"; x=1").as_deref(), Some("a b"));
+        assert_eq!(
+            boundary("multipart/form-data; boundary=XX").as_deref(),
+            Some("XX")
+        );
+        assert_eq!(
+            boundary("Multipart/Form-Data; charset=x; Boundary=\"a b\"; x=1").as_deref(),
+            Some("a b")
+        );
         // `İ` is longer in lowercase: the offset must still be one of the header itself.
-        assert_eq!(boundary("multipart/form-data; x=İİİİ; boundary=é").as_deref(), Some("é"));
+        assert_eq!(
+            boundary("multipart/form-data; x=İİİİ; boundary=é").as_deref(),
+            Some("é")
+        );
         assert_eq!(boundary("text/plain; boundary=XX"), None);
     }
 
@@ -178,7 +215,10 @@ mod tests {
 
     #[test]
     fn boundary_is_read_from_the_header() {
-        assert_eq!(boundary("multipart/form-data; boundary=----abc").as_deref(), Some("----abc"));
+        assert_eq!(
+            boundary("multipart/form-data; boundary=----abc").as_deref(),
+            Some("----abc")
+        );
         assert_eq!(boundary("application/x-www-form-urlencoded"), None);
     }
 }

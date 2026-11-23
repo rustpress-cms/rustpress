@@ -12,11 +12,13 @@ use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
 const EXTENSIONS: &[&str] = &[
-    "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp", "woff", "woff2", "ttf", "otf", "eot", "txt", "pdf",
-    "mp3", "m4a", "ogg", "wav", "mp4", "m4v", "webm", "mov", "flac", "aac", "wma", "mpg", "mpeg", "avi", "wmv", "3gp", "vtt", "srt",
+    "css", "js", "mjs", "map", "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp",
+    "woff", "woff2", "ttf", "otf", "eot", "txt", "pdf", "mp3", "m4a", "ogg", "wav", "mp4", "m4v",
+    "webm", "mov", "flac", "aac", "wma", "mpg", "mpeg", "avi", "wmv", "3gp", "vtt", "srt",
     // What the media library takes besides images and media: documents, archives (also the personal data exports).
-    "zip", "gz", "tar", "tgz", "bz2", "7z", "rar", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "csv", "rtf", "epub",
-    "ics", "heic", "heif", "tif", "tiff", "jfif", "apng",
+    "zip", "gz", "tar", "tgz", "bz2", "7z", "rar", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp", "csv", "rtf", "epub", "ics", "heic", "heif", "tif", "tiff", "jfif",
+    "apng",
 ];
 
 /// Whether a request path (percent-decoded, starting with `/`) names a servable file location.
@@ -25,10 +27,17 @@ pub fn is_static_candidate(path: &str) -> bool {
     if relative.is_empty() || relative.ends_with('/') {
         return false;
     }
-    if relative.split('/').any(|segment| segment.is_empty() || segment.starts_with('.') || segment.contains('\\') || segment.contains('\0')) {
+    if relative.split('/').any(|segment| {
+        segment.is_empty()
+            || segment.starts_with('.')
+            || segment.contains('\\')
+            || segment.contains('\0')
+    }) {
         return false;
     }
-    let Some((_, extension)) = relative.rsplit_once('.') else { return false };
+    let Some((_, extension)) = relative.rsplit_once('.') else {
+        return false;
+    };
     let top_level = !relative.contains('/');
     // Documents in the root (`readme.html`, site verification files) are served as they are.
     if top_level && matches!(extension.to_ascii_lowercase().as_str(), "html" | "htm") {
@@ -37,7 +46,10 @@ pub fn is_static_candidate(path: &str) -> bool {
     if !EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str()) {
         return false;
     }
-    top_level || relative.starts_with("wp-content/") || relative.starts_with("wp-includes/") || relative.starts_with("wp-admin/")
+    top_level
+        || relative.starts_with("wp-content/")
+        || relative.starts_with("wp-includes/")
+        || relative.starts_with("wp-admin/")
 }
 
 #[derive(Clone)]
@@ -49,7 +61,10 @@ pub struct Statics {
 impl Statics {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
-        Self { service: ServeDir::new(&root).append_index_html_on_directories(false), root }
+        Self {
+            service: ServeDir::new(&root).append_index_html_on_directories(false),
+            root,
+        }
     }
 
     /// Serves the file if it exists; `None` lets the request continue to WordPress routing.
@@ -60,7 +75,14 @@ impl Statics {
         }
         let etag = self.etag(&decoded);
         if let Some(etag) = &etag
-            && request.headers().get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()).is_some_and(|sent| sent.split(',').any(|candidate| candidate.trim().trim_start_matches("W/") == etag))
+            && request
+                .headers()
+                .get(header::IF_NONE_MATCH)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|sent| {
+                    sent.split(',')
+                        .any(|candidate| candidate.trim().trim_start_matches("W/") == etag)
+                })
         {
             let mut response = Response::new(Body::empty());
             *response.status_mut() = axum::http::StatusCode::NOT_MODIFIED;
@@ -72,7 +94,10 @@ impl Statics {
         let response = self.service.clone().oneshot(request).await.ok()?;
         let mut response = response.map(Body::new);
         if response.status().is_success() {
-            response.headers_mut().entry(header::CACHE_CONTROL).or_insert(HeaderValue::from_static("public, max-age=86400"));
+            response
+                .headers_mut()
+                .entry(header::CACHE_CONTROL)
+                .or_insert(HeaderValue::from_static("public, max-age=86400"));
             if let Some(value) = etag.as_deref().and_then(|e| HeaderValue::from_str(e).ok()) {
                 response.headers_mut().insert(header::ETAG, value);
             }
@@ -84,7 +109,12 @@ impl Statics {
     /// microseconds, both in hex, so clients and caches see what the reference server sent.
     fn etag(&self, decoded: &str) -> Option<String> {
         let metadata = std::fs::metadata(self.root.join(decoded.trim_start_matches('/'))).ok()?;
-        let micros = metadata.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_micros();
+        let micros = metadata
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_micros();
         Some(format!("\"{:x}-{:x}\"", metadata.len(), micros))
     }
 
@@ -117,8 +147,12 @@ mod tests {
 
     #[test]
     fn only_plain_assets_under_known_directories() {
-        assert!(is_static_candidate("/wp-content/themes/twentytwentyfive/style.css"));
-        assert!(is_static_candidate("/wp-includes/js/dist/script-modules/interactivity/index.min.js"));
+        assert!(is_static_candidate(
+            "/wp-content/themes/twentytwentyfive/style.css"
+        ));
+        assert!(is_static_candidate(
+            "/wp-includes/js/dist/script-modules/interactivity/index.min.js"
+        ));
         assert!(is_static_candidate("/wp-content/uploads/2024/01/photo.JPG"));
         assert!(is_static_candidate("/favicon.ico"));
         assert!(is_static_candidate("/wp-admin/css/login.min.css"));
@@ -148,7 +182,10 @@ mod tests {
     #[test]
     fn percent_decoding() {
         assert_eq!(percent_decode("/a%20b.png").as_deref(), Some("/a b.png"));
-        assert_eq!(percent_decode("/%2e%2e/x.png").as_deref(), Some("/../x.png"));
+        assert_eq!(
+            percent_decode("/%2e%2e/x.png").as_deref(),
+            Some("/../x.png")
+        );
         assert_eq!(percent_decode("/bad%zz"), None);
     }
 }

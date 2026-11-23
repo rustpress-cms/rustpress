@@ -41,11 +41,18 @@ pub struct Report {
 }
 
 /// Attaches the documented deviations to the raw differences.
-pub fn classify(differences: Vec<Difference>, path: &str, theme: &str, known: &Known) -> Vec<Finding> {
+pub fn classify(
+    differences: Vec<Difference>,
+    path: &str,
+    theme: &str,
+    known: &Known,
+) -> Vec<Finding> {
     differences
         .into_iter()
         .map(|difference| {
-            let reason = known.matching(path, &difference.aspect, theme).map(|d| d.reason.clone());
+            let reason = known
+                .matching(path, &difference.aspect, theme)
+                .map(|d| d.reason.clone());
             Finding { difference, reason }
         })
         .collect()
@@ -69,16 +76,31 @@ impl Report {
     pub fn to_markdown(&self, known: &Known) -> String {
         let mut out = String::new();
         let _ = writeln!(out, "# Compatibility report: {}\n", self.label);
-        let _ = writeln!(out, "As of: {} · Reference: WordPress {} · Theme: `{}`\n", self.generated, self.wp_version, self.label);
+        let _ = writeln!(
+            out,
+            "As of: {} · Reference: WordPress {} · Theme: `{}`\n",
+            self.generated, self.wp_version, self.label
+        );
         let total = self.outcomes.len();
         let identical = self.outcomes.iter().filter(|o| o.is_identical()).count();
         let unexpected = self.unexpected_count();
-        let _ = writeln!(out, "**{total} URLs compared: {identical} identical, {} with known differences, {unexpected} with unexpected differences.**\n", total - identical - unexpected);
+        let _ = writeln!(
+            out,
+            "**{total} URLs compared: {identical} identical, {} with known differences, {unexpected} with unexpected differences.**\n",
+            total - identical - unexpected
+        );
 
-        let _ = writeln!(out, "| Kind | URLs | identical | known | unexpected | Median RustPress | Median WordPress |");
+        let _ = writeln!(
+            out,
+            "| Kind | URLs | identical | known | unexpected | Median RustPress | Median WordPress |"
+        );
         let _ = writeln!(out, "|---|---:|---:|---:|---:|---:|---:|");
         for kind in Kind::ALL {
-            let of_kind: Vec<&Outcome> = self.outcomes.iter().filter(|o| o.target.kind == kind).collect();
+            let of_kind: Vec<&Outcome> = self
+                .outcomes
+                .iter()
+                .filter(|o| o.target.kind == kind)
+                .collect();
             if of_kind.is_empty() {
                 continue;
             }
@@ -86,7 +108,13 @@ impl Report {
             let bad = of_kind.iter().filter(|o| o.is_unexpected()).count();
             let ours = median(of_kind.iter().map(|o| o.ours_ms).collect());
             let theirs = median(of_kind.iter().map(|o| o.theirs_ms).collect());
-            let _ = writeln!(out, "| {} | {} | {same} | {} | {bad} | {ours} ms | {theirs} ms |", kind.label(), of_kind.len(), of_kind.len() - same - bad);
+            let _ = writeln!(
+                out,
+                "| {} | {} | {same} | {} | {bad} | {ours} ms | {theirs} ms |",
+                kind.label(),
+                of_kind.len(),
+                of_kind.len() - same - bad
+            );
         }
 
         let _ = writeln!(out, "\n## Unexpected differences\n");
@@ -94,12 +122,25 @@ impl Report {
             let _ = writeln!(out, "None.\n");
         }
         for outcome in self.unexpected() {
-            let _ = writeln!(out, "### `{}` ({})\n", outcome.target.path, outcome.target.kind.label());
+            let _ = writeln!(
+                out,
+                "### `{}` ({})\n",
+                outcome.target.path,
+                outcome.target.kind.label()
+            );
             for finding in outcome.findings.iter().filter(|f| f.reason.is_none()) {
                 if finding.difference.detail.contains('\n') {
-                    let _ = writeln!(out, "- **{}**\n\n```text\n{}\n```\n", finding.difference.aspect, finding.difference.detail);
+                    let _ = writeln!(
+                        out,
+                        "- **{}**\n\n```text\n{}\n```\n",
+                        finding.difference.aspect, finding.difference.detail
+                    );
                 } else {
-                    let _ = writeln!(out, "- **{}**: {}", finding.difference.aspect, finding.difference.detail);
+                    let _ = writeln!(
+                        out,
+                        "- **{}**: {}",
+                        finding.difference.aspect, finding.difference.detail
+                    );
                 }
             }
             let _ = writeln!(out);
@@ -111,7 +152,8 @@ impl Report {
             for finding in &outcome.findings {
                 if let Some(reason) = &finding.reason {
                     let list = seen.entry(reason.as_str()).or_default();
-                    let entry = format!("`{}` ({})", outcome.target.path, finding.difference.aspect);
+                    let entry =
+                        format!("`{}` ({})", outcome.target.path, finding.difference.aspect);
                     if !list.contains(&entry) {
                         list.push(entry);
                     }
@@ -124,10 +166,25 @@ impl Report {
         }
         for (reason, urls) in &seen {
             let shown: Vec<&String> = urls.iter().take(12).collect();
-            let more = if urls.len() > shown.len() { format!(" … and {} more", urls.len() - shown.len()) } else { String::new() };
-            let _ = writeln!(out, "- **{reason}**: {}{more}", shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+            let more = if urls.len() > shown.len() {
+                format!(" … and {} more", urls.len() - shown.len())
+            } else {
+                String::new()
+            };
+            let _ = writeln!(
+                out,
+                "- **{reason}**: {}{more}",
+                shown
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
-        let unused: Vec<_> = known.entries().filter(|d| !seen.contains_key(d.reason.as_str())).collect();
+        let unused: Vec<_> = known
+            .entries()
+            .filter(|d| !seen.contains_key(d.reason.as_str()))
+            .collect();
         if !unused.is_empty() {
             let _ = writeln!(out, "\nListed, but not seen in this run:\n");
             for d in unused {
@@ -143,11 +200,25 @@ mod tests {
     use super::*;
 
     fn outcome(path: &str, kind: Kind, findings: Vec<Finding>) -> Outcome {
-        Outcome { target: Target { path: path.into(), kind }, ours_ms: 10, theirs_ms: 40, findings }
+        Outcome {
+            target: Target {
+                path: path.into(),
+                kind,
+            },
+            ours_ms: 10,
+            theirs_ms: 40,
+            findings,
+        }
     }
 
     fn finding(aspect: &str, reason: Option<&str>) -> Finding {
-        Finding { difference: Difference { aspect: aspect.into(), detail: "x".into() }, reason: reason.map(str::to_owned) }
+        Finding {
+            difference: Difference {
+                aspect: aspect.into(),
+                detail: "x".into(),
+            },
+            reason: reason.map(str::to_owned),
+        }
     }
 
     #[test]
@@ -155,7 +226,11 @@ mod tests {
         assert!(outcome("/", Kind::Page, vec![]).is_identical());
         let known = outcome("/", Kind::Page, vec![finding("status", Some("why"))]);
         assert!(!known.is_identical() && !known.is_unexpected());
-        let bad = outcome("/", Kind::Page, vec![finding("status", Some("why")), finding("body", None)]);
+        let bad = outcome(
+            "/",
+            Kind::Page,
+            vec![finding("status", Some("why")), finding("body", None)],
+        );
         assert!(bad.is_unexpected());
     }
 
@@ -167,8 +242,22 @@ mod tests {
             generated: "2026-10-24".into(),
             outcomes: vec![
                 outcome("/", Kind::Page, vec![]),
-                outcome("/login", Kind::Other, vec![finding("status", Some("no sign-in"))]),
-                outcome("/kaputt/", Kind::Page, vec![Finding { difference: Difference { aspect: "body".into(), detail: "a\nb".into() }, reason: None }]),
+                outcome(
+                    "/login",
+                    Kind::Other,
+                    vec![finding("status", Some("no sign-in"))],
+                ),
+                outcome(
+                    "/kaputt/",
+                    Kind::Page,
+                    vec![Finding {
+                        difference: Difference {
+                            aspect: "body".into(),
+                            detail: "a\nb".into(),
+                        },
+                        reason: None,
+                    }],
+                ),
             ],
         };
         let md = report.to_markdown(&Known::default());

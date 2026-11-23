@@ -40,7 +40,10 @@ fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
 fn cleanup(s: &str) -> String {
     static COMMENT: OnceLock<Regex> = OnceLock::new();
     static SPACES: OnceLock<Regex> = OnceLock::new();
-    let s = s.replace(['\r', '\n'], "").replace('\t', " ").replace('"', "'");
+    let s = s
+        .replace(['\r', '\n'], "")
+        .replace('\t', " ")
+        .replace('"', "'");
     let s = re(&COMMENT, r"/\*.*?\*/").replace_all(&s, "");
     re(&SPACES, r"\s\s+").replace_all(&s, " ").trim().to_owned()
 }
@@ -77,7 +80,11 @@ fn properties(text: &str, specificity: Specificity) -> Vec<Property> {
         .filter_map(|p| {
             let (name, value) = p.split_once(':')?;
             let value = trim(value);
-            (!value.is_empty()).then(|| Property { name: trim(name).to_owned(), value: value.to_owned(), specificity })
+            (!value.is_empty()).then(|| Property {
+                name: trim(name).to_owned(),
+                value: value.to_owned(),
+                specificity,
+            })
         })
         .collect()
 }
@@ -93,7 +100,12 @@ fn specificity(selector: &str) -> Specificity {
     )
     .find_iter(selector)
     .count();
-    let c = re(&C, r"(?i)((^|[\s+>~]+)[A-Za-z0-9_]+|:{1,2}(after|before|first-letter|first-line|selection))").find_iter(selector).count();
+    let c = re(
+        &C,
+        r"(?i)((^|[\s+>~]+)[A-Za-z0-9_]+|:{1,2}(after|before|first-letter|first-line|selection))",
+    )
+    .find_iter(selector)
+    .count();
     (a, b, c)
 }
 
@@ -111,7 +123,12 @@ fn rules(css: &str) -> Vec<Rule> {
         for selector in trim(chunks[0]).split(',') {
             let selector = trim(selector);
             let spec = specificity(selector);
-            out.push(Rule { selector: selector.to_owned(), properties: properties(body, spec), specificity: spec, order: i + 1 });
+            out.push(Rule {
+                selector: selector.to_owned(),
+                properties: properties(body, spec),
+                specificity: spec,
+                order: i + 1,
+            });
         }
     }
     out
@@ -163,7 +180,11 @@ fn ident(s: &str, i: &mut usize) -> Option<String> {
 
 /// The compound selector at `i`; `None` for a selector that Symfony's converter cannot translate.
 fn compound(s: &str, i: &mut usize, negated: bool) -> Option<Compound> {
-    let mut c = Compound { element: None, conditions: Vec::new(), combinator: ' ' };
+    let mut c = Compound {
+        element: None,
+        conditions: Vec::new(),
+        combinator: ' ',
+    };
     let b = s.as_bytes();
     let mut any = false;
     if *i < s.len() && b[*i] == b'*' {
@@ -191,11 +212,17 @@ fn compound(s: &str, i: &mut usize, negated: bool) -> Option<Compound> {
                 let found = ops.iter().find_map(|op| inner.find(op).map(|p| (p, *op)));
                 c.conditions.push(match found {
                     Some((p, op)) => {
-                        let value = inner[p + op.len()..].trim().trim_matches(['\'', '"']).to_owned();
+                        let value = inner[p + op.len()..]
+                            .trim()
+                            .trim_matches(['\'', '"'])
+                            .to_owned();
                         if op == "!=" {
                             return None;
                         }
-                        Condition::Attr(inner[..p].trim().to_ascii_lowercase(), Some((op.to_owned(), value)))
+                        Condition::Attr(
+                            inner[..p].trim().to_ascii_lowercase(),
+                            Some((op.to_owned(), value)),
+                        )
                     }
                     None => Condition::Attr(inner.to_ascii_lowercase(), None),
                 });
@@ -276,7 +303,12 @@ fn parse_selector(s: &str) -> Option<Vec<Compound>> {
 }
 
 fn element_children(dom: &Dom, parent: usize) -> Vec<usize> {
-    dom.nodes[parent].children.iter().copied().filter(|&c| dom.name(c).is_some()).collect()
+    dom.nodes[parent]
+        .children
+        .iter()
+        .copied()
+        .filter(|&c| dom.name(c).is_some())
+        .collect()
 }
 
 fn parent_element(dom: &Dom, id: usize) -> Option<usize> {
@@ -284,17 +316,23 @@ fn parent_element(dom: &Dom, id: usize) -> Option<usize> {
 }
 
 fn matches_compound(dom: &Dom, id: usize, c: &Compound) -> bool {
-    let Some(name) = dom.name(id) else { return false };
+    let Some(name) = dom.name(id) else {
+        return false;
+    };
     if c.element.as_deref().is_some_and(|e| e != name) {
         return false;
     }
-    c.conditions.iter().all(|cond| matches_condition(dom, id, name, cond))
+    c.conditions
+        .iter()
+        .all(|cond| matches_condition(dom, id, name, cond))
 }
 
 fn matches_condition(dom: &Dom, id: usize, name: &str, cond: &Condition) -> bool {
     let siblings = || parent_element(dom, id).map(|p| element_children(dom, p));
     match cond {
-        Condition::Class(class) => dom.attr(id, "class").is_some_and(|v| v.split([' ', '\t', '\n', '\r']).any(|t| t == class)),
+        Condition::Class(class) => dom
+            .attr(id, "class")
+            .is_some_and(|v| v.split([' ', '\t', '\n', '\r']).any(|t| t == class)),
         Condition::Id(value) => dom.attr(id, "id") == Some(value.as_str()),
         Condition::Attr(attr, test) => match (dom.attr(id, attr), test) {
             (None, _) => false,
@@ -315,8 +353,22 @@ fn matches_condition(dom: &Dom, id: usize, name: &str, cond: &Condition) -> bool
         Condition::OnlyChild => siblings().is_some_and(|s| s.len() == 1),
         Condition::FirstOfType | Condition::LastOfType | Condition::OnlyOfType => {
             let same: Vec<usize> = match cond {
-                Condition::OnlyOfType => dom.nodes[id].parent.map(|p| dom.nodes[p].children.iter().copied().filter(|&c| dom.name(c) == Some(name)).collect()).unwrap_or_default(),
-                _ => siblings().unwrap_or_default().into_iter().filter(|&c| dom.name(c) == Some(name)).collect(),
+                Condition::OnlyOfType => dom.nodes[id]
+                    .parent
+                    .map(|p| {
+                        dom.nodes[p]
+                            .children
+                            .iter()
+                            .copied()
+                            .filter(|&c| dom.name(c) == Some(name))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                _ => siblings()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|&c| dom.name(c) == Some(name))
+                    .collect(),
             };
             match cond {
                 Condition::FirstOfType => same.first() == Some(&id),
@@ -324,12 +376,17 @@ fn matches_condition(dom: &Dom, id: usize, name: &str, cond: &Condition) -> bool
                 _ => same.len() == 1,
             }
         }
-        Condition::Empty => dom.nodes[id].children.iter().all(|&c| matches!(&dom.nodes[c].kind, dom::Kind::Comment(_)) || matches!(&dom.nodes[c].kind, dom::Kind::Text(t) if t.is_empty())),
+        Condition::Empty => dom.nodes[id].children.iter().all(|&c| {
+            matches!(&dom.nodes[c].kind, dom::Kind::Comment(_))
+                || matches!(&dom.nodes[c].kind, dom::Kind::Text(t) if t.is_empty())
+        }),
         Condition::Root => parent_element(dom, id).is_none(),
         Condition::Link => dom.attr(id, "href").is_some() && matches!(name, "a" | "link" | "area"),
         Condition::Checked => {
             (dom.attr(id, "selected").is_some() && name == "option")
-                || (dom.attr(id, "checked").is_some() && matches!(name, "input" | "command") && matches!(dom.attr(id, "type"), Some("checkbox" | "radio")))
+                || (dom.attr(id, "checked").is_some()
+                    && matches!(name, "input" | "command")
+                    && matches!(dom.attr(id, "type"), Some("checkbox" | "radio")))
         }
         Condition::Not(inner) => {
             if inner.conditions.is_empty() && inner.element.is_none() {
@@ -342,7 +399,9 @@ fn matches_condition(dom: &Dom, id: usize, name: &str, cond: &Condition) -> bool
 
 /// Whether the element matches the whole selector, from its last compound back.
 fn matches(dom: &Dom, id: usize, selector: &[Compound]) -> bool {
-    let Some((last, rest)) = selector.split_last() else { return false };
+    let Some((last, rest)) = selector.split_last() else {
+        return false;
+    };
     if !matches_compound(dom, id, last) {
         return false;
     }
@@ -351,8 +410,12 @@ fn matches(dom: &Dom, id: usize, selector: &[Compound]) -> bool {
     }
     match last.combinator {
         '>' => parent_element(dom, id).is_some_and(|p| matches(dom, p, rest)),
-        '+' => previous_elements(dom, id).first().is_some_and(|&p| matches(dom, p, rest)),
-        '~' => previous_elements(dom, id).into_iter().any(|p| matches(dom, p, rest)),
+        '+' => previous_elements(dom, id)
+            .first()
+            .is_some_and(|&p| matches(dom, p, rest)),
+        '~' => previous_elements(dom, id)
+            .into_iter()
+            .any(|p| matches(dom, p, rest)),
         _ => {
             let mut cur = parent_element(dom, id);
             while let Some(p) = cur {
@@ -368,10 +431,17 @@ fn matches(dom: &Dom, id: usize, selector: &[Compound]) -> bool {
 
 /// The element siblings before `id`, the nearest first.
 fn previous_elements(dom: &Dom, id: usize) -> Vec<usize> {
-    let Some(parent) = dom.nodes[id].parent else { return Vec::new() };
+    let Some(parent) = dom.nodes[id].parent else {
+        return Vec::new();
+    };
     let siblings = &dom.nodes[parent].children;
     let pos = siblings.iter().position(|&c| c == id).unwrap_or(0);
-    siblings[..pos].iter().rev().copied().filter(|&c| dom.name(c).is_some()).collect()
+    siblings[..pos]
+        .iter()
+        .rev()
+        .copied()
+        .filter(|&c| dom.name(c).is_some())
+        .collect()
 }
 
 /// `calculatePropertiesToBeApplied()`.
@@ -383,7 +453,8 @@ fn apply(properties: &[Property], existing: &mut Vec<Property>) {
                 if old.important() && !property.important() {
                     continue;
                 }
-                let overrule = (!old.important() && property.important()) || old.specificity <= property.specificity;
+                let overrule = (!old.important() && property.important())
+                    || old.specificity <= property.specificity;
                 if overrule {
                     existing.remove(pos);
                     existing.push(property.clone());
@@ -398,11 +469,17 @@ fn apply(properties: &[Property], existing: &mut Vec<Property>) {
 pub fn convert(html: &str, css: &str) -> String {
     let mut dom = dom::parse(html, dom::Options::default());
     let mut rules = rules(css);
-    rules.sort_by(|a, b| a.specificity.cmp(&b.specificity).then(a.order.cmp(&b.order)));
+    rules.sort_by(|a, b| {
+        a.specificity
+            .cmp(&b.specificity)
+            .then(a.order.cmp(&b.order))
+    });
     let elements = dom.elements();
     let mut storage: Vec<(usize, Vec<Property>)> = Vec::new();
     for rule in &rules {
-        let Some(selector) = parse_selector(&rule.selector) else { continue };
+        let Some(selector) = parse_selector(&rule.selector) else {
+            continue;
+        };
         for &id in &elements {
             if !matches(&dom, id, &selector) {
                 continue;
@@ -430,12 +507,21 @@ pub fn convert(html: &str, css: &str) -> String {
                 None => own.push(p),
             }
         }
-        let mut list: Vec<&Property> = props.iter().filter(|p| !own.iter().any(|o| o.name == p.name)).collect();
+        let mut list: Vec<&Property> = props
+            .iter()
+            .filter(|p| !own.iter().any(|o| o.name == p.name))
+            .collect();
         list.extend(own.iter());
-        let style = list.iter().map(|p| format!("{}: {};", p.name, p.value)).collect::<Vec<_>>().join(" ");
+        let style = list
+            .iter()
+            .map(|p| format!("{}: {};", p.name, p.value))
+            .collect::<Vec<_>>()
+            .join(" ");
         dom.set_attr(id, "style", &style);
     }
-    let Some(root) = dom.document_element() else { return String::new() };
+    let Some(root) = dom.document_element() else {
+        return String::new();
+    };
     let html = dom.save(root, true);
     let mut doctype = String::new();
     for &c in &dom.nodes[0].children {
@@ -459,19 +545,32 @@ mod tests {
         assert_eq!(specificity("body"), (0, 0, 1));
         assert_eq!(specificity(".content .field-value"), (0, 2, 0));
         assert_eq!(specificity("h1 a:visited"), (0, 1, 2));
-        assert_eq!(specificity("tr:not(.smart-tag)>.field-value span"), (0, 2, 2));
+        assert_eq!(
+            specificity("tr:not(.smart-tag)>.field-value span"),
+            (0, 2, 2)
+        );
         assert_eq!(specificity("#outlook a"), (1, 0, 1));
     }
 
     #[test]
     fn selectors() {
-        let dom = dom::parse("<html><body><table class=\"body x\"><tr class=\"smart-tag\"><td class=\"field-value\"><span>a</span></td><td>b</td></tr></table></body></html>", dom::Options::default());
+        let dom = dom::parse(
+            "<html><body><table class=\"body x\"><tr class=\"smart-tag\"><td class=\"field-value\"><span>a</span></td><td>b</td></tr></table></body></html>",
+            dom::Options::default(),
+        );
         let find = |s: &str| {
             let sel = parse_selector(s).unwrap();
-            dom.elements().into_iter().filter(|&e| matches(&dom, e, &sel)).map(|e| dom.name(e).unwrap().to_owned()).collect::<Vec<_>>()
+            dom.elements()
+                .into_iter()
+                .filter(|&e| matches(&dom, e, &sel))
+                .map(|e| dom.name(e).unwrap().to_owned())
+                .collect::<Vec<_>>()
         };
         assert_eq!(find("table.body"), ["table"]);
-        assert_eq!(find("tr:not(.smart-tag)>.field-value span"), Vec::<String>::new());
+        assert_eq!(
+            find("tr:not(.smart-tag)>.field-value span"),
+            Vec::<String>::new()
+        );
         assert_eq!(find(".body td:last-child"), ["td"]);
         assert_eq!(find("td>*:last-child"), ["span"]);
         assert_eq!(find("a:visited"), Vec::<String>::new());

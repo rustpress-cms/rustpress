@@ -6,7 +6,9 @@ use std::path::Path;
 pub fn text_domain(dir: &Path) -> String {
     let path = dir.join("style.css");
     let head = match rustpress_core::files::read(&path) {
-        Some(text) => String::from_utf8_lossy(&text.as_bytes()[..text.len().min(8192)]).into_owned(),
+        Some(text) => {
+            String::from_utf8_lossy(&text.as_bytes()[..text.len().min(8192)]).into_owned()
+        }
         // Not UTF-8 (or missing): the bytes as they are.
         None => {
             let bytes = rustpress_core::files::read_bytes(&path).unwrap_or_default();
@@ -17,10 +19,16 @@ pub fn text_domain(dir: &Path) -> String {
         .find_map(|line| {
             let line = line.trim().trim_start_matches(['*', '/', '#', '@']).trim();
             let (key, value) = line.split_once(':')?;
-            key.trim().eq_ignore_ascii_case("Text Domain").then(|| value.trim().to_owned())
+            key.trim()
+                .eq_ignore_ascii_case("Text Domain")
+                .then(|| value.trim().to_owned())
         })
         .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+        .unwrap_or_else(|| {
+            dir.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
 }
 
 /// The labels `get_theme_feature_list( false )` has for the tags of `Tags:`.
@@ -62,5 +70,8 @@ pub fn feature_label(tag: &str) -> Option<&'static str> {
         ("right-sidebar", "Right Sidebar"),
         ("wide-blocks", "Wide Blocks"),
     ];
-    FEATURES.iter().find(|(slug, _)| *slug == tag || *slug == tag.to_lowercase()).map(|(_, label)| *label)
+    FEATURES
+        .iter()
+        .find(|(slug, _)| *slug == tag || *slug == tag.to_lowercase())
+        .map(|(_, label)| *label)
 }

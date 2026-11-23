@@ -25,7 +25,10 @@ pub fn parse_config_constants(config_php: &str) -> HashMap<String, String> {
         } else if let Some(double) = caps.get(3) {
             out.insert(name, unescape_double(double.as_str()));
         } else if let (Some(variable), Some(default)) = (caps.get(4), caps.get(5)) {
-            let value = std::env::var(variable.as_str()).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| unescape_single(default.as_str()));
+            let value = std::env::var(variable.as_str())
+                .ok()
+                .filter(|v| !v.is_empty())
+                .unwrap_or_else(|| unescape_single(default.as_str()));
             out.insert(name, value);
         }
     }
@@ -85,7 +88,10 @@ impl Salts {
 
     /// The names of the options that may hold a key or a salt.
     pub fn option_names() -> Vec<String> {
-        let mut names: Vec<String> = ["auth", "secure_auth", "logged_in", "nonce"].iter().flat_map(|s| [format!("{s}_key"), format!("{s}_salt")]).collect();
+        let mut names: Vec<String> = ["auth", "secure_auth", "logged_in", "nonce"]
+            .iter()
+            .flat_map(|s| [format!("{s}_key"), format!("{s}_salt")])
+            .collect();
         names.push("secret_key".to_owned());
         names
     }
@@ -106,7 +112,10 @@ impl Salts {
     }
 
     fn option(&self, name: &str) -> Option<&str> {
-        self.options.get(name).map(String::as_str).filter(|v| !v.is_empty())
+        self.options
+            .get(name)
+            .map(String::as_str)
+            .filter(|v| !v.is_empty())
     }
 
     /// The options `wp_salt()` would have to make up and store for the four cookie and nonce schemes:
@@ -115,14 +124,21 @@ impl Salts {
         let mut names = Vec::new();
         for scheme in ["auth", "secure_auth", "logged_in", "nonce"] {
             for kind in ["key", "salt"] {
-                let constant = format!("{}_{}", scheme.to_ascii_uppercase(), kind.to_ascii_uppercase());
+                let constant = format!(
+                    "{}_{}",
+                    scheme.to_ascii_uppercase(),
+                    kind.to_ascii_uppercase()
+                );
                 let shared = match kind {
                     "key" => self.constant("SECRET_KEY"),
                     _ if scheme == "auth" => self.constant("SECRET_SALT"),
                     _ => None,
                 };
                 let option = format!("{scheme}_{kind}");
-                if self.constant(&constant).is_none() && shared.is_none() && self.option(&option).is_none() {
+                if self.constant(&constant).is_none()
+                    && shared.is_none()
+                    && self.option(&option).is_none()
+                {
                     names.push(option);
                 }
             }
@@ -139,10 +155,18 @@ impl Salts {
     /// one up (and store it).
     pub fn salt(&self, scheme: &str) -> Option<String> {
         let mut key = self.constant("SECRET_KEY").unwrap_or_default().to_owned();
-        let mut salt = if scheme == "auth" { self.constant("SECRET_SALT").unwrap_or_default().to_owned() } else { String::new() };
+        let mut salt = if scheme == "auth" {
+            self.constant("SECRET_SALT").unwrap_or_default().to_owned()
+        } else {
+            String::new()
+        };
         if matches!(scheme, "auth" | "secure_auth" | "logged_in" | "nonce") {
             for kind in ["key", "salt"] {
-                let constant = format!("{}_{}", scheme.to_ascii_uppercase(), kind.to_ascii_uppercase());
+                let constant = format!(
+                    "{}_{}",
+                    scheme.to_ascii_uppercase(),
+                    kind.to_ascii_uppercase()
+                );
                 let slot = if kind == "key" { &mut key } else { &mut salt };
                 if let Some(value) = self.constant(&constant) {
                     *slot = value.to_owned();
@@ -170,20 +194,29 @@ pub fn generate_salt() -> String {
     use rand::Rng;
     let alphabet: Vec<char> = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_ []{}<>~`+=,.;:/?|".chars().collect();
     let mut rng = rand::rng();
-    (0..64).map(|_| alphabet[rng.random_range(0..alphabet.len())]).collect()
+    (0..64)
+        .map(|_| alphabet[rng.random_range(0..alphabet.len())])
+        .collect()
 }
 
 /// `md5( $data )` in lower-case hex.
 pub fn md5_hex(data: &str) -> String {
     use md5::Digest;
-    Md5::digest(data.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Md5::digest(data.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `hash_hmac( 'md5', $data, $key )`.
 pub fn hmac_md5_hex(key: &str, data: &str) -> String {
     let mut mac = Hmac::<Md5>::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
     mac.update(data.as_bytes());
-    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -201,7 +234,15 @@ mod tests {
 
     #[test]
     fn schemes_join_key_and_salt() {
-        let constants: HashMap<String, String> = [("AUTH_KEY", "k1"), ("AUTH_SALT", "s1"), ("LOGGED_IN_KEY", "k3"), ("LOGGED_IN_SALT", "s3")].iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect();
+        let constants: HashMap<String, String> = [
+            ("AUTH_KEY", "k1"),
+            ("AUTH_SALT", "s1"),
+            ("LOGGED_IN_KEY", "k3"),
+            ("LOGGED_IN_SALT", "s3"),
+        ]
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .collect();
         let salts = Salts::new(constants, HashMap::new());
         assert_eq!(salts.salt("auth").as_deref(), Some("k1s1"));
         assert_eq!(salts.salt("logged_in").as_deref(), Some("k3s3"));
@@ -210,8 +251,20 @@ mod tests {
 
     #[test]
     fn repeated_and_sample_values_fall_back_to_options() {
-        let constants: HashMap<String, String> = [("AUTH_KEY", "same"), ("AUTH_SALT", "same"), ("NONCE_KEY", PLACEHOLDER), ("NONCE_SALT", "fine")].iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect();
-        let options: HashMap<String, String> = [("auth_key", "ok"), ("auth_salt", "os"), ("nonce_key", "nk")].iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect();
+        let constants: HashMap<String, String> = [
+            ("AUTH_KEY", "same"),
+            ("AUTH_SALT", "same"),
+            ("NONCE_KEY", PLACEHOLDER),
+            ("NONCE_SALT", "fine"),
+        ]
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .collect();
+        let options: HashMap<String, String> =
+            [("auth_key", "ok"), ("auth_salt", "os"), ("nonce_key", "nk")]
+                .iter()
+                .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                .collect();
         let salts = Salts::new(constants, options);
         assert_eq!(salts.salt("auth").as_deref(), Some("okos"));
         assert_eq!(salts.salt("nonce").as_deref(), Some("nkfine"));
@@ -219,7 +272,10 @@ mod tests {
 
     #[test]
     fn hmac_md5_matches_rfc_2202() {
-        assert_eq!(hmac_md5_hex("Jefe", "what do ya want for nothing?"), "750c783e6ab0b503eaa86e310a5db738");
+        assert_eq!(
+            hmac_md5_hex("Jefe", "what do ya want for nothing?"),
+            "750c783e6ab0b503eaa86e310a5db738"
+        );
     }
 
     #[test]
@@ -234,7 +290,17 @@ mod tests {
         assert!(salts.missing().is_empty());
         assert_eq!(salts.salt("logged_in").map(|s| s.len()), Some(128));
         // Constants count, the sample text does not; SECRET_KEY stands in for every key.
-        let constants: HashMap<String, String> = [("SECRET_KEY", "k"), ("NONCE_SALT", "n"), ("AUTH_SALT", PLACEHOLDER)].iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect();
-        assert_eq!(Salts::new(constants, HashMap::new()).missing(), ["auth_salt", "secure_auth_salt", "logged_in_salt"]);
+        let constants: HashMap<String, String> = [
+            ("SECRET_KEY", "k"),
+            ("NONCE_SALT", "n"),
+            ("AUTH_SALT", PLACEHOLDER),
+        ]
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .collect();
+        assert_eq!(
+            Salts::new(constants, HashMap::new()).missing(),
+            ["auth_salt", "secure_auth_salt", "logged_in_salt"]
+        );
     }
 }

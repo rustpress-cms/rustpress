@@ -1,7 +1,9 @@
 //! The classes of the core widgets: `form()` and `update()` of each `WP_Widget_*`, and the PHP arrays they work on.
 
 use rustpress_content::sanitize::{esc_textarea, text_field};
-use rustpress_core::formatting::{esc_attr, esc_html, esc_url, esc_url_raw, sanitize_html_class, strip_tags};
+use rustpress_core::formatting::{
+    esc_attr, esc_html, esc_url, esc_url_raw, sanitize_html_class, strip_tags,
+};
 use rustpress_core::kses::kses_post;
 use rustpress_phpser::{Key, Value as Php};
 use serde_json::Value;
@@ -39,7 +41,10 @@ fn int(value: Option<&Php>) -> i64 {
         Some(Php::Str(s)) => {
             let text = String::from_utf8_lossy(s);
             let text = text.trim_start_matches([' ', '\t', '\n', '\r', '\u{b}', '\u{c}']);
-            let end = text.char_indices().find(|(i, c)| !(c.is_ascii_digit() || (*i == 0 && matches!(c, '+' | '-')))).map_or(text.len(), |(i, _)| i);
+            let end = text
+                .char_indices()
+                .find(|(i, c)| !(c.is_ascii_digit() || (*i == 0 && matches!(c, '+' | '-'))))
+                .map_or(text.len(), |(i, _)| i);
             text[..end].parse().unwrap_or(0)
         }
         _ => 0,
@@ -78,10 +83,22 @@ pub(super) fn json_to_php(value: &Value) -> Php {
     match value {
         Value::Null => Php::Null,
         Value::Bool(b) => Php::Bool(*b),
-        Value::Number(n) => n.as_i64().map_or_else(|| Php::Float(n.as_f64().unwrap_or(0.0)), Php::Int),
+        Value::Number(n) => n
+            .as_i64()
+            .map_or_else(|| Php::Float(n.as_f64().unwrap_or(0.0)), Php::Int),
         Value::String(s) => str_value(s),
-        Value::Array(items) => Php::Array(items.iter().enumerate().map(|(i, item)| (Key::Int(i as i64), json_to_php(item))).collect()),
-        Value::Object(map) => Php::Array(map.iter().map(|(key, item)| (array_key(key), json_to_php(item))).collect()),
+        Value::Array(items) => Php::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| (Key::Int(i as i64), json_to_php(item)))
+                .collect(),
+        ),
+        Value::Object(map) => Php::Array(
+            map.iter()
+                .map(|(key, item)| (array_key(key), json_to_php(item)))
+                .collect(),
+        ),
     }
 }
 
@@ -92,7 +109,10 @@ fn percent_decode(text: &str) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len() && bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit() => {
+            b'%' if i + 2 < bytes.len()
+                && bytes[i + 1].is_ascii_hexdigit()
+                && bytes[i + 2].is_ascii_hexdigit() =>
+            {
                 let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("0");
                 out.push(u8::from_str_radix(hex, 16).unwrap_or(0));
                 i += 2;
@@ -111,7 +131,9 @@ pub(super) fn parse_str(query: &str) -> Php {
         let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
         let name = percent_decode(name);
         let value = percent_decode(value);
-        let (first, rest) = name.split_once('[').map_or((name.as_str(), ""), |(a, b)| (a, b));
+        let (first, rest) = name
+            .split_once('[')
+            .map_or((name.as_str(), ""), |(a, b)| (a, b));
         if first.is_empty() {
             continue;
         }
@@ -124,7 +146,9 @@ pub(super) fn parse_str(query: &str) -> Php {
             path.push(inner.to_owned());
             rest = after;
             while let Some(after_open) = rest.strip_prefix('[') {
-                let Some((inner, after)) = after_open.split_once(']') else { break };
+                let Some((inner, after)) = after_open.split_once(']') else {
+                    break;
+                };
                 path.push(inner.to_owned());
                 rest = after;
             }
@@ -137,7 +161,20 @@ pub(super) fn parse_str(query: &str) -> Php {
             }
             let Php::Array(items) = node else { break };
             let key = if part.is_empty() {
-                Key::Int(items.iter().filter_map(|(k, _)| if let Key::Int(n) = k { Some(*n + 1) } else { None }).max().unwrap_or(0).max(0))
+                Key::Int(
+                    items
+                        .iter()
+                        .filter_map(|(k, _)| {
+                            if let Key::Int(n) = k {
+                                Some(*n + 1)
+                            } else {
+                                None
+                            }
+                        })
+                        .max()
+                        .unwrap_or(0)
+                        .max(0),
+                )
             } else {
                 array_key(part)
             };
@@ -177,7 +214,11 @@ fn stripslashes(text: &str) -> String {
 
 /// `checked( $value )`: `(string) $value === '1'`.
 fn checked(value: Option<&Php>) -> &'static str {
-    if string(value) == "1" { " checked='checked'" } else { "" }
+    if string(value) == "1" {
+        " checked='checked'"
+    } else {
+        ""
+    }
 }
 
 /// `selected( $a, $b )`.
@@ -208,7 +249,11 @@ enum Kind {
     Enum(&'static [&'static str], &'static str),
     Sizes(&'static str),
     Url,
-    Int { default: i64, minimum: i64, maximum: Option<i64> },
+    Int {
+        default: i64,
+        minimum: i64,
+        maximum: Option<i64>,
+    },
     Bool,
     Ids,
 }
@@ -221,15 +266,43 @@ enum Clean {
     Tokens,
 }
 
-const MEDIA_COMMON: [(&str, Kind); 3] = [("attachment_id", Kind::Int { default: 0, minimum: 0, maximum: None }), ("url", Kind::Url), ("title", Kind::Text(Clean::Line))];
+const MEDIA_COMMON: [(&str, Kind); 3] = [
+    (
+        "attachment_id",
+        Kind::Int {
+            default: 0,
+            minimum: 0,
+            maximum: None,
+        },
+    ),
+    ("url", Kind::Url),
+    ("title", Kind::Text(Clean::Line)),
+];
 
 const IMAGE: [(&str, Kind); 12] = [
     ("size", Kind::Sizes("medium")),
-    ("width", Kind::Int { default: 0, minimum: 0, maximum: None }),
-    ("height", Kind::Int { default: 0, minimum: 0, maximum: None }),
+    (
+        "width",
+        Kind::Int {
+            default: 0,
+            minimum: 0,
+            maximum: None,
+        },
+    ),
+    (
+        "height",
+        Kind::Int {
+            default: 0,
+            minimum: 0,
+            maximum: None,
+        },
+    ),
     ("caption", Kind::Text(Clean::Post)),
     ("alt", Kind::Text(Clean::Line)),
-    ("link_type", Kind::Enum(&["none", "file", "post", "custom"], "custom")),
+    (
+        "link_type",
+        Kind::Enum(&["none", "file", "post", "custom"], "custom"),
+    ),
     ("link_url", Kind::Url),
     ("image_classes", Kind::Text(Clean::Tokens)),
     ("link_classes", Kind::Text(Clean::Tokens)),
@@ -238,10 +311,21 @@ const IMAGE: [(&str, Kind); 12] = [
     ("image_title", Kind::Text(Clean::Line)),
 ];
 
-const AUDIO: [(&str, Kind); 7] = [("preload", Kind::Enum(&["none", "auto", "metadata"], "none")), ("loop", Kind::Bool), ("mp3", Kind::Url), ("ogg", Kind::Url), ("flac", Kind::Url), ("m4a", Kind::Url), ("wav", Kind::Url)];
+const AUDIO: [(&str, Kind); 7] = [
+    ("preload", Kind::Enum(&["none", "auto", "metadata"], "none")),
+    ("loop", Kind::Bool),
+    ("mp3", Kind::Url),
+    ("ogg", Kind::Url),
+    ("flac", Kind::Url),
+    ("m4a", Kind::Url),
+    ("wav", Kind::Url),
+];
 
 const VIDEO: [(&str, Kind); 8] = [
-    ("preload", Kind::Enum(&["none", "auto", "metadata"], "metadata")),
+    (
+        "preload",
+        Kind::Enum(&["none", "auto", "metadata"], "metadata"),
+    ),
     ("loop", Kind::Bool),
     ("content", Kind::Text(Clean::Post)),
     ("mp4", Kind::Url),
@@ -254,7 +338,14 @@ const VIDEO: [(&str, Kind); 8] = [
 const GALLERY: [(&str, Kind); 6] = [
     ("title", Kind::Text(Clean::Line)),
     ("ids", Kind::Ids),
-    ("columns", Kind::Int { default: 3, minimum: 1, maximum: Some(9) }),
+    (
+        "columns",
+        Kind::Int {
+            default: 3,
+            minimum: 1,
+            maximum: Some(9),
+        },
+    ),
     ("size", Kind::Sizes("thumbnail")),
     ("link_type", Kind::Enum(&["post", "file", "none"], "post")),
     ("orderby_random", Kind::Bool),
@@ -282,7 +373,11 @@ fn media_default(kind: Kind) -> Php {
 
 /// `sanitize_token_list()`.
 fn token_list(text: &str) -> String {
-    text.split_whitespace().map(sanitize_html_class).filter(|t| !t.is_empty()).collect::<Vec<_>>().join(" ")
+    text.split_whitespace()
+        .map(sanitize_html_class)
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `rest_validate_value_from_schema()`, `rest_sanitize_value_from_schema()` and the `sanitize_callback` of one field.
@@ -328,7 +423,9 @@ fn media_value(kind: Kind, value: &Php, sizes: &[String]) -> Option<Php> {
             let text = string(Some(value));
             (sizes.contains(&text) || text == "full" || text == "custom").then(|| str_value(&text))
         }
-        Kind::Int { minimum, maximum, .. } => {
+        Kind::Int {
+            minimum, maximum, ..
+        } => {
             let number = match value {
                 Php::Int(n) => *n,
                 Php::Str(s) => String::from_utf8_lossy(s).trim().parse::<i64>().ok()?,
@@ -339,7 +436,11 @@ fn media_value(kind: Kind, value: &Php, sizes: &[String]) -> Option<Php> {
         Kind::Ids => {
             let list: Vec<String> = match value {
                 Php::Array(items) => items.iter().map(|(_, v)| string(Some(v))).collect(),
-                Php::Str(_) => string(Some(value)).split(|c: char| c == ',' || c.is_whitespace()).filter(|p| !p.is_empty()).map(str::to_owned).collect(),
+                Php::Str(_) => string(Some(value))
+                    .split(|c: char| c == ',' || c.is_whitespace())
+                    .filter(|p| !p.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
                 _ => return None,
             };
             let mut ids: Vec<i64> = Vec::new();
@@ -349,7 +450,12 @@ fn media_value(kind: Kind, value: &Php, sizes: &[String]) -> Option<Php> {
                     ids.push(id);
                 }
             }
-            Some(Php::Array(ids.into_iter().enumerate().map(|(i, id)| (Key::Int(i as i64), Php::Int(id))).collect()))
+            Some(Php::Array(
+                ids.into_iter()
+                    .enumerate()
+                    .map(|(i, id)| (Key::Int(i as i64), Php::Int(id)))
+                    .collect(),
+            ))
         }
     }
 }
@@ -357,7 +463,8 @@ fn media_value(kind: Kind, value: &Php, sizes: &[String]) -> Option<Php> {
 /// The rule of `$safe_elements_attributes` in `WP_Widget_Text::is_legacy_instance()`; `None` for an unsafe element.
 fn safe_attributes(tag: &str) -> Option<&'static [&'static str]> {
     match tag {
-        "strong" | "em" | "b" | "i" | "u" | "s" | "ul" | "ol" | "li" | "hr" | "abbr" | "acronym" | "code" | "dfn" => Some(&[]),
+        "strong" | "em" | "b" | "i" | "u" | "s" | "ul" | "ol" | "li" | "hr" | "abbr"
+        | "acronym" | "code" | "dfn" => Some(&[]),
         "a" => Some(&["href"]),
         "img" => Some(&["src", "alt"]),
         _ => None,
@@ -367,8 +474,11 @@ fn safe_attributes(tag: &str) -> Option<&'static [&'static str]> {
 /// The parsing part of `is_legacy_instance()`: whether the text has an element or attribute TinyMCE could drop, or an
 /// element without text. `DOMDocument::loadHTML()` is approximated by walking the tags.
 fn has_unsafe_markup(text: &str) -> bool {
-    let tag = regex::Regex::new(r#"(?is)<(/?)([a-z][a-z0-9:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>"#).expect("valid pattern");
-    let attribute = regex::Regex::new(r#"(?is)([a-z_:][a-z0-9_:.-]*)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?"#).expect("valid pattern");
+    let tag = regex::Regex::new(r#"(?is)<(/?)([a-z][a-z0-9:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>"#)
+        .expect("valid pattern");
+    let attribute =
+        regex::Regex::new(r#"(?is)([a-z_:][a-z0-9_:.-]*)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?"#)
+            .expect("valid pattern");
     // Open elements with the offset behind their start tag.
     let mut open: Vec<(String, usize)> = Vec::new();
     for found in tag.captures_iter(text) {
@@ -386,7 +496,9 @@ fn has_unsafe_markup(text: &str) -> bool {
             }
             continue;
         }
-        let Some(allowed) = safe_attributes(&name) else { return true };
+        let Some(allowed) = safe_attributes(&name) else {
+            return true;
+        };
         for attr in attribute.captures_iter(found.get(3).map_or("", |m| m.as_str())) {
             if !allowed.contains(&attr[1].to_ascii_lowercase().as_str()) {
                 return true;
@@ -404,7 +516,9 @@ fn is_legacy_instance(instance: &Php) -> bool {
     if isset(instance, "visual") {
         return !truthy(instance.get("visual"));
     }
-    if string(instance.get("filter")) == "content" && matches!(instance.get("filter"), Some(Php::Str(_))) {
+    if string(instance.get("filter")) == "content"
+        && matches!(instance.get("filter"), Some(Php::Str(_)))
+    {
         return false;
     }
     if !truthy(instance.get("text")) {
@@ -412,7 +526,9 @@ fn is_legacy_instance(instance: &Php) -> bool {
     }
     let text = string(instance.get("text"));
     let wpautop = truthy(instance.get("filter"));
-    let has_line_breaks = text.trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}']).contains('\n');
+    let has_line_breaks = text
+        .trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])
+        .contains('\n');
     if !wpautop && has_line_breaks {
         return true;
     }
@@ -436,47 +552,93 @@ impl Rest<'_> {
     /// `current_user_can( 'unfiltered_html' )`, or `wp_kses_post()`.
     fn filtered(&self, value: Option<&Php>) -> Php {
         let text = string(value);
-        str_value(&if self.can("unfiltered_html") { text } else { kses_post(&text) })
+        str_value(&if self.can("unfiltered_html") {
+            text
+        } else {
+            kses_post(&text)
+        })
     }
 
     /// `WP_Widget::update()` of a core widget.
     pub(super) fn widget_update(&self, base: &str, new: &Php, old: &Php) -> Php {
         let title = |new: &Php| str_value(&text_field(&string(new.get("title"))));
-        let mut instance = if matches!(old, Php::Array(_)) { old.clone() } else { Php::Array(Vec::new()) };
+        let mut instance = if matches!(old, Php::Array(_)) {
+            old.clone()
+        } else {
+            Php::Array(Vec::new())
+        };
         match base {
             "pages" => {
                 put(&mut instance, "title", title(new));
                 let sortby = string(new.get("sortby"));
-                let sortby = if matches!(new.get("sortby"), Some(Php::Str(_))) && matches!(sortby.as_str(), "post_title" | "menu_order" | "ID") { sortby } else { "menu_order".to_owned() };
+                let sortby = if matches!(new.get("sortby"), Some(Php::Str(_)))
+                    && matches!(sortby.as_str(), "post_title" | "menu_order" | "ID")
+                {
+                    sortby
+                } else {
+                    "menu_order".to_owned()
+                };
                 put(&mut instance, "sortby", str_value(&sortby));
-                put(&mut instance, "exclude", str_value(&text_field(&string(new.get("exclude")))));
+                put(
+                    &mut instance,
+                    "exclude",
+                    str_value(&text_field(&string(new.get("exclude")))),
+                );
             }
             "calendar" | "meta" | "search" => put(&mut instance, "title", title(new)),
             "archives" => {
                 put(&mut instance, "title", title(new));
-                put(&mut instance, "count", Php::Int(i64::from(truthy(new.get("count")))));
-                put(&mut instance, "dropdown", Php::Int(i64::from(truthy(new.get("dropdown")))));
+                put(
+                    &mut instance,
+                    "count",
+                    Php::Int(i64::from(truthy(new.get("count")))),
+                );
+                put(
+                    &mut instance,
+                    "dropdown",
+                    Php::Int(i64::from(truthy(new.get("dropdown")))),
+                );
             }
             "recent-posts" => {
                 put(&mut instance, "title", title(new));
                 put(&mut instance, "number", Php::Int(int(new.get("number"))));
-                put(&mut instance, "show_date", Php::Bool(isset(new, "show_date") && truthy(new.get("show_date"))));
+                put(
+                    &mut instance,
+                    "show_date",
+                    Php::Bool(isset(new, "show_date") && truthy(new.get("show_date"))),
+                );
             }
             "recent-comments" => {
                 put(&mut instance, "title", title(new));
-                put(&mut instance, "number", Php::Int(int(new.get("number")).abs()));
+                put(
+                    &mut instance,
+                    "number",
+                    Php::Int(int(new.get("number")).abs()),
+                );
             }
             "categories" => {
                 put(&mut instance, "title", title(new));
                 for key in ["count", "hierarchical", "dropdown"] {
-                    put(&mut instance, key, Php::Int(i64::from(truthy(new.get(key)))));
+                    put(
+                        &mut instance,
+                        key,
+                        Php::Int(i64::from(truthy(new.get(key)))),
+                    );
                 }
             }
             "tag_cloud" => {
                 instance = Php::Array(Vec::new());
                 put(&mut instance, "title", title(new));
-                put(&mut instance, "count", Php::Int(i64::from(truthy(new.get("count")))));
-                put(&mut instance, "taxonomy", str_value(&stripslashes(&string(new.get("taxonomy")))));
+                put(
+                    &mut instance,
+                    "count",
+                    Php::Int(i64::from(truthy(new.get("count")))),
+                );
+                put(
+                    &mut instance,
+                    "taxonomy",
+                    str_value(&stripslashes(&string(new.get("taxonomy")))),
+                );
             }
             "nav_menu" => {
                 instance = Php::Array(Vec::new());
@@ -484,7 +646,11 @@ impl Rest<'_> {
                     put(&mut instance, "title", title(new));
                 }
                 if truthy(new.get("nav_menu")) {
-                    put(&mut instance, "nav_menu", Php::Int(int(new.get("nav_menu"))));
+                    put(
+                        &mut instance,
+                        "nav_menu",
+                        Php::Int(int(new.get("nav_menu"))),
+                    );
                 }
             }
             "block" => {
@@ -500,7 +666,10 @@ impl Rest<'_> {
                 instance = merged;
             }
             "custom_html" => {
-                let mut merged = Php::Array(vec![(Key::Str(b"title".to_vec()), str_value("")), (Key::Str(b"content".to_vec()), str_value(""))]);
+                let mut merged = Php::Array(vec![
+                    (Key::Str(b"title".to_vec()), str_value("")),
+                    (Key::Str(b"content".to_vec()), str_value("")),
+                ]);
                 if let Php::Array(items) = &instance {
                     for (key, value) in items {
                         if let Key::Str(name) = key {
@@ -515,13 +684,22 @@ impl Rest<'_> {
             "text" => {
                 put(&mut instance, "title", title(new));
                 put(&mut instance, "text", self.filtered(new.get("text")));
-                put(&mut instance, "filter", Php::Bool(truthy(new.get("filter"))));
-                let is_content = |value: Option<&Php>| matches!(value, Some(Php::Str(s)) if s == b"content");
+                put(
+                    &mut instance,
+                    "filter",
+                    Php::Bool(truthy(new.get("filter"))),
+                );
+                let is_content =
+                    |value: Option<&Php>| matches!(value, Some(Php::Str(s)) if s == b"content");
                 if is_content(old.get("filter")) || is_content(new.get("filter")) {
                     put(&mut instance, "visual", Php::Bool(true));
                 }
                 if isset(new, "visual") {
-                    put(&mut instance, "visual", Php::Bool(truthy(new.get("visual"))));
+                    put(
+                        &mut instance,
+                        "visual",
+                        Php::Bool(truthy(new.get("visual"))),
+                    );
                 }
                 if truthy(instance.get("visual")) {
                     put(&mut instance, "filter", Php::Bool(true));
@@ -529,9 +707,15 @@ impl Rest<'_> {
             }
             "rss" => return self.rss_process(new),
             _ => {
-                let sizes: Vec<String> = rustpress_content::media::registered_sizes(&self.site.options).into_iter().map(|(name, ..)| name).collect();
+                let sizes: Vec<String> =
+                    rustpress_content::media::registered_sizes(&self.site.options)
+                        .into_iter()
+                        .map(|(name, ..)| name)
+                        .collect();
                 for (field, kind) in media_schema(base) {
-                    let Some(value) = new.get(field) else { continue };
+                    let Some(value) = new.get(field) else {
+                        continue;
+                    };
                     if let Some(value) = media_value(kind, value, &sizes) {
                         put(&mut instance, field, value);
                     }
@@ -548,8 +732,19 @@ impl Rest<'_> {
             _ => 10,
         };
         let mut out = Php::Array(Vec::new());
-        put(&mut out, "title", str_value(strip_tags(&string(new.get("title"))).trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}'])));
-        put(&mut out, "url", str_value(&esc_url_raw(&strip_tags(&string(new.get("url"))))));
+        put(
+            &mut out,
+            "title",
+            str_value(
+                strip_tags(&string(new.get("title")))
+                    .trim_matches([' ', '\t', '\n', '\r', '\0', '\u{b}']),
+            ),
+        );
+        put(
+            &mut out,
+            "url",
+            str_value(&esc_url_raw(&strip_tags(&string(new.get("url"))))),
+        );
         put(&mut out, "link", str_value(""));
         put(&mut out, "items", Php::Int(items));
         put(&mut out, "error", Php::Bool(false));
@@ -560,7 +755,13 @@ impl Rest<'_> {
     }
 
     /// `WP_Widget::form()` of a core widget, with the whitespace PHP leaves around its tags.
-    pub(super) async fn widget_form(&self, base: &str, number: &str, instance: &Php, rich_text: bool) -> String {
+    pub(super) async fn widget_form(
+        &self,
+        base: &str,
+        number: &str,
+        instance: &Php,
+        rich_text: bool,
+    ) -> String {
         let tr = |text: &str| self.site.tr(text);
         let fields = Fields { base, number };
         let id = |field: &str| fields.id(field);
@@ -568,7 +769,11 @@ impl Rest<'_> {
         let title = string(instance.get("title"));
         match base {
             "pages" => {
-                let sortby = if isset(instance, "sortby") { string(instance.get("sortby")) } else { "post_title".to_owned() };
+                let sortby = if isset(instance, "sortby") {
+                    string(instance.get("sortby"))
+                } else {
+                    "post_title".to_owned()
+                };
                 format!(
                     "{}\n\t\t<p>\n\t\t\t<label for=\"{sid}\">{}</label>\n\t\t\t<select name=\"{sname}\" id=\"{sid}\" class=\"widefat\">\n\t\t\t\t<option value=\"post_title\"{}>{}</option>\n\t\t\t\t<option value=\"menu_order\"{}>{}</option>\n\t\t\t\t<option value=\"ID\"{}>{}</option>\n\t\t\t</select>\n\t\t</p>\n\n\t\t<p>\n\t\t\t<label for=\"{eid}\">{}</label>\n\t\t\t<input type=\"text\" value=\"{}\" name=\"{ename}\" id=\"{eid}\" class=\"widefat\" />\n\t\t\t<br />\n\t\t\t<small>{}</small>\n\t\t</p>\n",
                     title_field(&fields, &tr("Title:"), &title),
@@ -602,8 +807,13 @@ impl Rest<'_> {
                 cname = name("count"),
             ),
             "recent-posts" => {
-                let number_value = if isset(instance, "number") { int(instance.get("number")).abs() } else { 5 };
-                let show_date = Php::Bool(isset(instance, "show_date") && truthy(instance.get("show_date")));
+                let number_value = if isset(instance, "number") {
+                    int(instance.get("number")).abs()
+                } else {
+                    5
+                };
+                let show_date =
+                    Php::Bool(isset(instance, "show_date") && truthy(instance.get("show_date")));
                 format!(
                     "{}\n\t\t<p>\n\t\t\t<label for=\"{nid}\">{}</label>\n\t\t\t<input class=\"tiny-text\" id=\"{nid}\" name=\"{nname}\" type=\"number\" step=\"1\" min=\"1\" value=\"{number_value}\" size=\"3\" />\n\t\t</p>\n\n\t\t<p>\n\t\t\t<input class=\"checkbox\" type=\"checkbox\"{} id=\"{did}\" name=\"{dname}\" />\n\t\t\t<label for=\"{did}\">{}</label>\n\t\t</p>\n",
                     title_field(&fields, &tr("Title:"), &title),
@@ -617,7 +827,11 @@ impl Rest<'_> {
                 )
             }
             "recent-comments" => {
-                let number_value = if isset(instance, "number") { int(instance.get("number")).abs() } else { 5 };
+                let number_value = if isset(instance, "number") {
+                    int(instance.get("number")).abs()
+                } else {
+                    5
+                };
                 format!(
                     "{}\n\t\t<p>\n\t\t\t<label for=\"{nid}\">{}</label>\n\t\t\t<input class=\"tiny-text\" id=\"{nid}\" name=\"{nname}\" type=\"number\" step=\"1\" min=\"1\" value=\"{number_value}\" size=\"3\" />\n\t\t</p>\n",
                     title_field(&fields, &tr("Title:"), &title),
@@ -669,9 +883,16 @@ impl Rest<'_> {
                 let schema = media_schema(base);
                 let mut out = String::new();
                 for (field, kind) in schema {
-                    let value = instance.get(field).cloned().unwrap_or_else(|| media_default(kind));
+                    let value = instance
+                        .get(field)
+                        .cloned()
+                        .unwrap_or_else(|| media_default(kind));
                     let value = match &value {
-                        Php::Array(items) => items.iter().map(|(_, v)| string(Some(v))).collect::<Vec<_>>().join(","),
+                        Php::Array(items) => items
+                            .iter()
+                            .map(|(_, v)| string(Some(v)))
+                            .collect::<Vec<_>>()
+                            .join(","),
                         other => string(Some(other)),
                     };
                     out.push_str(&format!(
@@ -698,7 +919,13 @@ impl Rest<'_> {
         let (vid, vname) = (fields.id("visual"), fields.name("visual"));
         if !is_legacy_instance(instance) {
             // `format_for_editor()` runs where TinyMCE can edit the text.
-            let shown = if rich_text && !text.is_empty() { text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;") } else { text };
+            let shown = if rich_text && !text.is_empty() {
+                text.replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+            } else {
+                text
+            };
             let closing = regex::Regex::new("(?i)</textarea").expect("valid pattern");
             let escaped = closing.replace_all(&shown, "&lt;/textarea");
             return format!(
@@ -707,9 +934,13 @@ impl Rest<'_> {
             );
         }
         let info = if isset(instance, "visual") {
-            tr("This widget may have contained code that may work better in the &#8220;Custom HTML&#8221; widget. If you have not yet, how about trying that widget instead?")
+            tr(
+                "This widget may have contained code that may work better in the &#8220;Custom HTML&#8221; widget. If you have not yet, how about trying that widget instead?",
+            )
         } else {
-            tr("This widget may contain code that may work better in the &#8220;Custom HTML&#8221; widget. How about trying that widget instead?")
+            tr(
+                "This widget may contain code that may work better in the &#8220;Custom HTML&#8221; widget. How about trying that widget instead?",
+            )
         };
         format!(
             "\t\t\t\t\t\t<input id=\"{vid}\" name=\"{vname}\" class=\"visual\" type=\"hidden\" value=\"\">\n\t\t\t<p>\n\t\t\t\t<label for=\"{tid}\">{}</label>\n\t\t\t\t<input class=\"widefat\" id=\"{tid}\" name=\"{tname}\" type=\"text\" value=\"{}\" />\n\t\t\t</p>\n\t\t\t<div class=\"notice notice-info notice-alt inline\"><p>{info}</p></div>\t\t\t<p>\n\t\t\t\t<label for=\"{cid}\">{}</label>\n\t\t\t\t<textarea class=\"widefat\" rows=\"16\" cols=\"20\" id=\"{cid}\" name=\"{cname}\">{}</textarea>\n\t\t\t</p>\n\t\t\t<p>\n\t\t\t\t<input id=\"{fid}\" name=\"{fname}\" type=\"checkbox\"{} />&nbsp;<label for=\"{fid}\">{}</label>\n\t\t\t</p>\n\t\t\t",
@@ -731,12 +962,22 @@ impl Rest<'_> {
         // `get_taxonomies( array( 'show_tagcloud' => true ), 'object' )`.
         let taxonomies: Vec<(String, String)> = self.tagcloud_taxonomies();
         let wanted = string(instance.get("taxonomy"));
-        let current = if taxonomies.iter().any(|(name, _)| *name == wanted) || self.site.types.taxonomy(&wanted).is_some() { wanted } else { "post_tag".to_owned() };
+        let current = if taxonomies.iter().any(|(name, _)| *name == wanted)
+            || self.site.types.taxonomy(&wanted).is_some()
+        {
+            wanted
+        } else {
+            "post_tag".to_owned()
+        };
         let count = Php::Bool(isset(instance, "count") && truthy(instance.get("count")));
         let mut out = format!(
             "\t\t<p>\n\t\t\t<label for=\"{title_id}\">{}</label>\n\t\t\t<input type=\"text\" class=\"widefat\" id=\"{title_id}\" name=\"{title_name}\" value=\"{}\" />\n\t\t</p>\n\t\t",
             tr("Title:"),
-            esc_attr(&if truthy(instance.get("title")) { string(instance.get("title")) } else { String::new() })
+            esc_attr(&if truthy(instance.get("title")) {
+                string(instance.get("title"))
+            } else {
+                String::new()
+            })
         );
         match taxonomies.len() {
             0 => out.push_str(&format!("\t\t\t\t<input type=\"hidden\" id=\"{id}\" name=\"{name}\" value=\"\" />\n\t\t\t\t<p>\n\t\t\t\t\t{}\n\t\t\t\t</p>\n\t\t\t\t", tr("The tag cloud will not be displayed since there are no taxonomies that support the tag cloud widget."))),
@@ -766,12 +1007,19 @@ impl Rest<'_> {
         let (menu_id, menu_name) = (fields.id("nav_menu"), fields.name("nav_menu"));
         // `wp_get_nav_menus()`.
         let menus = self.site.db.terms("nav_menu").await.unwrap_or_default();
-        let (no_menus_style, form_style) = if menus.is_empty() { ("", " style=\"display:none\" ") } else { (" style=\"display:none\" ", "") };
+        let (no_menus_style, form_style) = if menus.is_empty() {
+            ("", " style=\"display:none\" ")
+        } else {
+            (" style=\"display:none\" ", "")
+        };
         let nav_menu = string(instance.get("nav_menu"));
         let url = self.site.site_url("wp-admin/nav-menus.php");
         let mut out = format!(
             "\t\t<p class=\"nav-menu-widget-no-menus-message\" {no_menus_style}>\n\t\t\t{}\t\t</p>\n\t\t<div class=\"nav-menu-widget-form-controls\" {form_style}>\n\t\t\t<p>\n\t\t\t\t<label for=\"{title_id}\">{}</label>\n\t\t\t\t<input type=\"text\" class=\"widefat\" id=\"{title_id}\" name=\"{title_name}\" value=\"{}\" />\n\t\t\t</p>\n\t\t\t<p>\n\t\t\t\t<label for=\"{menu_id}\">{}</label>\n\t\t\t\t<select id=\"{menu_id}\" name=\"{menu_name}\">\n\t\t\t\t\t<option value=\"0\">{}</option>\n\t\t\t\t\t",
-            rustpress_core::i18n::sprintf(&tr("No menus have been created yet. <a href=\"%s\">Create some</a>."), &[&esc_attr(&url)]),
+            rustpress_core::i18n::sprintf(
+                &tr("No menus have been created yet. <a href=\"%s\">Create some</a>."),
+                &[&esc_attr(&url)]
+            ),
             tr("Title:"),
             esc_attr(&string(instance.get("title"))),
             tr("Select Menu:"),
@@ -793,10 +1041,24 @@ impl Rest<'_> {
             _ => 10,
         };
         // Without an instance all three are off; with one, what is missing counts as on.
-        let flag = |key: &str| if truthy(Some(instance)) { if isset(instance, key) { int(instance.get(key)) } else { 1 } } else { 0 };
+        let flag = |key: &str| {
+            if truthy(Some(instance)) {
+                if isset(instance, key) {
+                    int(instance.get(key))
+                } else {
+                    1
+                }
+            } else {
+                0
+            }
+        };
         let mut out = String::new();
         if truthy(instance.get("error")) {
-            out.push_str(&format!("<p class=\"widget-error\"><strong>{}</strong> {}</p>", tr("RSS Error:"), esc_html(&string(instance.get("error")))));
+            out.push_str(&format!(
+                "<p class=\"widget-error\"><strong>{}</strong> {}</p>",
+                tr("RSS Error:"),
+                esc_html(&string(instance.get("error")))
+            ));
         }
         let number = esc_attr(number);
         out.push_str(&format!(
@@ -808,7 +1070,10 @@ impl Rest<'_> {
             tr("How many items would you like to display?"),
         ));
         for i in 1..=20 {
-            out.push_str(&format!("<option value='{i}' {}>{i}</option>", selected(&items.to_string(), &i.to_string())));
+            out.push_str(&format!(
+                "<option value='{i}' {}>{i}</option>",
+                selected(&items.to_string(), &i.to_string())
+            ));
         }
         out.push_str("\t</select></p>\n\t<p>\n\t\t");
         let check = |value: i64| checked(Some(&Php::Int(value)));
@@ -826,11 +1091,24 @@ impl Rest<'_> {
 
     /// `get_taxonomies( array( 'show_tagcloud' => true ), 'object' )`: the name and `labels->name` of each.
     fn tagcloud_taxonomies(&self) -> Vec<(String, String)> {
-        let mut out = vec![("category".to_owned(), self.site.taxonomy_label("category")), ("post_tag".to_owned(), self.site.taxonomy_label("post_tag")), ("link_category".to_owned(), self.site.tr("Link Categories"))];
+        let mut out = vec![
+            ("category".to_owned(), self.site.taxonomy_label("category")),
+            ("post_tag".to_owned(), self.site.taxonomy_label("post_tag")),
+            ("link_category".to_owned(), self.site.tr("Link Categories")),
+        ];
         // `show_tagcloud` follows `show_ui`, which follows `public`.
-        for registered in self.site.types.registered_types(true).into_iter().filter(|t| t.public) {
+        for registered in self
+            .site
+            .types
+            .registered_types(true)
+            .into_iter()
+            .filter(|t| t.public)
+        {
             if !out.iter().any(|(name, _)| *name == registered.name) {
-                let label = registered.label.clone().unwrap_or_else(|| registered.name.clone());
+                let label = registered
+                    .label
+                    .clone()
+                    .unwrap_or_else(|| registered.name.clone());
                 out.push((registered.name, label));
             }
         }
@@ -844,7 +1122,9 @@ mod tests {
 
     #[test]
     fn form_data_makes_nested_arrays() {
-        let parsed = parse_str("widget-text%5B3%5D%5Btitle%5D=A+b%26c&widget-text[3][visual]=on&plain=1&list[]=a&list[]=b");
+        let parsed = parse_str(
+            "widget-text%5B3%5D%5Btitle%5D=A+b%26c&widget-text[3][visual]=on&plain=1&list[]=a&list[]=b",
+        );
         let widget = parsed.get("widget-text").expect("widget");
         let instance = widget.as_array().expect("array")[0].clone();
         assert_eq!(instance.0, Key::Int(3));
@@ -858,9 +1138,13 @@ mod tests {
     #[test]
     fn plain_text_is_no_legacy_instance() {
         let text = |t: &str| Php::Array(vec![(Key::Str(b"text".to_vec()), str_value(t))]);
-        assert!(!is_legacy_instance(&text("<strong>Hallo</strong> <a href=\"x\">Welt</a>")));
+        assert!(!is_legacy_instance(&text(
+            "<strong>Hallo</strong> <a href=\"x\">Welt</a>"
+        )));
         assert!(is_legacy_instance(&text("<div>Hallo</div>")));
-        assert!(is_legacy_instance(&text("<a href=\"x\" class=\"y\">Welt</a>")));
+        assert!(is_legacy_instance(&text(
+            "<a href=\"x\" class=\"y\">Welt</a>"
+        )));
         assert!(is_legacy_instance(&text("<b></b>")));
         assert!(is_legacy_instance(&text("a\nb")));
         assert!(is_legacy_instance(&text("a <!-- b -->")));

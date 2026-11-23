@@ -84,7 +84,18 @@ pub(crate) struct Resp {
 
 impl Resp {
     pub fn item(data: Value) -> Self {
-        Self { data, total: None, total_pages: None, link: None, alternate: None, xml: None, status: None, allow: None, location: None, download: None }
+        Self {
+            data,
+            total: None,
+            total_pages: None,
+            link: None,
+            alternate: None,
+            xml: None,
+            status: None,
+            allow: None,
+            location: None,
+            download: None,
+        }
     }
 }
 
@@ -105,11 +116,13 @@ pub struct Rest<'a> {
     /// The body of a request that is not a plain GET.
     pub(crate) request: Option<edit::Request>,
     /// The patterns of the registry, evaluated once per request.
-    pub(crate) patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
+    pub(crate) patterns:
+        std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
     /// The host the request was sent to (`$_SERVER['HTTP_HOST']`).
     pub(crate) host: String,
     /// The patterns of the pattern directory, loaded for the routes that list patterns.
-    pub(crate) remote_patterns: std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
+    pub(crate) remote_patterns:
+        std::sync::OnceLock<Vec<rustpress_theme::registered_patterns::PatternEntry>>,
     /// The request comes from a screen of the administration (`is_admin()`): the preloads of the editors.
     pub(crate) admin: bool,
     /// `wp_mail()` for the endpoints of plugins that send e-mail.
@@ -125,7 +138,23 @@ pub struct Rest<'a> {
 
 impl<'a> Rest<'a> {
     pub fn new(site: &'a Site, theme: &'a Theme, registry: &'a Registry) -> Self {
-        Self { site, theme, registry, blank: QueryResult::blank(), state: Default::default(), access: None, request: None, patterns: Default::default(), host: String::new(), remote_patterns: Default::default(), admin: false, mailer: None, route: Default::default(), earlier_routes: Default::default(), widgets_retrieved: Default::default() }
+        Self {
+            site,
+            theme,
+            registry,
+            blank: QueryResult::blank(),
+            state: Default::default(),
+            access: None,
+            request: None,
+            patterns: Default::default(),
+            host: String::new(),
+            remote_patterns: Default::default(),
+            admin: false,
+            mailer: None,
+            route: Default::default(),
+            earlier_routes: Default::default(),
+            widgets_retrieved: Default::default(),
+        }
     }
 
     /// The host of the request: client-side media processing is on for `localhost` and for HTTPS.
@@ -135,7 +164,10 @@ impl<'a> Rest<'a> {
     }
 
     /// How plugins send e-mail.
-    pub fn with_mailer(mut self, mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>) -> Self {
+    pub fn with_mailer(
+        mut self,
+        mailer: Option<std::sync::Arc<dyn rustpress_core::native::Mailer>>,
+    ) -> Self {
         self.mailer = mailer;
         self
     }
@@ -147,20 +179,38 @@ impl<'a> Rest<'a> {
     }
 
     /// `get_the_excerpt()`; in the administration `block_core_post_excerpt_excerpt_length()` makes `excerpt_length` 101.
-    pub(crate) async fn excerpt(&self, env: &rustpress_blocks::env::Env<'_>, post: &std::sync::Arc<rustpress_db::Post>) -> rustpress_blocks::Result<String> {
-        if self.admin { rustpress_blocks::excerpt::get_the_excerpt_of_length(env, post, 101).await } else { rustpress_blocks::excerpt::get_the_excerpt(env, post).await }
+    pub(crate) async fn excerpt(
+        &self,
+        env: &rustpress_blocks::env::Env<'_>,
+        post: &std::sync::Arc<rustpress_db::Post>,
+    ) -> rustpress_blocks::Result<String> {
+        if self.admin {
+            rustpress_blocks::excerpt::get_the_excerpt_of_length(env, post, 101).await
+        } else {
+            rustpress_blocks::excerpt::get_the_excerpt(env, post).await
+        }
     }
 
     /// The routes the same PHP process dispatched before (the preloads of an editor page).
     pub fn after_routes(self, routes: Vec<String>) -> Self {
-        *self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()) = routes;
+        *self
+            .earlier_routes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = routes;
         self
     }
 
     /// `wp_is_client_side_media_processing_enabled()`.
     fn client_side_media(&self) -> bool {
-        let host = self.host.split(':').next().unwrap_or_default().to_ascii_lowercase();
-        self.site.settings.siteurl.starts_with("https") || host == "localhost" || host.ends_with(".localhost")
+        let host = self
+            .host
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        self.site.settings.siteurl.starts_with("https")
+            || host == "localhost"
+            || host.ends_with(".localhost")
     }
 
     /// Handles `GET <route>?<query>`; `route` is the part after `/wp-json` (`/wp/v2/posts`).
@@ -172,35 +222,103 @@ impl<'a> Rest<'a> {
             blank.raw_query = query.to_owned();
         } else {
             blank.url_path = "/".to_owned();
-            blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
+            blank.raw_query = if query.is_empty() {
+                format!("rest_route={route}")
+            } else {
+                format!("rest_route={route}&{query}")
+            };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access: None, request: None, patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()), widgets_retrieved: self.widgets_retrieved.clone() };
+        let scoped = Rest {
+            site: self.site,
+            theme: self.theme,
+            registry: self.registry,
+            blank,
+            state: Default::default(),
+            access: None,
+            request: None,
+            patterns: Default::default(),
+            host: self.host.clone(),
+            remote_patterns: Default::default(),
+            admin: self.admin,
+            mailer: self.mailer.clone(),
+            route: std::sync::Mutex::new((route.to_owned(), query.to_owned())),
+            earlier_routes: std::sync::Mutex::new(
+                self.earlier_routes
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            ),
+            widgets_retrieved: self.widgets_retrieved.clone(),
+        };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
 
     /// Handles a request of a signed-in user (or with a body): `method`, the route after `/wp-json`, the
     /// query string and the body.
-    pub async fn handle_as(&self, route: &str, query: &str, access: Option<edit::Access<'_>>, request: edit::Request) -> Result<Reply> {
+    pub async fn handle_as(
+        &self,
+        route: &str,
+        query: &str,
+        access: Option<edit::Access<'_>>,
+        request: edit::Request,
+    ) -> Result<Reply> {
         let mut blank = QueryResult::blank();
         if self.site.uses_pretty_permalinks() {
             blank.url_path = format!("/wp-json{route}");
             blank.raw_query = query.to_owned();
         } else {
             blank.url_path = "/".to_owned();
-            blank.raw_query = if query.is_empty() { format!("rest_route={route}") } else { format!("rest_route={route}&{query}") };
+            blank.raw_query = if query.is_empty() {
+                format!("rest_route={route}")
+            } else {
+                format!("rest_route={route}&{query}")
+            };
         }
         blank.http_host = Some(self.host.clone()).filter(|h| !h.is_empty());
         // Content rendered for a signed-in user is rendered as that user (private posts in query blocks).
         if let Some(access) = &access {
             let user = access.user.clone();
-            let (login, name, email, roles) = (user.login.clone(), user.display_name.clone(), user.email.clone(), user.roles.clone());
+            let (login, name, email, roles) = (
+                user.login.clone(),
+                user.display_name.clone(),
+                user.email.clone(),
+                user.roles.clone(),
+            );
             let nonce = access.nonce.clone();
-            let viewer = rustpress_core::Viewer::new(user.id, move |capability| user.can(capability)).with_roles(&roles);
-            blank.viewer = Some(viewer.with_identity(&login, &name, &email, false, move |action| nonce.as_ref().map(|n| n(action)).unwrap_or_default()));
+            let viewer =
+                rustpress_core::Viewer::new(user.id, move |capability| user.can(capability))
+                    .with_roles(&roles);
+            blank.viewer =
+                Some(
+                    viewer.with_identity(&login, &name, &email, false, move |action| {
+                        nonce.as_ref().map(|n| n(action)).unwrap_or_default()
+                    }),
+                );
         }
-        let scoped = Rest { site: self.site, theme: self.theme, registry: self.registry, blank, state: Default::default(), access, request: Some(request), patterns: Default::default(), host: self.host.clone(), remote_patterns: Default::default(), admin: self.admin, mailer: self.mailer.clone(), route: std::sync::Mutex::new((route.to_owned(), query.to_owned())), earlier_routes: std::sync::Mutex::new(self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).clone()), widgets_retrieved: self.widgets_retrieved.clone() };
+        let scoped = Rest {
+            site: self.site,
+            theme: self.theme,
+            registry: self.registry,
+            blank,
+            state: Default::default(),
+            access,
+            request: Some(request),
+            patterns: Default::default(),
+            host: self.host.clone(),
+            remote_patterns: Default::default(),
+            admin: self.admin,
+            mailer: self.mailer.clone(),
+            route: std::sync::Mutex::new((route.to_owned(), query.to_owned())),
+            earlier_routes: std::sync::Mutex::new(
+                self.earlier_routes
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            ),
+            widgets_retrieved: self.widgets_retrieved.clone(),
+        };
         // The terms of the posts of a list are read once for the request (`update_object_term_cache()`).
         rustpress_db::Db::with_term_cache(scoped.handle_request(route, query)).await
     }
@@ -210,35 +328,50 @@ impl<'a> Rest<'a> {
         // The registry of patterns includes those of the pattern directory.
         if route.starts_with("/wp/v2/block-patterns/patterns") {
             let local = self.theme.registered_patterns();
-            let _ = self.remote_patterns.set(self.remote_pattern_entries(&local).await);
+            let _ = self
+                .remote_patterns
+                .set(self.remote_pattern_entries(&local).await);
         }
         let outcome = match self.plugin_pre_dispatch(route, query, false).await? {
             Some(outcome) => outcome,
             None => match self.plugin_route(route).await? {
-            Some(outcome) => outcome,
-            None => match &self.request {
-            Some(_) => match self.dispatch_edit(route, &params).await? {
                 Some(outcome) => outcome,
-                // A write that no handler takes is no read: WordPress has no route for it.
-                None if !matches!(self.method(), "GET" | "HEAD") => Err(crate::error::RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)),
-                // The read-only endpoints answer a visitor; `rest_authorization_required_code()` is 403 for
-                // somebody who is signed in.
-                None => self.dispatch(route, &params).await?.map_err(|mut error| {
-                    if error.status == 401 && self.user().is_some() {
-                        error.status = 403;
-                    }
-                    error
-                }),
-            },
-            None => self.dispatch(route, &params).await?,
-            },
+                None => match &self.request {
+                    Some(_) => match self.dispatch_edit(route, &params).await? {
+                        Some(outcome) => outcome,
+                        // A write that no handler takes is no read: WordPress has no route for it.
+                        None if !matches!(self.method(), "GET" | "HEAD") => {
+                            Err(crate::error::RestError::new(
+                                "rest_no_route",
+                                "No route was found matching the URL and request method.",
+                                404,
+                            ))
+                        }
+                        // The read-only endpoints answer a visitor; `rest_authorization_required_code()` is 403 for
+                        // somebody who is signed in.
+                        None => self.dispatch(route, &params).await?.map_err(|mut error| {
+                            if error.status == 401 && self.user().is_some() {
+                                error.status = 403;
+                            }
+                            error
+                        }),
+                    },
+                    None => self.dispatch(route, &params).await?,
+                },
             },
         };
         let mut headers = vec![
             ("X-Robots-Tag".to_owned(), "noindex".to_owned()),
             ("X-Content-Type-Options".to_owned(), "nosniff".to_owned()),
-            ("Access-Control-Expose-Headers".to_owned(), "X-WP-Total, X-WP-TotalPages, Link".to_owned()),
-            ("Access-Control-Allow-Headers".to_owned(), "Authorization, X-WP-Nonce, Content-Disposition, Content-MD5, Content-Type".to_owned()),
+            (
+                "Access-Control-Expose-Headers".to_owned(),
+                "X-WP-Total, X-WP-TotalPages, Link".to_owned(),
+            ),
+            (
+                "Access-Control-Allow-Headers".to_owned(),
+                "Authorization, X-WP-Nonce, Content-Disposition, Content-MD5, Content-Type"
+                    .to_owned(),
+            ),
         ];
         let mut xml_body = None;
         let mut download: Option<(Vec<u8>, String)> = None;
@@ -249,7 +382,11 @@ impl<'a> Rest<'a> {
                 xml_body = resp.xml.clone();
                 download = resp.download.clone();
                 let allow = resp.allow.clone().unwrap_or_else(|| "GET".to_owned());
-                let response_link = resp.link.clone().or_else(|| resp.alternate.as_ref().map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html")));
+                let response_link = resp.link.clone().or_else(|| {
+                    resp.alternate
+                        .as_ref()
+                        .map(|url| format!("<{url}>; rel=\"alternate\"; type=text/html"))
+                });
                 if let Some(total) = resp.total {
                     response_headers.push(("X-WP-Total".to_owned(), total.to_string()));
                 }
@@ -289,9 +426,22 @@ impl<'a> Rest<'a> {
             }
         };
         headers.push(("Vary".to_owned(), "Origin".to_owned()));
-        headers.push(("Content-Type".to_owned(), if xml_body.is_some() { "text/xml; charset=UTF-8" } else { "application/json; charset=UTF-8" }.to_owned()));
+        headers.push((
+            "Content-Type".to_owned(),
+            if xml_body.is_some() {
+                "text/xml; charset=UTF-8"
+            } else {
+                "application/json; charset=UTF-8"
+            }
+            .to_owned(),
+        ));
         // An oEmbed error is XML, too, when XML was asked for.
-        if xml_body.is_none() && status != 200 && route == "/oembed/1.0/embed" && params.get("format") == Some("xml") && let Value::Object(map) = &data {
+        if xml_body.is_none()
+            && status != 200
+            && route == "/oembed/1.0/embed"
+            && params.get("format") == Some("xml")
+            && let Value::Object(map) = &data
+        {
             xml_body = Some(oembed::xml_of(map));
             if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Content-Type") {
                 h.1 = "text/xml; charset=UTF-8".to_owned();
@@ -299,12 +449,25 @@ impl<'a> Rest<'a> {
         }
         if let Some((bytes, name)) = download {
             headers.retain(|(n, _)| n != "Content-Type");
-            headers.push(("Content-Disposition".to_owned(), format!("attachment; filename={name}")));
+            headers.push((
+                "Content-Disposition".to_owned(),
+                format!("attachment; filename={name}"),
+            ));
             headers.push(("Content-Type".to_owned(), "application/zip".to_owned()));
-            return Ok(Reply { status, headers, body: String::new(), bytes });
+            return Ok(Reply {
+                status,
+                headers,
+                body: String::new(),
+                bytes,
+            });
         }
         if let Some(xml) = xml_body {
-            return Ok(Reply { status, headers, body: xml, bytes: Vec::new() });
+            return Ok(Reply {
+                status,
+                headers,
+                body: xml,
+                bytes: Vec::new(),
+            });
         }
         if status == 200 || status == 201 {
             if let Some(rels) = embed_param(&params) {
@@ -316,9 +479,14 @@ impl<'a> Rest<'a> {
             if let Some(list) = params.list("_fields") {
                 // The links are no field: `rest_filter_response_fields()` runs before `response_to_data()` adds them.
                 // The index decides itself which ones it has.
-                let index_links = if route.trim_end_matches('/').is_empty() { data.as_object_mut().and_then(|o| o.remove("_links")) } else { None };
+                let index_links = if route.trim_end_matches('/').is_empty() {
+                    data.as_object_mut().and_then(|o| o.remove("_links"))
+                } else {
+                    None
+                };
                 // Links plugins add on `rest_prepare_{$type}` arrive although `_links` was not asked for.
-                let take = |item: &mut Value| item.as_object_mut().and_then(|o| o.remove(PLUGIN_LINKS));
+                let take =
+                    |item: &mut Value| item.as_object_mut().and_then(|o| o.remove(PLUGIN_LINKS));
                 let plugin_links: Vec<Option<Value>> = match &mut data {
                     Value::Array(items) => items.iter_mut().map(take).collect(),
                     item => vec![take(item)],
@@ -333,7 +501,10 @@ impl<'a> Rest<'a> {
                     }
                 };
                 match &mut data {
-                    Value::Array(items) => items.iter_mut().zip(plugin_links).for_each(|(item, links)| put(item, links)),
+                    Value::Array(items) => items
+                        .iter_mut()
+                        .zip(plugin_links)
+                        .for_each(|(item, links)| put(item, links)),
                     item => put(item, plugin_links.into_iter().next().flatten()),
                 }
             }
@@ -342,12 +513,19 @@ impl<'a> Rest<'a> {
         if params.has("_envelope") {
             let mut inner = Map::new();
             for (name, value) in &response_headers {
-                let json = if name.starts_with("X-WP-") { value.parse::<u64>().map_or_else(|_| Value::from(value.clone()), Value::from) } else { Value::from(value.clone()) };
+                let json = if name.starts_with("X-WP-") {
+                    value
+                        .parse::<u64>()
+                        .map_or_else(|_| Value::from(value.clone()), Value::from)
+                } else {
+                    Value::from(value.clone())
+                };
                 inner.insert(name.clone(), json);
             }
             data = serde_json::json!({"body": data, "status": status, "headers": Value::Object(inner)});
             status = 200;
-            headers.retain(|(n, _)| !matches!(n.as_str(), "X-WP-Total" | "X-WP-TotalPages" | "Allow"));
+            headers
+                .retain(|(n, _)| !matches!(n.as_str(), "X-WP-Total" | "X-WP-TotalPages" | "Allow"));
             let root = self.root_link();
             if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Link") {
                 h.1 = root;
@@ -355,50 +533,123 @@ impl<'a> Rest<'a> {
         }
         // `?_jsonp=callback`.
         if let Some(callback) = params.get("_jsonp").filter(|c| !c.is_empty()) {
-            if callback.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+            if callback
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+            {
                 if let Some(h) = headers.iter_mut().find(|(n, _)| n == "Content-Type") {
                     h.1 = "application/javascript; charset=UTF-8".to_owned();
                 }
-                return Ok(Reply { status, headers, body: format!("/**/{callback}({})", php_json::encode(&data)), bytes: Vec::new() });
+                return Ok(Reply {
+                    status,
+                    headers,
+                    body: format!("/**/{callback}({})", php_json::encode(&data)),
+                    bytes: Vec::new(),
+                });
             }
-            let error = RestError::new("rest_callback_invalid", "Invalid JSONP callback function.", 400).to_value(self.site);
-            return Ok(Reply { status: 400, headers, body: php_json::encode(&error), bytes: Vec::new() });
+            let error = RestError::new(
+                "rest_callback_invalid",
+                "Invalid JSONP callback function.",
+                400,
+            )
+            .to_value(self.site);
+            return Ok(Reply {
+                status: 400,
+                headers,
+                body: php_json::encode(&error),
+                bytes: Vec::new(),
+            });
         }
-        Ok(Reply { status, headers, body: php_json::encode(&data), bytes: Vec::new() })
+        Ok(Reply {
+            status,
+            headers,
+            body: php_json::encode(&data),
+            bytes: Vec::new(),
+        })
     }
 
     /// Routes a request to its endpoint.
     pub(crate) async fn dispatch(&self, route: &str, params: &Params) -> Result<Outcome> {
-        let route = if route.is_empty() { "/" } else { route.trim_end_matches('/') };
+        let route = if route.is_empty() {
+            "/"
+        } else {
+            route.trim_end_matches('/')
+        };
         let route = if route.is_empty() { "/" } else { route };
         let segments: Vec<&str> = route.trim_start_matches('/').split('/').collect();
         let context = params.get("context").unwrap_or("view");
         if !matches!(context, "view" | "embed" | "edit") {
-            return Ok(Err(RestError::invalid_param("context", Msg::new("%1$s is not one of %2$l.").with(&["context"]).with_list(&["view", "embed", "edit"]), "rest_not_in_enum")));
+            return Ok(Err(RestError::invalid_param(
+                "context",
+                Msg::new("%1$s is not one of %2$l.")
+                    .with(&["context"])
+                    .with_list(&["view", "embed", "edit"]),
+                "rest_not_in_enum",
+            )));
         }
         match segments.as_slice() {
             [""] => Ok(Ok(Resp::item(self.index(params)))),
-            _ if self.namespaces().iter().any(|ns| *ns == segments.join("/")) => Ok(Ok(Resp::item(self.namespace_index(&segments.join("/"))))),
+            _ if self.namespaces().iter().any(|ns| *ns == segments.join("/")) => {
+                Ok(Ok(Resp::item(self.namespace_index(&segments.join("/")))))
+            }
             ["wp", "v2", "posts"] => self.posts_collection(posts::Kind::Post, params).await,
             ["wp", "v2", "posts", id] => self.posts_item(posts::Kind::Post, id, params).await,
             ["wp", "v2", "pages"] => self.posts_collection(posts::Kind::Page, params).await,
             ["wp", "v2", "pages", id] => self.posts_item(posts::Kind::Page, id, params).await,
-            ["wp", "v2", "posts" | "pages", parent, "revisions" | "autosaves"] | ["wp", "v2", "posts" | "pages", parent, "revisions" | "autosaves", _] => {
-                let kind = if segments[2] == "posts" { posts::Kind::Post } else { posts::Kind::Page };
+            [
+                "wp",
+                "v2",
+                "posts" | "pages",
+                parent,
+                "revisions" | "autosaves",
+            ]
+            | [
+                "wp",
+                "v2",
+                "posts" | "pages",
+                parent,
+                "revisions" | "autosaves",
+                _,
+            ] => {
+                let kind = if segments[2] == "posts" {
+                    posts::Kind::Post
+                } else {
+                    posts::Kind::Page
+                };
                 self.revisions_denied(kind, parent, segments[4]).await
             }
             ["wp", "v2", "media"] => self.media_collection(params).await,
             ["wp", "v2", "media", id] => self.media_item(id, params).await,
-            ["wp", "v2", "categories"] => self.terms_collection(&terms::Tax::category(), params).await,
-            ["wp", "v2", "categories", id] => self.terms_item(&terms::Tax::category(), id, params).await,
+            ["wp", "v2", "categories"] => {
+                self.terms_collection(&terms::Tax::category(), params).await
+            }
+            ["wp", "v2", "categories", id] => {
+                self.terms_item(&terms::Tax::category(), id, params).await
+            }
             ["wp", "v2", "tags"] => self.terms_collection(&terms::Tax::tag(), params).await,
             ["wp", "v2", "tags", id] => self.terms_item(&terms::Tax::tag(), id, params).await,
-            ["wp", "v2", "wp_pattern_category"] => self.terms_collection(&terms::Tax::pattern_category(), params).await,
-            ["wp", "v2", "wp_pattern_category", id] => self.terms_item(&terms::Tax::pattern_category(), id, params).await,
+            ["wp", "v2", "wp_pattern_category"] => {
+                self.terms_collection(&terms::Tax::pattern_category(), params)
+                    .await
+            }
+            ["wp", "v2", "wp_pattern_category", id] => {
+                self.terms_item(&terms::Tax::pattern_category(), id, params)
+                    .await
+            }
             ["wp", "v2", "users"] => self.users_collection(params).await,
-            ["wp", "v2", "users", "me"] => Ok(Err(RestError::new("rest_not_logged_in", "You are not currently logged in.", 401))),
-            ["wp", "v2", "users", id, "application-passwords"] => self.app_passwords_route(id, None, "GET", &edit::Args::default()).await,
-            ["wp", "v2", "users", id, "application-passwords", uuid] => self.app_passwords_route(id, Some(uuid), "GET", &edit::Args::default()).await,
+            ["wp", "v2", "users", "me"] => Ok(Err(RestError::new(
+                "rest_not_logged_in",
+                "You are not currently logged in.",
+                401,
+            ))),
+            ["wp", "v2", "users", id, "application-passwords"] => {
+                self.app_passwords_route(id, None, "GET", &edit::Args::default())
+                    .await
+            }
+            ["wp", "v2", "users", id, "application-passwords", uuid] => {
+                self.app_passwords_route(id, Some(uuid), "GET", &edit::Args::default())
+                    .await
+            }
             ["wp", "v2", "users", id] => self.users_item(id, params).await,
             ["wp", "v2", "comments"] => self.comments_collection(params).await,
             ["wp", "v2", "comments", id] => self.comments_item(id, params).await,
@@ -411,51 +662,134 @@ impl<'a> Rest<'a> {
             ["wp", "v2", "search"] => self.search(params).await,
             ["oembed", "1.0", "embed"] => self.oembed_embed(params).await,
             ["oembed", "1.0", "proxy"] => Ok(self.oembed_proxy()),
-            ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
+            ["wp", "v2", base @ ("blocks" | "navigation")]
+            | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
                 let info = meta::core_post_type(base);
                 match segments.get(3) {
-                    None => self.posts_collection(posts::Kind::Custom(&info), params).await,
-                    Some(id) => self.posts_item(posts::Kind::Custom(&info), id, params).await,
+                    None => {
+                        self.posts_collection(posts::Kind::Custom(&info), params)
+                            .await
+                    }
+                    Some(id) => {
+                        self.posts_item(posts::Kind::Custom(&info), id, params)
+                            .await
+                    }
                 }
             }
-            ["wp", "v2", "font-families" | "font-collections", ..] => self.fonts_route(&segments, "GET", &edit::Args::default(), params).await,
-            ["wp-abilities", "v1", ..] => self.abilities_route(&segments, "GET", &edit::Args::default(), params).await,
-            ["wp-block-editor", "v1", "url-details"] if params.get("url").is_none() => Ok(Err(RestError::missing_params(&["url"]))),
-            ["wp-block-editor", "v1", "url-details"] => Ok(Err(RestError::new("rest_cannot_view_url_details", "Sorry, you are not allowed to process remote URLs.", 401))),
-            ["wp-block-editor", "v1", "export"] => Ok(Err(RestError::new("rest_cannot_export_templates", "Sorry, you are not allowed to export templates and template parts.", 401))),
-            ["wp-block-editor", "v1", "navigation-fallback"] => Ok(Err(RestError::new("rest_cannot_create", "Sorry, you are not allowed to create Navigation Menus as this user.", 401))),
-            ["wp-site-health", "v1", "tests", _] | ["wp-site-health", "v1", "directory-sizes"] => Ok(Err(RestError::new("rest_forbidden", "Sorry, you are not allowed to do that.", 401))),
-            ["wp", "v2", rest @ ..] if meta::denied(rest, params).is_some() => Ok(Err(meta::denied(rest, params).unwrap_or_else(|| RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)))),
-            ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() => self.custom_route_dispatch(base, segments.get(3).copied(), params).await,
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            ["wp", "v2", "font-families" | "font-collections", ..] => {
+                self.fonts_route(&segments, "GET", &edit::Args::default(), params)
+                    .await
+            }
+            ["wp-abilities", "v1", ..] => {
+                self.abilities_route(&segments, "GET", &edit::Args::default(), params)
+                    .await
+            }
+            ["wp-block-editor", "v1", "url-details"] if params.get("url").is_none() => {
+                Ok(Err(RestError::missing_params(&["url"])))
+            }
+            ["wp-block-editor", "v1", "url-details"] => Ok(Err(RestError::new(
+                "rest_cannot_view_url_details",
+                "Sorry, you are not allowed to process remote URLs.",
+                401,
+            ))),
+            ["wp-block-editor", "v1", "export"] => Ok(Err(RestError::new(
+                "rest_cannot_export_templates",
+                "Sorry, you are not allowed to export templates and template parts.",
+                401,
+            ))),
+            ["wp-block-editor", "v1", "navigation-fallback"] => Ok(Err(RestError::new(
+                "rest_cannot_create",
+                "Sorry, you are not allowed to create Navigation Menus as this user.",
+                401,
+            ))),
+            ["wp-site-health", "v1", "tests", _] | ["wp-site-health", "v1", "directory-sizes"] => {
+                Ok(Err(RestError::new(
+                    "rest_forbidden",
+                    "Sorry, you are not allowed to do that.",
+                    401,
+                )))
+            }
+            ["wp", "v2", rest @ ..] if meta::denied(rest, params).is_some() => {
+                Ok(Err(meta::denied(rest, params).unwrap_or_else(|| {
+                    RestError::new(
+                        "rest_no_route",
+                        "No route was found matching the URL and request method.",
+                        404,
+                    )
+                })))
+            }
+            ["wp", "v2", base] | ["wp", "v2", base, _] if self.custom_route(base).is_some() => {
+                self.custom_route_dispatch(base, segments.get(3).copied(), params)
+                    .await
+            }
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 
     /// The post type or taxonomy of a custom route (`wp/v2/book`, `wp/v2/genre`).
     fn custom_route(&self, base: &str) -> Option<Custom> {
-        if let Some(info) = self.site.types.post_types.iter().find(|t| t.show_in_rest && t.rest_base() == base) {
+        if let Some(info) = self
+            .site
+            .types
+            .post_types
+            .iter()
+            .find(|t| t.show_in_rest && t.rest_base() == base)
+        {
             return Some(Custom::PostType(info.name.clone()));
         }
-        self.site.types.taxonomies.iter().find(|t| t.show_in_rest && t.rest_base() == base).map(|t| Custom::Taxonomy(t.name.clone()))
+        self.site
+            .types
+            .taxonomies
+            .iter()
+            .find(|t| t.show_in_rest && t.rest_base() == base)
+            .map(|t| Custom::Taxonomy(t.name.clone()))
     }
 
-    async fn custom_route_dispatch(&self, base: &str, id: Option<&str>, params: &Params) -> Result<Outcome> {
+    async fn custom_route_dispatch(
+        &self,
+        base: &str,
+        id: Option<&str>,
+        params: &Params,
+    ) -> Result<Outcome> {
         match self.custom_route(base) {
             Some(Custom::PostType(name)) => {
-                let Some(info) = self.site.types.post_type(&name) else { return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))) };
+                let Some(info) = self.site.types.post_type(&name) else {
+                    return Ok(Err(RestError::new(
+                        "rest_no_route",
+                        "No route was found matching the URL and request method.",
+                        404,
+                    )));
+                };
                 match id {
-                    None => self.posts_collection(posts::Kind::Custom(info), params).await,
+                    None => {
+                        self.posts_collection(posts::Kind::Custom(info), params)
+                            .await
+                    }
                     Some(id) => self.posts_item(posts::Kind::Custom(info), id, params).await,
                 }
             }
             Some(Custom::Taxonomy(name)) => {
-                let Some(tax) = self.tax(&name) else { return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))) };
+                let Some(tax) = self.tax(&name) else {
+                    return Ok(Err(RestError::new(
+                        "rest_no_route",
+                        "No route was found matching the URL and request method.",
+                        404,
+                    )));
+                };
                 match id {
                     None => self.terms_collection(&tax, params).await,
                     Some(id) => self.terms_item(&tax, id, params).await,
                 }
             }
-            None => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            None => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 
@@ -473,21 +807,40 @@ impl<'a> Rest<'a> {
     async fn fetch_href(&self, href: &str) -> Result<Outcome> {
         let (path, query) = rustpress_core::canonical::split_url(href);
         let route = match query.split('&').find_map(|p| p.strip_prefix("rest_route=")) {
-            Some(route) => String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(route.as_bytes())).into_owned(),
+            Some(route) => {
+                String::from_utf8_lossy(&rustpress_core::rewrite::urldecode(route.as_bytes()))
+                    .into_owned()
+            }
             None => {
-                let base = rustpress_core::canonical::split_url(&self.site.home_url(&format!("{}wp-json", self.site.root()))).0;
+                let base = rustpress_core::canonical::split_url(
+                    &self.site.home_url(&format!("{}wp-json", self.site.root())),
+                )
+                .0;
                 path.strip_prefix(&base).unwrap_or(&path).to_owned()
             }
         };
-        let query: String = query.split('&').filter(|p| !p.starts_with("rest_route=") && !p.is_empty()).collect::<Vec<_>>().join("&");
+        let query: String = query
+            .split('&')
+            .filter(|p| !p.starts_with("rest_route=") && !p.is_empty())
+            .collect::<Vec<_>>()
+            .join("&");
         let mut params = Params::parse(&query);
         params.set("context", "embed");
         // `WP_REST_Server::embed_links()`: embedded collections are not cut at the default of 10.
-        if params.get("per_page").is_none_or(|p| p.is_empty() || p == "0") {
+        if params
+            .get("per_page")
+            .is_none_or(|p| p.is_empty() || p == "0")
+        {
             params.set("per_page", "100");
         }
-        let outer = std::mem::replace(&mut *self.route.lock().unwrap_or_else(|e| e.into_inner()), (route.clone(), query.clone()));
-        self.earlier_routes.lock().unwrap_or_else(|e| e.into_inner()).push(outer.0.clone());
+        let outer = std::mem::replace(
+            &mut *self.route.lock().unwrap_or_else(|e| e.into_inner()),
+            (route.clone(), query.clone()),
+        );
+        self.earlier_routes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(outer.0.clone());
         let outcome = match self.plugin_pre_dispatch(&route, &query, true).await {
             Ok(Some(outcome)) => Ok(outcome),
             Ok(None) => self.dispatch_embedded(&route, &params).await,
@@ -525,34 +878,45 @@ impl<'a> Rest<'a> {
     }
 
     async fn embed_one(&self, item: &mut Value, rels: Option<&[String]>) -> Result<()> {
-        let Some(links) = item.get("_links").and_then(Value::as_object).cloned() else { return Ok(()) };
+        let Some(links) = item.get("_links").and_then(Value::as_object).cloned() else {
+            return Ok(());
+        };
         let mut embedded = Map::new();
         for (rel, entries) in &links {
             if rel == "curies" || rels.is_some_and(|wanted| !wanted.iter().any(|w| w == rel)) {
                 continue;
             }
-            let Some(entries) = entries.as_array() else { continue };
+            let Some(entries) = entries.as_array() else {
+                continue;
+            };
             let mut results = Vec::new();
             for entry in entries {
                 if entry.get("embeddable") != Some(&Value::Bool(true)) {
                     results.push(Value::Array(Vec::new()));
                     continue;
                 }
-                let href = entry.get("href").and_then(Value::as_str).unwrap_or_default();
+                let href = entry
+                    .get("href")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 results.push(match self.fetch_href(href).await? {
                     Ok(resp) => resp.data,
                     Err(e) => e.to_value(self.site),
                 });
             }
             // `count( array_filter( $embeds ) )`: empty collections do not count.
-            if results.iter().any(|r| !matches!(r, Value::Array(a) if a.is_empty())) {
+            if results
+                .iter()
+                .any(|r| !matches!(r, Value::Array(a) if a.is_empty()))
+            {
                 embedded.insert(rel.clone(), Value::Array(results));
             }
         }
         if !embedded.is_empty()
-            && let Some(object) = item.as_object_mut() {
-                object.insert("_embedded".into(), Value::Object(embedded));
-            }
+            && let Some(object) = item.as_object_mut()
+        {
+            object.insert("_embedded".into(), Value::Object(embedded));
+        }
         Ok(())
     }
 
@@ -568,19 +932,39 @@ impl<'a> Rest<'a> {
             let v = o.string("gmt_offset", "0");
             let n = v.trim().parse::<f64>().unwrap_or(0.0);
             // A whole number prints without a fraction.
-            if n.fract() == 0.0 { Value::from(n as i64) } else { Value::from(n) }
+            if n.fract() == 0.0 {
+                Value::from(n as i64)
+            } else {
+                Value::from(n)
+            }
         };
         let routes = self.routes_of(None);
         let mut out = Map::new();
         out.insert("name".into(), Value::from(s.blogname.clone()));
         out.insert("description".into(), Value::from(s.blogdescription.clone()));
-        out.insert("url".into(), Value::from(s.siteurl.trim_end_matches('/').to_owned()));
-        out.insert("home".into(), Value::from(s.home.trim_end_matches('/').to_owned()));
+        out.insert(
+            "url".into(),
+            Value::from(s.siteurl.trim_end_matches('/').to_owned()),
+        );
+        out.insert(
+            "home".into(),
+            Value::from(s.home.trim_end_matches('/').to_owned()),
+        );
         out.insert("gmt_offset".into(), gmt_offset);
-        out.insert("timezone_string".into(), Value::from(o.string("timezone_string", "")));
+        out.insert(
+            "timezone_string".into(),
+            Value::from(o.string("timezone_string", "")),
+        );
         out.insert("page_for_posts".into(), Value::from(s.page_for_posts));
         out.insert("page_on_front".into(), Value::from(s.page_on_front));
-        out.insert("show_on_front".into(), Value::from(if s.show_on_front == rustpress_core::ShowOnFront::Page { "page" } else { "posts" }));
+        out.insert(
+            "show_on_front".into(),
+            Value::from(if s.show_on_front == rustpress_core::ShowOnFront::Page {
+                "page"
+            } else {
+                "posts"
+            }),
+        );
         out.insert("namespaces".into(), Value::from(self.namespaces()));
         // `wp_is_application_passwords_available()`: over HTTPS, or on a local site.
         let available = s.siteurl.starts_with("https") || self.site.environment_type() == "local";
@@ -593,7 +977,10 @@ impl<'a> Rest<'a> {
         if self.client_side_media() && self.can("upload_files") {
             let mut sizes = Map::new();
             for (name, width, height, crop) in rustpress_content::media::registered_sizes(o) {
-                sizes.insert(name, serde_json::json!({"width": width, "height": height, "crop": crop}));
+                sizes.insert(
+                    name,
+                    serde_json::json!({"width": width, "height": height, "crop": crop}),
+                );
             }
             out.insert("image_sizes".into(), Value::Object(sizes));
             out.insert("image_size_threshold".into(), Value::from(2560));
@@ -612,7 +999,10 @@ impl<'a> Rest<'a> {
         let mut links = Map::new();
         let mut featured = Vec::new();
         if all_links {
-            links.insert("help".into(), serde_json::json!([{"href": "https://developer.wordpress.org/rest-api/"}]));
+            links.insert(
+                "help".into(),
+                serde_json::json!([{"href": "https://developer.wordpress.org/rest-api/"}]),
+            );
             // `add_active_theme_link_to_index()`: for who may switch themes or edit.
             if self.can("switch_themes") || self.can("edit_posts") {
                 links.insert("wp:active-theme".into(), serde_json::json!([{"href": self.rest_url(&format!("wp/v2/themes/{}", self.theme.stylesheet))}]));
@@ -651,20 +1041,37 @@ impl<'a> Rest<'a> {
         let mut routes = Map::new();
         for (route, mut entry) in self.route_table() {
             // The routes for client-side media processing exist on `localhost` and over HTTPS only.
-            if !self.client_side_media() && route.starts_with("/wp/v2/media/") && (route.ends_with("/sideload") || route.ends_with("/finalize")) {
+            if !self.client_side_media()
+                && route.starts_with("/wp/v2/media/")
+                && (route.ends_with("/sideload") || route.ends_with("/finalize"))
+            {
                 continue;
             }
-            if namespace.is_some_and(|ns| entry.get("namespace").and_then(Value::as_str) != Some(ns)) {
+            if namespace
+                .is_some_and(|ns| entry.get("namespace").and_then(Value::as_str) != Some(ns))
+            {
                 continue;
             }
             // The schema of a plugin's route is described only by `OPTIONS` (the `help` context).
             if let Some(object) = entry.as_object_mut() {
                 object.shift_remove("schema");
             }
-            if let Some(links) = entry.pointer_mut("/_links/self").and_then(Value::as_array_mut) {
+            if let Some(links) = entry
+                .pointer_mut("/_links/self")
+                .and_then(Value::as_array_mut)
+            {
                 for link in links {
-                    if let Some(href) = link.get("href").and_then(Value::as_str).and_then(|h| h.strip_prefix("@REST@")).map(str::to_owned) {
-                        link["href"] = Value::from(self.rest_url(if href == "/" { "/" } else { href.trim_start_matches('/') }));
+                    if let Some(href) = link
+                        .get("href")
+                        .and_then(Value::as_str)
+                        .and_then(|h| h.strip_prefix("@REST@"))
+                        .map(str::to_owned)
+                    {
+                        link["href"] = Value::from(self.rest_url(if href == "/" {
+                            "/"
+                        } else {
+                            href.trim_start_matches('/')
+                        }));
                     }
                 }
             }
@@ -678,9 +1085,35 @@ impl<'a> Rest<'a> {
     /// 'internal' => false ] )` after `private`, `get_post_stati()` before `any`.
     fn add_plugin_statuses(&self, value: &mut Value) {
         const PUBLIC: [&str; 5] = ["publish", "future", "draft", "pending", "private"];
-        const ALL: [&str; 13] = ["publish", "future", "draft", "pending", "private", "trash", "auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed", "any"];
-        let statuses: Vec<Value> = self.site.plugins.post_statuses(self.site).into_iter().map(|(slug, _)| Value::from(slug)).collect();
-        let internal: Vec<Value> = self.site.plugins.internal_post_statuses().into_iter().map(Value::from).collect();
+        const ALL: [&str; 13] = [
+            "publish",
+            "future",
+            "draft",
+            "pending",
+            "private",
+            "trash",
+            "auto-draft",
+            "inherit",
+            "request-pending",
+            "request-confirmed",
+            "request-failed",
+            "request-completed",
+            "any",
+        ];
+        let statuses: Vec<Value> = self
+            .site
+            .plugins
+            .post_statuses(self.site)
+            .into_iter()
+            .map(|(slug, _)| Value::from(slug))
+            .collect();
+        let internal: Vec<Value> = self
+            .site
+            .plugins
+            .internal_post_statuses()
+            .into_iter()
+            .map(Value::from)
+            .collect();
         if statuses.is_empty() && internal.is_empty() {
             return;
         }
@@ -705,7 +1138,9 @@ impl<'a> Rest<'a> {
                         }
                     }
                 }
-                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, statuses, every)),
+                Value::Array(items) => items
+                    .iter_mut()
+                    .for_each(|item| walk(item, statuses, every)),
                 _ => {}
             }
         }
@@ -715,14 +1150,32 @@ impl<'a> Rest<'a> {
     /// `rest_handle_options_request()`: the description of the route a path matches (`get_data_for_route()` in the
     /// `help` context, with the schema), and the methods of its endpoints.
     pub(crate) fn route_help(&self, path: &str) -> Option<(Value, Vec<String>)> {
-        let Some((route, entry)) = route_patterns().iter().find(|(_, pattern)| pattern.is_match(path)).and_then(|(route, _)| golden_routes().get(route).map(|e| (route, e))) else {
+        let Some((route, entry)) = route_patterns()
+            .iter()
+            .find(|(_, pattern)| pattern.is_match(path))
+            .and_then(|(route, _)| golden_routes().get(route).map(|e| (route, e)))
+        else {
             // A route of a plugin, without a schema.
             let (_, entry) = self.plugin_route_of(path)?;
-            let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+            let methods = entry
+                .get("methods")
+                .and_then(Value::as_array)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
             return Some((self.with_rest_urls(entry), methods));
         };
         let schemas = route_schemas();
-        let schema = schemas.get("routes").and_then(|r| r.get(route)).and_then(Value::as_u64).and_then(|i| schemas.get("schemas")?.get(i as usize)).cloned();
+        let schema = schemas
+            .get("routes")
+            .and_then(|r| r.get(route))
+            .and_then(Value::as_u64)
+            .and_then(|i| schemas.get("schemas")?.get(i as usize))
+            .cloned();
         let mut data = Map::new();
         for (key, value) in entry.as_object()? {
             if key == "_links"
@@ -737,7 +1190,16 @@ impl<'a> Rest<'a> {
         {
             data.insert("schema".into(), self.with_rest_urls(schema));
         }
-        let methods = entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default();
+        let methods = entry
+            .get("methods")
+            .and_then(Value::as_array)
+            .map(|m| {
+                m.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut data = Value::Object(data);
         self.add_theme_image_sizes(route, &mut data);
         self.add_plugin_taxonomies(route, &mut data);
@@ -752,12 +1214,23 @@ impl<'a> Rest<'a> {
     /// of its routes after the tags, shaped like the categories (hierarchical) or the tags
     /// (`WP_REST_Posts_Controller::get_item_schema()`, `get_collection_params()`).
     fn add_plugin_taxonomies(&self, route: &str, data: &mut Value) {
-        let Some(base) = route.strip_prefix("/wp/v2/").map(|r| r.split('/').next().unwrap_or_default()) else { return };
+        let Some(base) = route
+            .strip_prefix("/wp/v2/")
+            .map(|r| r.split('/').next().unwrap_or_default())
+        else {
+            return;
+        };
         let post_type = match base {
             "posts" => "post".to_owned(),
             "pages" => "page".to_owned(),
             "media" => "attachment".to_owned(),
-            other => match self.site.types.post_types.iter().find(|t| t.rest_base() == other) {
+            other => match self
+                .site
+                .types
+                .post_types
+                .iter()
+                .find(|t| t.rest_base() == other)
+            {
                 Some(info) => info.name.clone(),
                 None => return,
             },
@@ -767,7 +1240,11 @@ impl<'a> Rest<'a> {
             .types
             .taxonomies
             .iter()
-            .filter(|t| t.show_in_rest && t.object_types.contains(&post_type) && !matches!(t.name.as_str(), "category" | "post_tag"))
+            .filter(|t| {
+                t.show_in_rest
+                    && t.object_types.contains(&post_type)
+                    && !matches!(t.name.as_str(), "category" | "post_tag")
+            })
             .map(|t| (t.name.clone(), t.rest_base().to_owned(), t.hierarchical))
             .collect();
         if taxonomies.is_empty() {
@@ -777,26 +1254,60 @@ impl<'a> Rest<'a> {
             let text = |s: &str| from.iter().fold(s.to_owned(), |s, (a, b)| s.replace(a, b));
             match value {
                 Value::String(s) => Value::String(text(s)),
-                Value::Array(items) => Value::Array(items.iter().map(|v| rename(v, from)).collect()),
-                Value::Object(map) => Value::Object(map.iter().map(|(k, v)| (text(k), rename(v, from))).collect()),
+                Value::Array(items) => {
+                    Value::Array(items.iter().map(|v| rename(v, from)).collect())
+                }
+                Value::Object(map) => Value::Object(
+                    map.iter()
+                        .map(|(k, v)| (text(k), rename(v, from)))
+                        .collect(),
+                ),
                 other => other.clone(),
             }
         }
         fn walk(value: &mut Value, taxonomies: &[(String, String, bool)]) {
             match value {
                 // The `links` of the schema: `action-assign-…` and `action-create-…` after those of the tags.
-                Value::Array(items) if items.iter().any(|l| l.get("rel").and_then(Value::as_str) == Some("https://api.w.org/action-create-tags")) => {
-                    let link = |rel: &str| items.iter().find(|l| l.get("rel").and_then(Value::as_str) == Some(rel)).cloned();
+                Value::Array(items)
+                    if items.iter().any(|l| {
+                        l.get("rel").and_then(Value::as_str)
+                            == Some("https://api.w.org/action-create-tags")
+                    }) =>
+                {
+                    let link = |rel: &str| {
+                        items
+                            .iter()
+                            .find(|l| l.get("rel").and_then(Value::as_str) == Some(rel))
+                            .cloned()
+                    };
                     let mut added = Vec::new();
                     for (name, base, hierarchical) in taxonomies {
-                        let (template, from) = if *hierarchical { ("categories", [("categories", base.as_str()), ("category", name.as_str())]) } else { ("tags", [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                        let (template, from) = if *hierarchical {
+                            (
+                                "categories",
+                                [("categories", base.as_str()), ("category", name.as_str())],
+                            )
+                        } else {
+                            (
+                                "tags",
+                                [("tags", base.as_str()), ("post_tag", name.as_str())],
+                            )
+                        };
                         for action in ["assign", "create"] {
-                            if let Some(shape) = link(&format!("https://api.w.org/action-{action}-{template}")) {
+                            if let Some(shape) =
+                                link(&format!("https://api.w.org/action-{action}-{template}"))
+                            {
                                 added.push(rename(&shape, &from));
                             }
                         }
                     }
-                    let at = items.iter().position(|l| l.get("rel").and_then(Value::as_str) == Some("https://api.w.org/action-create-tags")).map_or(items.len(), |i| i + 1);
+                    let at = items
+                        .iter()
+                        .position(|l| {
+                            l.get("rel").and_then(Value::as_str)
+                                == Some("https://api.w.org/action-create-tags")
+                        })
+                        .map_or(items.len(), |i| i + 1);
                     items.splice(at..at, added);
                 }
                 Value::Object(map) => {
@@ -805,12 +1316,24 @@ impl<'a> Rest<'a> {
                     }
                     // After `tags` (schema, writes) and after `tags_exclude` (the filters of the collection).
                     for (after, suffix) in [("tags_exclude", "_exclude"), ("tags", "")] {
-                        if !map.contains_key(after) || (suffix.is_empty() && map.contains_key("tags_exclude")) {
+                        if !map.contains_key(after)
+                            || (suffix.is_empty() && map.contains_key("tags_exclude"))
+                        {
                             continue;
                         }
                         let mut added = Vec::new();
                         for (name, base, hierarchical) in taxonomies {
-                            let (template, from) = if *hierarchical { (format!("categories{suffix}"), [("categories", base.as_str()), ("category", name.as_str())]) } else { (format!("tags{suffix}"), [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                            let (template, from) = if *hierarchical {
+                                (
+                                    format!("categories{suffix}"),
+                                    [("categories", base.as_str()), ("category", name.as_str())],
+                                )
+                            } else {
+                                (
+                                    format!("tags{suffix}"),
+                                    [("tags", base.as_str()), ("post_tag", name.as_str())],
+                                )
+                            };
                             if let Some(shape) = map.get(&template) {
                                 added.push((format!("{base}{suffix}"), rename(shape, &from)));
                             }
@@ -819,11 +1342,27 @@ impl<'a> Rest<'a> {
                             // `{$base}` comes before `{$base}_exclude`.
                             let mut both = Vec::new();
                             for (name, base, hierarchical) in taxonomies {
-                                let (template, from) = if *hierarchical { ("categories", [("categories", base.as_str()), ("category", name.as_str())]) } else { ("tags", [("tags", base.as_str()), ("post_tag", name.as_str())]) };
+                                let (template, from) = if *hierarchical {
+                                    (
+                                        "categories",
+                                        [
+                                            ("categories", base.as_str()),
+                                            ("category", name.as_str()),
+                                        ],
+                                    )
+                                } else {
+                                    (
+                                        "tags",
+                                        [("tags", base.as_str()), ("post_tag", name.as_str())],
+                                    )
+                                };
                                 if let Some(shape) = map.get(template) {
                                     both.push((base.clone(), rename(shape, &from)));
                                 }
-                                if let Some(pos) = added.iter().position(|(k, _)| *k == format!("{base}_exclude")) {
+                                if let Some(pos) = added
+                                    .iter()
+                                    .position(|(k, _)| *k == format!("{base}_exclude"))
+                                {
                                     both.push(added.remove(pos));
                                 }
                             }
@@ -852,13 +1391,34 @@ impl<'a> Rest<'a> {
     /// `get_post_types( [ 'show_in_rest' => true ] )` in the `has_published_posts` filter of the users: WordPress's
     /// types, then the registered ones in the order of their registrations (the plugins' before the others').
     fn add_registered_post_types(&self, data: &mut Value) {
-        let registered: Vec<&str> = self.site.types.rewrite_post_types().iter().map(|t| t.name.as_str()).collect();
-        let shown: Vec<&str> = self.site.types.rewrite_post_types().iter().filter(|t| t.show_in_rest).map(|t| t.name.as_str()).collect();
+        let registered: Vec<&str> = self
+            .site
+            .types
+            .rewrite_post_types()
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect();
+        let shown: Vec<&str> = self
+            .site
+            .types
+            .rewrite_post_types()
+            .iter()
+            .filter(|t| t.show_in_rest)
+            .map(|t| t.name.as_str())
+            .collect();
         fn walk(value: &mut Value, registered: &[&str], shown: &[&str]) {
             match value {
                 Value::Object(map) => {
-                    if let Some(Value::Object(list)) = map.get_mut("has_published_posts").and_then(|v| v.get_mut("items")).and_then(|v| v.get_mut("enum")) {
-                        let mut rebuilt: Map<String, Value> = list.iter().filter(|(k, _)| !registered.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+                    if let Some(Value::Object(list)) = map
+                        .get_mut("has_published_posts")
+                        .and_then(|v| v.get_mut("items"))
+                        .and_then(|v| v.get_mut("enum"))
+                    {
+                        let mut rebuilt: Map<String, Value> = list
+                            .iter()
+                            .filter(|(k, _)| !registered.contains(&k.as_str()))
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
                         for name in shown {
                             rebuilt.insert((*name).to_owned(), Value::from(*name));
                         }
@@ -868,7 +1428,9 @@ impl<'a> Rest<'a> {
                         walk(child, registered, shown);
                     }
                 }
-                Value::Array(items) => items.iter_mut().for_each(|item| walk(item, registered, shown)),
+                Value::Array(items) => items
+                    .iter_mut()
+                    .for_each(|item| walk(item, registered, shown)),
                 _ => {}
             }
         }
@@ -883,12 +1445,16 @@ impl<'a> Rest<'a> {
             Value::Object(map) => {
                 for (key, item) in map.iter_mut() {
                     match item {
-                        Value::String(text) if key == "description" || key == "title" => *text = self.site.tr(text),
+                        Value::String(text) if key == "description" || key == "title" => {
+                            *text = self.site.tr(text)
+                        }
                         other => self.translate_schema(other),
                     }
                 }
             }
-            Value::Array(items) => items.iter_mut().for_each(|item| self.translate_schema(item)),
+            Value::Array(items) => items
+                .iter_mut()
+                .for_each(|item| self.translate_schema(item)),
             _ => {}
         }
     }
@@ -898,22 +1464,43 @@ impl<'a> Rest<'a> {
         if !route.starts_with("/wp/v2/media") {
             return;
         }
-        let sizes = data.get_mut("schema").and_then(|s| s.get_mut("properties")).and_then(|p| p.get_mut("image_quality")).and_then(|q| q.get_mut("properties")).and_then(|p| p.get_mut("sizes")).and_then(|s| s.get_mut("properties")).and_then(Value::as_object_mut);
+        let sizes = data
+            .get_mut("schema")
+            .and_then(|s| s.get_mut("properties"))
+            .and_then(|p| p.get_mut("image_quality"))
+            .and_then(|q| q.get_mut("properties"))
+            .and_then(|p| p.get_mut("sizes"))
+            .and_then(|s| s.get_mut("properties"))
+            .and_then(Value::as_object_mut);
         if let Some(sizes) = sizes {
             for name in rustpress_theme::classic::image_size_names(&self.theme.stylesheet) {
-                sizes.insert((*name).to_owned(), serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100}));
+                sizes.insert(
+                    (*name).to_owned(),
+                    serde_json::json!({"type": "integer", "minimum": 1, "maximum": 100}),
+                );
             }
         }
     }
 
     fn add_registered_meta(&self, route: &str, data: &mut Value) {
-        let Some(base) = route.strip_prefix("/wp/v2/").map(|r| r.split('/').next().unwrap_or_default()) else { return };
+        let Some(base) = route
+            .strip_prefix("/wp/v2/")
+            .map(|r| r.split('/').next().unwrap_or_default())
+        else {
+            return;
+        };
         let post_type = match base {
             "posts" => "post".to_owned(),
             "pages" => "page".to_owned(),
             "media" => "attachment".to_owned(),
             "blocks" => "wp_block".to_owned(),
-            other => match self.site.types.post_types.iter().find(|t| t.rest_base() == other) {
+            other => match self
+                .site
+                .types
+                .post_types
+                .iter()
+                .find(|t| t.rest_base() == other)
+            {
                 Some(info) => info.name.clone(),
                 None => return,
             },
@@ -934,7 +1521,10 @@ impl<'a> Rest<'a> {
             match value {
                 Value::Object(map) => {
                     for (key, child) in map.iter_mut() {
-                        if key == "meta" && child.get("description").and_then(Value::as_str) == Some("Meta fields.") {
+                        if key == "meta"
+                            && child.get("description").and_then(Value::as_str)
+                                == Some("Meta fields.")
+                        {
                             // Registered before the core's own (`footnotes`).
                             if let Some(slot) = child.get_mut("properties") {
                                 let mut merged = properties.clone();
@@ -961,11 +1551,21 @@ impl<'a> Rest<'a> {
     fn with_rest_urls(&self, value: Value) -> Value {
         match value {
             Value::String(s) => match s.strip_prefix("@REST@") {
-                Some(path) => Value::from(self.rest_url(if path.is_empty() || path == "/" { "/" } else { path.trim_start_matches('/') })),
+                Some(path) => Value::from(self.rest_url(if path.is_empty() || path == "/" {
+                    "/"
+                } else {
+                    path.trim_start_matches('/')
+                })),
                 None => Value::String(s),
             },
-            Value::Array(items) => Value::Array(items.into_iter().map(|v| self.with_rest_urls(v)).collect()),
-            Value::Object(map) => Value::Object(map.into_iter().map(|(k, v)| (k, self.with_rest_urls(v))).collect()),
+            Value::Array(items) => {
+                Value::Array(items.into_iter().map(|v| self.with_rest_urls(v)).collect())
+            }
+            Value::Object(map) => Value::Object(
+                map.into_iter()
+                    .map(|(k, v)| (k, self.with_rest_urls(v)))
+                    .collect(),
+            ),
             other => other,
         }
     }
@@ -983,19 +1583,34 @@ impl<'a> Rest<'a> {
 /// The routes WordPress lists in its index (`dev/gen-rest-index.py` takes them from the reference).
 fn golden_routes() -> &'static Map<String, Value> {
     static ROUTES: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
-    ROUTES.get_or_init(|| serde_json::from_str(include_str!("index_routes.json")).expect("the route table is valid JSON"))
+    ROUTES.get_or_init(|| {
+        serde_json::from_str(include_str!("index_routes.json"))
+            .expect("the route table is valid JSON")
+    })
 }
 
 /// The patterns of the routes, in the order of the index (`dev/gen-rest-index.py`).
 fn route_patterns() -> &'static [(String, regex::Regex)] {
     static PATTERNS: std::sync::OnceLock<Vec<(String, regex::Regex)>> = std::sync::OnceLock::new();
-    PATTERNS.get_or_init(|| golden_routes().keys().filter_map(|route| regex::Regex::new(&format!("(?i)^{route}$")).ok().map(|re| (route.clone(), re))).collect())
+    PATTERNS.get_or_init(|| {
+        golden_routes()
+            .keys()
+            .filter_map(|route| {
+                regex::Regex::new(&format!("(?i)^{route}$"))
+                    .ok()
+                    .map(|re| (route.clone(), re))
+            })
+            .collect()
+    })
 }
 
 /// The schema of every route that has one (`dev/gen-rest-schemas.py`): `{"schemas": [...], "routes": {route: index}}`.
 fn route_schemas() -> &'static Value {
     static SCHEMAS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    SCHEMAS.get_or_init(|| serde_json::from_str(include_str!("route_schemas.json")).expect("the route schemas are valid JSON"))
+    SCHEMAS.get_or_init(|| {
+        serde_json::from_str(include_str!("route_schemas.json"))
+            .expect("the route schemas are valid JSON")
+    })
 }
 
 impl Rest<'_> {
@@ -1031,7 +1646,10 @@ impl Rest<'_> {
     pub(crate) fn namespaces(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for (_, entry) in self.route_table() {
-            if let Some(ns) = entry.get("namespace").and_then(Value::as_str).filter(|ns| !ns.is_empty())
+            if let Some(ns) = entry
+                .get("namespace")
+                .and_then(Value::as_str)
+                .filter(|ns| !ns.is_empty())
                 && !out.iter().any(|seen| seen == ns)
             {
                 out.push(ns.to_owned());
@@ -1047,32 +1665,68 @@ impl Rest<'_> {
 
     /// The route of a plugin that `path` matches, with its description.
     fn plugin_route_of(&self, path: &str) -> Option<(String, Value)> {
-        self.plugin_routes().into_iter().find(|(route, _)| regex::Regex::new(&format!("(?i)^{route}$")).is_ok_and(|re| re.is_match(path)))
+        self.plugin_routes().into_iter().find(|(route, _)| {
+            regex::Regex::new(&format!("(?i)^{route}$")).is_ok_and(|re| re.is_match(path))
+        })
     }
 
     /// `rest_pre_dispatch` of the plugins: an error instead of the route.
     /// `embedded` is an internal request of `embed_links()`: a GET without the body of the outer request.
-    async fn plugin_pre_dispatch(&self, route: &str, query: &str, embedded: bool) -> Result<Option<Outcome>> {
+    async fn plugin_pre_dispatch(
+        &self,
+        route: &str,
+        query: &str,
+        embedded: bool,
+    ) -> Result<Option<Outcome>> {
         if self.site.plugins.is_empty() {
             return Ok(None);
         }
-        let route = if route.len() > 1 { route.trim_end_matches('/') } else { route };
+        let route = if route.len() > 1 {
+            route.trim_end_matches('/')
+        } else {
+            route
+        };
         let mut params = rustpress_core::canonical::parse_qs(query);
         match self.request.as_ref().filter(|_| !embedded).map(|r| &r.body) {
-            Some(edit::Body::Form(pairs) | edit::Body::Multipart { fields: pairs, .. }) => params.extend(pairs.iter().cloned()),
-            Some(edit::Body::Json(Value::Object(map))) => params.extend(map.iter().filter_map(|(k, v)| match v {
-                Value::String(s) => Some((k.clone(), s.clone())),
-                Value::Number(n) => Some((k.clone(), n.to_string())),
-                _ => None,
-            })),
+            Some(edit::Body::Form(pairs) | edit::Body::Multipart { fields: pairs, .. }) => {
+                params.extend(pairs.iter().cloned())
+            }
+            Some(edit::Body::Json(Value::Object(map))) => {
+                params.extend(map.iter().filter_map(|(k, v)| match v {
+                    Value::String(s) => Some((k.clone(), s.clone())),
+                    Value::Number(n) => Some((k.clone(), n.to_string())),
+                    _ => None,
+                }))
+            }
             _ => {}
         }
-        let request = rustpress_core::native::RestPreDispatch { site: self.site, method: if embedded { "GET" } else { self.method() }, route, params: &params, user: self.blank.viewer.as_ref() };
-        let Some(answer) = self.site.plugins.rest_pre_dispatch(&request).await? else { return Ok(None) };
-        let code = answer.data.get("code").and_then(Value::as_str).unwrap_or_default();
-        let message = answer.data.get("message").and_then(Value::as_str).unwrap_or_default();
+        let request = rustpress_core::native::RestPreDispatch {
+            site: self.site,
+            method: if embedded { "GET" } else { self.method() },
+            route,
+            params: &params,
+            user: self.blank.viewer.as_ref(),
+        };
+        let Some(answer) = self.site.plugins.rest_pre_dispatch(&request).await? else {
+            return Ok(None);
+        };
+        let code = answer
+            .data
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let message = answer
+            .data
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         // The message is already in the site's language (the plugin's text domain).
-        Ok(Some(Err(crate::error::RestError::new(code, crate::error::Msg::new("%s").with(&[message]), answer.status).before_dispatch())))
+        Ok(Some(Err(crate::error::RestError::new(
+            code,
+            crate::error::Msg::new("%s").with(&[message]),
+            answer.status,
+        )
+        .before_dispatch())))
     }
 
     /// A request that an endpoint of a plugin takes (`register_rest_route()`).
@@ -1080,18 +1734,34 @@ impl Rest<'_> {
         if self.site.plugins.is_empty() {
             return Ok(None);
         }
-        let route = if route.len() > 1 { route.trim_end_matches('/') } else { route };
+        let route = if route.len() > 1 {
+            route.trim_end_matches('/')
+        } else {
+            route
+        };
         let no_fields = Vec::new();
         let (fields, files) = match self.request.as_ref().map(|r| &r.body) {
-            Some(edit::Body::Multipart { fields, files }) => {
-                (fields, files.iter().map(|f| rustpress_core::native::RestFile { field: f.field.clone(), filename: f.filename.clone(), content_type: f.content_type.clone(), bytes: f.bytes.clone() }).collect())
-            }
+            Some(edit::Body::Multipart { fields, files }) => (
+                fields,
+                files
+                    .iter()
+                    .map(|f| rustpress_core::native::RestFile {
+                        field: f.field.clone(),
+                        filename: f.filename.clone(),
+                        content_type: f.content_type.clone(),
+                        bytes: f.bytes.clone(),
+                    })
+                    .collect(),
+            ),
             Some(edit::Body::Form(pairs)) => (pairs, Vec::new()),
             _ => (&no_fields, Vec::new()),
         };
         let request = self.request.as_ref();
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
-        let services = rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let services =
+            rustpress_theme::head::Services::new(self.theme, self.site, &self.blank, self.registry);
         let plugin_request = rustpress_core::native::RestRequest {
             site: self.site,
             method: self.method(),
@@ -1100,7 +1770,9 @@ impl Rest<'_> {
             query: &self.blank.raw_query,
             fields,
             files: &files,
-            content_type: request.and_then(|r| r.content_type.as_deref()).unwrap_or_default(),
+            content_type: request
+                .and_then(|r| r.content_type.as_deref())
+                .unwrap_or_default(),
             remote_addr: request.and_then(|r| r.remote_addr.as_deref()),
             user_agent: request.and_then(|r| r.user_agent.as_deref()),
             referer: request.and_then(|r| r.referer.as_deref()),
@@ -1109,10 +1781,21 @@ impl Rest<'_> {
             mailer: self.mailer.as_deref(),
             services: &services,
         };
-        let Some(answer) = self.site.plugins.rest(&plugin_request).await? else { return Ok(None) };
+        let Some(answer) = self.site.plugins.rest(&plugin_request).await? else {
+            return Ok(None);
+        };
         // `rest_send_allow_header()`: the methods of the route, once the permission check passed.
         let allow = match self.plugin_route_of(route).filter(|_| answer.permitted) {
-            Some((_, entry)) => entry.get("methods").and_then(Value::as_array).map(|m| m.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
+            Some((_, entry)) => entry
+                .get("methods")
+                .and_then(Value::as_array)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default(),
             None => String::new(),
         };
         let mut resp = Resp::item(answer.data);
@@ -1132,7 +1815,11 @@ fn embed_param(params: &Params) -> Option<Option<Vec<String>>> {
     if matches!(value, "" | "0" | "1" | "true") {
         return Some(None);
     }
-    let rels: Vec<String> = value.split([',', ' ', '\t', '\n', '\r']).filter(|r| !r.is_empty()).map(str::to_owned).collect();
+    let rels: Vec<String> = value
+        .split([',', ' ', '\t', '\n', '\r'])
+        .filter(|r| !r.is_empty())
+        .map(str::to_owned)
+        .collect();
     Some(if rels.is_empty() { None } else { Some(rels) })
 }
 
@@ -1145,9 +1832,20 @@ mod tests {
 
     #[test]
     fn options_paths_find_their_route() {
-        let find = |path: &str| super::route_patterns().iter().find(|(_, re)| re.is_match(path)).map(|(route, _)| route.clone());
+        let find = |path: &str| {
+            super::route_patterns()
+                .iter()
+                .find(|(_, re)| re.is_match(path))
+                .map(|(route, _)| route.clone())
+        };
         assert_eq!(find("/wp/v2/settings").as_deref(), Some("/wp/v2/settings"));
-        assert_eq!(find("/wp/v2/posts/12").as_deref(), Some(r"/wp/v2/posts/(?P<id>[\d]+)"));
-        assert_eq!(find("/wp/v2/templates/twentytwentyfive//index").as_deref(), Some(r#"/wp/v2/templates/(?P<id>([^\/:<>\*\?"\|]+(?:\/[^\/:<>\*\?"\|]+)?)[\/\w%-]+)"#));
+        assert_eq!(
+            find("/wp/v2/posts/12").as_deref(),
+            Some(r"/wp/v2/posts/(?P<id>[\d]+)")
+        );
+        assert_eq!(
+            find("/wp/v2/templates/twentytwentyfive//index").as_deref(),
+            Some(r#"/wp/v2/templates/(?P<id>([^\/:<>\*\?"\|]+(?:\/[^\/:<>\*\?"\|]+)?)[\/\w%-]+)"#)
+        );
     }
 }

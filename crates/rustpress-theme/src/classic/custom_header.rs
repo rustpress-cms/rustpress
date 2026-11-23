@@ -60,7 +60,10 @@ impl DefaultHeader {
         let text = |s: &str| Value::Str(s.as_bytes().to_vec());
         Value::Array(vec![
             (key("url"), text(&esc_url_raw(&self.url))),
-            (key("thumbnail_url"), text(&esc_url_raw(&self.thumbnail_url))),
+            (
+                key("thumbnail_url"),
+                text(&esc_url_raw(&self.thumbnail_url)),
+            ),
             (key("description"), text(&self.description)),
         ])
     }
@@ -79,7 +82,9 @@ pub fn default_headers(site: &Site, template: &str, template_uri: &str) -> Vec<D
                 key: "default-image".into(),
                 url: url.clone(),
                 thumbnail_url: url,
-                description: site.i18n().gettext("twentyseventeen", "Default Header Image"),
+                description: site
+                    .i18n()
+                    .gettext("twentyseventeen", "Default Header Image"),
             }]
         }
         _ => Vec::new(),
@@ -122,21 +127,39 @@ impl Uploaded {
 pub async fn uploaded_header_images(site: &Site, stylesheet: &str) -> Result<Vec<Uploaded>> {
     let mut out = Vec::new();
     for id in site.db.custom_header_attachments(stylesheet).await? {
-        let Some(post) = site.db.post(id).await? else { continue };
+        let Some(post) = site.db.post(id).await? else {
+            continue;
+        };
         let meta = site.db.post_meta(id).await?;
-        let value = |name: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(name)).and_then(|m| m.meta_value.clone());
+        let value = |name: &str| {
+            meta.iter()
+                .find(|m| m.meta_key.as_deref() == Some(name))
+                .and_then(|m| m.meta_value.clone())
+        };
         let url = match value("_wp_attached_file").filter(|file| !file.is_empty()) {
             Some(file) => rustpress_blocks::images::attachment_url(site, &file),
             None => post.guid.clone(),
         };
-        let data = value("_wp_attachment_metadata").map(|raw| rustpress_core::options::maybe_unserialize(&raw)).unwrap_or(Value::Null);
+        let data = value("_wp_attachment_metadata")
+            .map(|raw| rustpress_core::options::maybe_unserialize(&raw))
+            .unwrap_or(Value::Null);
         out.push(Uploaded {
             attachment_id: id,
             url: esc_url_raw(&url),
             alt_text: value("_wp_attachment_image_alt").unwrap_or_default(),
-            attachment_parent: data.get("attachment_parent").filter(|v| !matches!(v, Value::Null)).cloned().unwrap_or(Value::Str(Vec::new())),
-            width: data.get("width").filter(|v| !matches!(v, Value::Null)).cloned(),
-            height: data.get("height").filter(|v| !matches!(v, Value::Null)).cloned(),
+            attachment_parent: data
+                .get("attachment_parent")
+                .filter(|v| !matches!(v, Value::Null))
+                .cloned()
+                .unwrap_or(Value::Str(Vec::new())),
+            width: data
+                .get("width")
+                .filter(|v| !matches!(v, Value::Null))
+                .cloned(),
+            height: data
+                .get("height")
+                .filter(|v| !matches!(v, Value::Null))
+                .cloned(),
         });
     }
     Ok(out)
@@ -168,12 +191,16 @@ fn is_empty(value: &Value) -> bool {
 
 /// `get_theme_mod( 'header_image', get_theme_support( 'custom-header', 'default-image' ) )`.
 pub fn header_image_mod(mods: &Value, support: &Support) -> Value {
-    mod_value(mods, "header_image").cloned().unwrap_or_else(|| Value::Str(support.default_image.as_bytes().to_vec()))
+    mod_value(mods, "header_image")
+        .cloned()
+        .unwrap_or_else(|| Value::Str(support.default_image.as_bytes().to_vec()))
 }
 
 /// `get_header_textcolor()`.
 pub fn header_textcolor(mods: &Value, support: &Support) -> String {
-    mod_value(mods, "header_textcolor").and_then(php_string).unwrap_or_else(|| support.default_text_color.clone())
+    mod_value(mods, "header_textcolor")
+        .and_then(php_string)
+        .unwrap_or_else(|| support.default_text_color.clone())
 }
 
 /// `display_header_text()`.
@@ -193,12 +220,35 @@ pub struct RandomHeader {
 
 /// `_get_random_header_data()`: `array_rand()` picks at random, and so does this. WordPress keeps the pick in a static
 /// variable, so a request asks once and hands it to the functions below.
-pub fn random_header(mods: &Value, support: &Support, defaults: &[DefaultHeader], uploaded: &[Uploaded]) -> Option<RandomHeader> {
-    let stored = mod_value(mods, "header_image").and_then(php_string).unwrap_or_default();
+pub fn random_header(
+    mods: &Value,
+    support: &Support,
+    defaults: &[DefaultHeader],
+    uploaded: &[Uploaded],
+) -> Option<RandomHeader> {
+    let stored = mod_value(mods, "header_image")
+        .and_then(php_string)
+        .unwrap_or_default();
     let candidates: Vec<RandomHeader> = if stored == "random-uploaded-image" {
-        uploaded.iter().map(|u| RandomHeader { url: u.url.clone(), attachment_id: u.attachment_id, width: u.width.clone(), height: u.height.clone() }).collect()
+        uploaded
+            .iter()
+            .map(|u| RandomHeader {
+                url: u.url.clone(),
+                attachment_id: u.attachment_id,
+                width: u.width.clone(),
+                height: u.height.clone(),
+            })
+            .collect()
     } else if stored == "random-default-image" || support.random_default {
-        defaults.iter().map(|d| RandomHeader { url: d.url.clone(), attachment_id: 0, width: None, height: None }).collect()
+        defaults
+            .iter()
+            .map(|d| RandomHeader {
+                url: d.url.clone(),
+                attachment_id: 0,
+                width: None,
+                height: None,
+            })
+            .collect()
     } else {
         Vec::new()
     };
@@ -215,7 +265,12 @@ fn random_header_image(random: Option<&RandomHeader>) -> String {
 }
 
 /// `is_random_header_image( $type )`: `any`, `default` or `uploaded`.
-pub fn is_random_header_image(kind: &str, mods: &Value, support: &Support, random: Option<&RandomHeader>) -> bool {
+pub fn is_random_header_image(
+    kind: &str,
+    mods: &Value,
+    support: &Support,
+    random: Option<&RandomHeader>,
+) -> bool {
     let stored = header_image_mod(mods, support);
     let text = php_string(&stored).unwrap_or_default();
     let fallback = || is_empty(&stored) && !random_header_image(random).is_empty();
@@ -227,13 +282,25 @@ pub fn is_random_header_image(kind: &str, mods: &Value, support: &Support, rando
 
 /// `set_url_scheme()` with the scheme of the site.
 fn set_url_scheme(site: &Site, url: &str) -> String {
-    let scheme = if site.settings.siteurl.starts_with("https://") { "https" } else { "http" };
-    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).or_else(|| url.strip_prefix("//"));
+    let scheme = if site.settings.siteurl.starts_with("https://") {
+        "https"
+    } else {
+        "http"
+    };
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .or_else(|| url.strip_prefix("//"));
     rest.map_or(url.to_owned(), |rest| format!("{scheme}://{rest}"))
 }
 
 /// `get_header_image()`: `None` for `false`.
-pub fn header_image(site: &Site, mods: &Value, support: &Support, random: Option<&RandomHeader>) -> Option<String> {
+pub fn header_image(
+    site: &Site,
+    mods: &Value,
+    support: &Support,
+    random: Option<&RandomHeader>,
+) -> Option<String> {
     let stored = header_image_mod(mods, support);
     let mut url = match &stored {
         Value::Str(bytes) => String::from_utf8_lossy(bytes).into_owned(),
@@ -251,16 +318,26 @@ pub fn header_image(site: &Site, mods: &Value, support: &Support, random: Option
 }
 
 /// The width and height of `get_custom_header()`.
-pub fn custom_header_size(mods: &Value, support: &Support, random: Option<&RandomHeader>) -> (u64, u64) {
+pub fn custom_header_size(
+    mods: &Value,
+    support: &Support,
+    random: Option<&RandomHeader>,
+) -> (u64, u64) {
     let data = mod_value(mods, "header_image_data").filter(|data| !is_empty(data));
     let picked = is_random_header_image("any", mods, support, random);
     let prop = |name: &str| -> Option<&Value> {
         if picked {
             let random = random?;
-            return if name == "width" { random.width.as_ref() } else { random.height.as_ref() };
+            return if name == "width" {
+                random.width.as_ref()
+            } else {
+                random.height.as_ref()
+            };
         }
         match data? {
-            Value::Object { props, .. } => props.iter().find_map(|(k, v)| (*k == key(name)).then_some(v)),
+            Value::Object { props, .. } => props
+                .iter()
+                .find_map(|(k, v)| (*k == key(name)).then_some(v)),
             other @ Value::Array(_) => other.get(name),
             _ => None,
         }
@@ -269,9 +346,15 @@ pub fn custom_header_size(mods: &Value, support: &Support, random: Option<&Rando
         None => default,
         Some(Value::Int(n)) => n.unsigned_abs(),
         Some(Value::Float(f)) => f.trunc().abs() as u64,
-        Some(Value::Str(bytes)) => String::from_utf8_lossy(bytes).trim().parse::<f64>().map_or(0, |f| f.trunc().abs() as u64),
+        Some(Value::Str(bytes)) => String::from_utf8_lossy(bytes)
+            .trim()
+            .parse::<f64>()
+            .map_or(0, |f| f.trunc().abs() as u64),
         Some(Value::Bool(true)) => 1,
         Some(_) => 0,
     };
-    (absint(prop("width"), support.width), absint(prop("height"), support.height))
+    (
+        absint(prop("width"), support.width),
+        absint(prop("height"), support.height),
+    )
 }

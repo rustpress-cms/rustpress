@@ -21,12 +21,26 @@ use crate::rewrite::RewriteRules;
 const BUILT_IN_POST_TYPES: [&str; 3] = ["post", "page", "attachment"];
 
 /// Taxonomies WordPress registers itself (and the ones that are never public).
-const BUILT_IN_TAXONOMIES: [&str; 6] = ["category", "post_tag", "nav_menu", "link_category", "post_format", "wp_theme"];
+const BUILT_IN_TAXONOMIES: [&str; 6] = [
+    "category",
+    "post_tag",
+    "nav_menu",
+    "link_category",
+    "post_format",
+    "wp_theme",
+];
 
 /// Post types without a frontend of their own.
 pub fn is_internal_post_type(post_type: &str) -> bool {
-    matches!(post_type, "revision" | "nav_menu_item" | "customize_changeset" | "oembed_cache" | "user_request" | "custom_css")
-        || post_type.starts_with("wp_")
+    matches!(
+        post_type,
+        "revision"
+            | "nav_menu_item"
+            | "customize_changeset"
+            | "oembed_cache"
+            | "user_request"
+            | "custom_css"
+    ) || post_type.starts_with("wp_")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,17 +82,39 @@ impl PostTypeInfo {
     }
 
     fn new(name: &str, slug: String, archive_slug: Option<String>, hierarchical: bool) -> Self {
-        Self { name: name.to_owned(), query_var: Some(name.to_owned()), slug, archive_slug, hierarchical, label: None, singular: None, show_in_rest: false, rest_base: None, supports: None, registered: false, public: true, queryable: true, exclude_from_search: false, description: String::new(), menu_icon: None }
+        Self {
+            name: name.to_owned(),
+            query_var: Some(name.to_owned()),
+            slug,
+            archive_slug,
+            hierarchical,
+            label: None,
+            singular: None,
+            show_in_rest: false,
+            rest_base: None,
+            supports: None,
+            registered: false,
+            public: true,
+            queryable: true,
+            exclude_from_search: false,
+            description: String::new(),
+            menu_icon: None,
+        }
     }
 
     /// `$post_type_object->labels->name`.
     pub fn plural_label(&self) -> String {
-        self.label.clone().unwrap_or_else(|| (if self.hierarchical { "Pages" } else { "Posts" }).to_owned())
+        self.label
+            .clone()
+            .unwrap_or_else(|| (if self.hierarchical { "Pages" } else { "Posts" }).to_owned())
     }
 
     /// `$post_type_object->labels->singular_name`.
     pub fn singular_label(&self) -> String {
-        self.singular.clone().or_else(|| self.label.clone()).unwrap_or_else(|| (if self.hierarchical { "Page" } else { "Post" }).to_owned())
+        self.singular
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_else(|| (if self.hierarchical { "Page" } else { "Post" }).to_owned())
     }
 
     /// The `rest_base` of the type's REST routes.
@@ -123,12 +159,22 @@ pub struct TaxonomyInfo {
 impl TaxonomyInfo {
     /// `$taxonomy->labels->name`.
     pub fn plural_label(&self) -> String {
-        self.label.clone().unwrap_or_else(|| (if self.hierarchical { "Categories" } else { "Tags" }).to_owned())
+        self.label.clone().unwrap_or_else(|| {
+            (if self.hierarchical {
+                "Categories"
+            } else {
+                "Tags"
+            })
+            .to_owned()
+        })
     }
 
     /// `$taxonomy->labels->singular_name`.
     pub fn singular_label(&self) -> String {
-        self.singular.clone().or_else(|| self.label.clone()).unwrap_or_else(|| (if self.hierarchical { "Category" } else { "Tag" }).to_owned())
+        self.singular
+            .clone()
+            .or_else(|| self.label.clone())
+            .unwrap_or_else(|| (if self.hierarchical { "Category" } else { "Tag" }).to_owned())
     }
 
     pub fn rest_base(&self) -> &str {
@@ -172,7 +218,10 @@ impl RewriteType {
             _ => Lit::Array(Vec::new()),
         };
         let set = |key: &str| rewrite.get(key).filter(|v| !matches!(v, Lit::Null));
-        let slug = set("slug").filter(|v| v.truthy() == Some(true)).and_then(Lit::as_str).map_or_else(|| reg.name.clone(), str::to_owned);
+        let slug = set("slug")
+            .filter(|v| v.truthy() == Some(true))
+            .and_then(Lit::as_str)
+            .map_or_else(|| reg.name.clone(), str::to_owned);
         let has_archive = args.get("has_archive").cloned().unwrap_or(Lit::Bool(false));
         let archive = match &has_archive {
             v if v.truthy() == Some(false) => None,
@@ -194,7 +243,10 @@ impl RewriteType {
             taxonomy: false,
             slug,
             with_front: Some(set("with_front").is_none_or(|v| v.truthy().unwrap_or(true))),
-            hierarchical: args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false),
+            hierarchical: args
+                .get("hierarchical")
+                .and_then(Lit::truthy)
+                .unwrap_or(false),
             query_var: query_var(args, &reg.name),
             archive,
             feeds,
@@ -214,14 +266,21 @@ impl RewriteType {
             _ => Lit::Array(Vec::new()),
         };
         let set = |key: &str| rewrite.get(key).filter(|v| !matches!(v, Lit::Null));
-        let slug = set("slug").filter(|v| v.truthy() == Some(true)).and_then(Lit::as_str).map_or_else(|| crate::slug::sanitize_title(&reg.name), str::to_owned);
-        let hierarchical = args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false);
+        let slug = set("slug")
+            .filter(|v| v.truthy() == Some(true))
+            .and_then(Lit::as_str)
+            .map_or_else(|| crate::slug::sanitize_title(&reg.name), str::to_owned);
+        let hierarchical = args
+            .get("hierarchical")
+            .and_then(Lit::truthy)
+            .unwrap_or(false);
         Some(Self {
             name: reg.name.clone(),
             taxonomy: true,
             slug,
             with_front: Some(set("with_front").is_none_or(|v| v.truthy().unwrap_or(true))),
-            hierarchical: hierarchical && set("hierarchical").is_some_and(|v| v.truthy().unwrap_or(false)),
+            hierarchical: hierarchical
+                && set("hierarchical").is_some_and(|v| v.truthy().unwrap_or(false)),
             query_var: query_var(args, &reg.name),
             archive: None,
             feeds: true,
@@ -311,12 +370,21 @@ pub struct AdminPostType {
 impl AdminPostType {
     /// A label as `_get_custom_object_labels()` completes them; `None` when the type's default applies.
     pub fn label(&self, key: &str) -> Option<String> {
-        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-        let name = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+        let given = |k: &str| {
+            self.labels
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+        };
+        let name = given("name")
+            .filter(|n| !n.is_empty())
+            .or_else(|| given("label").filter(|l| !l.is_empty()));
         match key {
             "name" => name,
             "singular_name" => given("singular_name").or(name),
-            "name_admin_bar" => given("name_admin_bar").or_else(|| given("singular_name").or(name.clone())).or_else(|| Some(self.name.clone())),
+            "name_admin_bar" => given("name_admin_bar")
+                .or_else(|| given("singular_name").or(name.clone()))
+                .or_else(|| Some(self.name.clone())),
             "menu_name" => given("menu_name").or(name),
             "all_items" => given("all_items").or_else(|| given("menu_name").or(name)),
             other => given(other),
@@ -339,8 +407,15 @@ pub struct AdminTaxonomy {
 impl AdminTaxonomy {
     /// `labels->menu_name`: the given one, else the name; `None` when the default (Tags/Categories) applies.
     pub fn menu_name(&self) -> Option<String> {
-        let given = |k: &str| self.labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-        let name = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+        let given = |k: &str| {
+            self.labels
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+        };
+        let name = given("name")
+            .filter(|n| !n.is_empty())
+            .or_else(|| given("label").filter(|l| !l.is_empty()));
         given("menu_name").or(name)
     }
 }
@@ -385,7 +460,11 @@ impl Types {
         };
         self.registrations
             .iter()
-            .filter(|r| !r.taxonomy && !BUILT_IN_POST_TYPES.contains(&r.name.as_str()) && !is_internal_post_type(&r.name))
+            .filter(|r| {
+                !r.taxonomy
+                    && !BUILT_IN_POST_TYPES.contains(&r.name.as_str())
+                    && !is_internal_post_type(&r.name)
+            })
             .map(|r| {
                 let args = &r.args;
                 let public = flag(args, "public", false);
@@ -412,7 +491,10 @@ impl Types {
                         Some(Lit::Int(i)) => Some(*i),
                         _ => None,
                     },
-                    menu_icon: args.get("menu_icon").and_then(Lit::as_str).map(str::to_owned),
+                    menu_icon: args
+                        .get("menu_icon")
+                        .and_then(Lit::as_str)
+                        .map(str::to_owned),
                     labels: labels_of(args),
                 }
             })
@@ -428,13 +510,23 @@ impl Types {
         };
         self.registrations
             .iter()
-            .filter(|r| r.taxonomy == taxonomy && if taxonomy { !BUILT_IN_TAXONOMIES.contains(&r.name.as_str()) } else { !BUILT_IN_POST_TYPES.contains(&r.name.as_str()) && !is_internal_post_type(&r.name) })
+            .filter(|r| {
+                r.taxonomy == taxonomy
+                    && if taxonomy {
+                        !BUILT_IN_TAXONOMIES.contains(&r.name.as_str())
+                    } else {
+                        !BUILT_IN_POST_TYPES.contains(&r.name.as_str())
+                            && !is_internal_post_type(&r.name)
+                    }
+            })
             .map(|r| {
                 let args = &r.args;
                 let public = flag(args, "public", taxonomy);
                 let labels = labels_of(args);
                 let given = |k: &str| labels.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-                let label = given("name").filter(|n| !n.is_empty()).or_else(|| given("label").filter(|l| !l.is_empty()));
+                let label = given("name")
+                    .filter(|n| !n.is_empty())
+                    .or_else(|| given("label").filter(|l| !l.is_empty()));
                 RegisteredType {
                     name: r.name.clone(),
                     hierarchical: flag(args, "hierarchical", false),
@@ -461,7 +553,17 @@ impl Types {
             .map(|r| {
                 let public = flag(&r.args, "public", true);
                 let show_ui = flag(&r.args, "show_ui", public);
-                AdminTaxonomy { name: r.name.clone(), object_types: r.object_types.clone(), show_ui, show_in_menu: flag(&r.args, "show_in_menu", show_ui), meta_box: !matches!(r.args.get("meta_box_cb"), Some(Lit::Bool(false) | Lit::Unknown)), labels: labels_of(&r.args) }
+                AdminTaxonomy {
+                    name: r.name.clone(),
+                    object_types: r.object_types.clone(),
+                    show_ui,
+                    show_in_menu: flag(&r.args, "show_in_menu", show_ui),
+                    meta_box: !matches!(
+                        r.args.get("meta_box_cb"),
+                        Some(Lit::Bool(false) | Lit::Unknown)
+                    ),
+                    labels: labels_of(&r.args),
+                }
             })
             .collect()
     }
@@ -496,7 +598,10 @@ fn detect_post_type(rules: &RewriteRules, name: &str, var: &str) -> Option<PostT
         return None;
     }
     let (slug, hierarchical) = match single {
-        Some(pattern) => (literal_prefix(pattern).to_owned(), pattern.contains("(.+?)")),
+        Some(pattern) => (
+            literal_prefix(pattern).to_owned(),
+            pattern.contains("(.+?)"),
+        ),
         None => (archive_slug.clone().unwrap_or_default(), false),
     };
     Some(PostTypeInfo::new(name, slug, archive_slug, hierarchical))
@@ -504,7 +609,11 @@ fn detect_post_type(rules: &RewriteRules, name: &str, var: &str) -> Option<PostT
 
 /// The text of a rewrite pattern before its first group, without the trailing slash.
 fn literal_prefix(pattern: &str) -> &str {
-    pattern.split('(').next().unwrap_or("").trim_end_matches('/')
+    pattern
+        .split('(')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('/')
 }
 
 /// The query of a rule without `index.php?`.
@@ -514,7 +623,13 @@ fn query_of(query: &str) -> &str {
 
 impl Types {
     /// Infers the custom types that are in use from the stored rewrite rules.
-    pub fn infer(rules: &RewriteRules, used_post_types: &[String], used_taxonomies: &[String], relations: &[(String, String)], with_parents: &[String]) -> Self {
+    pub fn infer(
+        rules: &RewriteRules,
+        used_post_types: &[String],
+        used_taxonomies: &[String],
+        relations: &[(String, String)],
+        with_parents: &[String],
+    ) -> Self {
         let mut types = Self::default();
         for name in used_post_types {
             if BUILT_IN_POST_TYPES.contains(&name.as_str()) || is_internal_post_type(name) {
@@ -530,14 +645,21 @@ impl Types {
                 continue;
             }
             let wanted = format!("{name}=$matches[1]");
-            if let Some((pattern, _)) = rules.patterns().find(|(_, query)| query_of(query) == wanted) {
+            if let Some((pattern, _)) = rules
+                .patterns()
+                .find(|(_, query)| query_of(query) == wanted)
+            {
                 types.taxonomies.push(TaxonomyInfo {
                     name: name.clone(),
                     slug: literal_prefix(pattern).to_owned(),
                     hierarchical: with_parents.contains(name),
                     rewrite_hierarchical: pattern.contains("(.+?)"),
                     query_var: Some(name.clone()),
-                    object_types: relations.iter().filter(|(t, _)| t == name).map(|(_, p)| p.clone()).collect(),
+                    object_types: relations
+                        .iter()
+                        .filter(|(t, _)| t == name)
+                        .map(|(_, p)| p.clone())
+                        .collect(),
                     label: None,
                     singular: None,
                     show_in_rest: false,
@@ -559,7 +681,9 @@ impl Types {
             if !self.hidden_post_types.contains(&reg.name) {
                 continue;
             }
-            let Some(var) = query_var(&reg.args, &reg.name).filter(|v| *v != reg.name) else { continue };
+            let Some(var) = query_var(&reg.args, &reg.name).filter(|v| *v != reg.name) else {
+                continue;
+            };
             if let Some(info) = detect_post_type(rules, &reg.name, &var) {
                 self.hidden_post_types.retain(|h| h != &reg.name);
                 self.post_types.push(info);
@@ -579,14 +703,23 @@ impl Types {
             // type that is not publicly queryable has no rules to be found by in any case.
             let queryable = match args.get("publicly_queryable") {
                 Some(value) => value.truthy().unwrap_or(true),
-                None => args.get("public").is_some_and(|v| v.truthy().unwrap_or(true)),
+                None => args
+                    .get("public")
+                    .is_some_and(|v| v.truthy().unwrap_or(true)),
             };
             if create_missing || (!reg.taxonomy && !queryable) {
                 let slug = match args.get("rewrite") {
-                    Some(rewrite) => rewrite.get("slug").and_then(Lit::as_str).map(str::to_owned).unwrap_or_else(|| reg.name.clone()),
+                    Some(rewrite) => rewrite
+                        .get("slug")
+                        .and_then(Lit::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| reg.name.clone()),
                     None => reg.name.clone(),
                 };
-                let hierarchical = args.get("hierarchical").and_then(Lit::truthy).unwrap_or(false);
+                let hierarchical = args
+                    .get("hierarchical")
+                    .and_then(Lit::truthy)
+                    .unwrap_or(false);
                 if reg.taxonomy {
                     if !self.taxonomies.iter().any(|t| t.name == reg.name) {
                         self.taxonomies.push(TaxonomyInfo {
@@ -606,14 +739,18 @@ impl Types {
                             registered: false,
                         });
                     }
-                } else if !self.post_types.iter().any(|t| t.name == reg.name) && !BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) && !is_internal_post_type(&reg.name) {
+                } else if !self.post_types.iter().any(|t| t.name == reg.name)
+                    && !BUILT_IN_POST_TYPES.contains(&reg.name.as_str())
+                    && !is_internal_post_type(&reg.name)
+                {
                     let archive = match args.get("has_archive") {
                         Some(Lit::Str(archive)) => Some(archive.clone()),
                         Some(value) if value.truthy().unwrap_or(true) => Some(slug.clone()),
                         _ => None,
                     };
                     self.hidden_post_types.retain(|h| h != &reg.name);
-                    self.post_types.push(PostTypeInfo::new(&reg.name, slug, archive, hierarchical));
+                    self.post_types
+                        .push(PostTypeInfo::new(&reg.name, slug, archive, hierarchical));
                 }
             }
             // A flag that is set but computed counts as set.
@@ -623,16 +760,39 @@ impl Types {
             };
             let text = |key: &str| args.get(key).and_then(Lit::as_str).map(str::to_owned);
             let labels = args.get("labels");
-            let label = labels.and_then(|l| l.get("name")).and_then(Lit::as_str).map(str::to_owned).or_else(|| text("label"));
-            let singular = labels.and_then(|l| l.get("singular_name")).and_then(Lit::as_str).map(str::to_owned);
-            let show_in_rest = args.get("show_in_rest").and_then(Lit::truthy).unwrap_or(false);
+            let label = labels
+                .and_then(|l| l.get("name"))
+                .and_then(Lit::as_str)
+                .map(str::to_owned)
+                .or_else(|| text("label"));
+            let singular = labels
+                .and_then(|l| l.get("singular_name"))
+                .and_then(Lit::as_str)
+                .map(str::to_owned);
+            let show_in_rest = args
+                .get("show_in_rest")
+                .and_then(Lit::truthy)
+                .unwrap_or(false);
             let rest_base = text("rest_base");
-            match self.registrations.iter_mut().find(|r| r.taxonomy == reg.taxonomy && r.name == reg.name) {
+            match self
+                .registrations
+                .iter_mut()
+                .find(|r| r.taxonomy == reg.taxonomy && r.name == reg.name)
+            {
                 Some(existing) => *existing = reg.clone(),
                 None => self.registrations.push(reg.clone()),
             }
-            if !reg.taxonomy && !self.registered_post_types.iter().any(|r| r.name == reg.name) {
-                self.registered_post_types.push(RegisteredLabels { name: reg.name.clone(), label: label.clone(), singular: singular.clone() });
+            if !reg.taxonomy
+                && !self
+                    .registered_post_types
+                    .iter()
+                    .any(|r| r.name == reg.name)
+            {
+                self.registered_post_types.push(RegisteredLabels {
+                    name: reg.name.clone(),
+                    label: label.clone(),
+                    singular: singular.clone(),
+                });
             }
             if reg.taxonomy {
                 if let Some(t) = self.taxonomies.iter_mut().find(|t| t.name == reg.name) {
@@ -677,7 +837,12 @@ impl Types {
         }
         // `get_post_types()` and `get_taxonomies()` list the types in the order they were registered; the ones no
         // registration names follow.
-        let position = |name: &str, taxonomy: bool| registrations.iter().position(|r| r.taxonomy == taxonomy && r.name == name).unwrap_or(usize::MAX);
+        let position = |name: &str, taxonomy: bool| {
+            registrations
+                .iter()
+                .position(|r| r.taxonomy == taxonomy && r.name == name)
+                .unwrap_or(usize::MAX)
+        };
         self.post_types.sort_by_key(|t| position(&t.name, false));
         self.taxonomies.sort_by_key(|t| position(&t.name, true));
         self.rewrite_post_types = self.post_types.clone();
@@ -687,15 +852,31 @@ impl Types {
         let mut rewrite_types = Vec::new();
         let mut covered: Vec<(bool, String)> = Vec::new();
         for reg in &self.registrations {
-            let built_in = if reg.taxonomy { BUILT_IN_TAXONOMIES.contains(&reg.name.as_str()) } else { BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) || is_internal_post_type(&reg.name) };
-            if built_in || covered.iter().any(|(t, n)| *t == reg.taxonomy && n == &reg.name) {
+            let built_in = if reg.taxonomy {
+                BUILT_IN_TAXONOMIES.contains(&reg.name.as_str())
+            } else {
+                BUILT_IN_POST_TYPES.contains(&reg.name.as_str()) || is_internal_post_type(&reg.name)
+            };
+            if built_in
+                || covered
+                    .iter()
+                    .any(|(t, n)| *t == reg.taxonomy && n == &reg.name)
+            {
                 continue;
             }
             let found = match (&reg.args, reg.taxonomy) {
                 (Lit::Array(_), false) => RewriteType::of_post_type(reg),
                 (Lit::Array(_), true) => RewriteType::of_taxonomy(reg),
-                (_, false) => self.rewrite_post_types.iter().find(|t| t.name == reg.name).map(RewriteType::inferred_post_type),
-                (_, true) => self.rewrite_taxonomies.iter().find(|t| t.name == reg.name).map(RewriteType::inferred_taxonomy),
+                (_, false) => self
+                    .rewrite_post_types
+                    .iter()
+                    .find(|t| t.name == reg.name)
+                    .map(RewriteType::inferred_post_type),
+                (_, true) => self
+                    .rewrite_taxonomies
+                    .iter()
+                    .find(|t| t.name == reg.name)
+                    .map(RewriteType::inferred_taxonomy),
             };
             covered.push((reg.taxonomy, reg.name.clone()));
             rewrite_types.extend(found);
@@ -712,7 +893,12 @@ impl Types {
         }
         self.rewrite_types = Some(rewrite_types);
         // Types that cannot be requested on the frontend have no pages, whatever their rules say.
-        let hidden: Vec<String> = self.post_types.iter().filter(|t| !t.queryable).map(|t| t.name.clone()).collect();
+        let hidden: Vec<String> = self
+            .post_types
+            .iter()
+            .filter(|t| !t.queryable)
+            .map(|t| t.name.clone())
+            .collect();
         self.hidden_post_types.extend(hidden);
         self.post_types.retain(|t| t.queryable);
         self.taxonomies.retain(|t| t.queryable);
@@ -724,18 +910,29 @@ impl Types {
         match name {
             "post" | "page" | "attachment" => true,
             _ if is_internal_post_type(name) => false,
-            _ => self.post_type(name).is_some() || (!rules_known && !self.hidden_post_types.iter().any(|h| h == name)),
+            _ => {
+                self.post_type(name).is_some()
+                    || (!rules_known && !self.hidden_post_types.iter().any(|h| h == name))
+            }
         }
     }
 
     /// The post types that have rewrite rules, with the ones that have no pages.
     pub fn rewrite_post_types(&self) -> &[PostTypeInfo] {
-        if self.rewrite_post_types.is_empty() { &self.post_types } else { &self.rewrite_post_types }
+        if self.rewrite_post_types.is_empty() {
+            &self.post_types
+        } else {
+            &self.rewrite_post_types
+        }
     }
 
     /// The taxonomies that have rewrite rules, with the ones that have no pages.
     pub fn rewrite_taxonomies(&self) -> &[TaxonomyInfo] {
-        if self.rewrite_taxonomies.is_empty() { &self.taxonomies } else { &self.rewrite_taxonomies }
+        if self.rewrite_taxonomies.is_empty() {
+            &self.taxonomies
+        } else {
+            &self.rewrite_taxonomies
+        }
     }
 
     /// `unregister_post_type()`/`unregister_taxonomy()` after `init`, and with `again` registering the type anew (as a
@@ -744,7 +941,9 @@ impl Types {
         if self.rewrite_types.is_none() {
             self.rewrite_types = Some(self.rewrite_types());
         }
-        let Some(types) = self.rewrite_types.as_mut() else { return };
+        let Some(types) = self.rewrite_types.as_mut() else {
+            return;
+        };
         types.retain(|t| !(t.taxonomy == taxonomy && t.name == name));
         if let Some(mut entry) = again {
             entry.early = false;
@@ -757,7 +956,16 @@ impl Types {
     pub fn rewrite_types(&self) -> Vec<RewriteType> {
         match &self.rewrite_types {
             Some(types) => types.clone(),
-            None => self.rewrite_post_types().iter().map(RewriteType::inferred_post_type).chain(self.rewrite_taxonomies().iter().map(RewriteType::inferred_taxonomy)).collect(),
+            None => self
+                .rewrite_post_types()
+                .iter()
+                .map(RewriteType::inferred_post_type)
+                .chain(
+                    self.rewrite_taxonomies()
+                        .iter()
+                        .map(RewriteType::inferred_taxonomy),
+                )
+                .collect(),
         }
     }
 
@@ -767,15 +975,36 @@ impl Types {
 
     /// `post_type_exists()`: a type WordPress registers itself, or one the site's registrations or rules know.
     pub fn post_type_exists(&self, name: &str) -> bool {
-        matches!(name, "post" | "page" | "attachment" | "revision" | "nav_menu_item" | "custom_css" | "customize_changeset" | "oembed_cache" | "user_request" | "wp_block" | "wp_template" | "wp_template_part" | "wp_global_styles" | "wp_navigation" | "wp_font_family" | "wp_font_face")
-            || self.any_post_type(name).is_some()
-            || self.registrations.iter().any(|r| !r.taxonomy && r.name == name)
+        matches!(
+            name,
+            "post"
+                | "page"
+                | "attachment"
+                | "revision"
+                | "nav_menu_item"
+                | "custom_css"
+                | "customize_changeset"
+                | "oembed_cache"
+                | "user_request"
+                | "wp_block"
+                | "wp_template"
+                | "wp_template_part"
+                | "wp_global_styles"
+                | "wp_navigation"
+                | "wp_font_family"
+                | "wp_font_face"
+        ) || self.any_post_type(name).is_some()
+            || self
+                .registrations
+                .iter()
+                .any(|r| !r.taxonomy && r.name == name)
     }
 
     /// A post type of the site, also one that cannot be requested on the frontend (`get_post_type_object()` for the
     /// administration).
     pub fn any_post_type(&self, name: &str) -> Option<&PostTypeInfo> {
-        self.post_type(name).or_else(|| self.rewrite_post_types.iter().find(|t| t.name == name))
+        self.post_type(name)
+            .or_else(|| self.rewrite_post_types.iter().find(|t| t.name == name))
     }
 
     pub fn taxonomy(&self, name: &str) -> Option<&TaxonomyInfo> {
@@ -784,24 +1013,42 @@ impl Types {
 
     /// `in_array( $name, get_post_types() )`: a built-in, internal or registered post type.
     pub fn is_post_type(&self, name: &str) -> bool {
-        BUILT_IN_POST_TYPES.contains(&name) || is_internal_post_type(name) || self.post_type(name).is_some()
+        BUILT_IN_POST_TYPES.contains(&name)
+            || is_internal_post_type(name)
+            || self.post_type(name).is_some()
     }
 
     /// `in_array( $name, get_taxonomies() )`: a built-in or registered taxonomy.
     pub fn is_taxonomy(&self, name: &str) -> bool {
-        BUILT_IN_TAXONOMIES.contains(&name) || matches!(name, "wp_template_part_area" | "wp_pattern_category") || self.taxonomy(name).is_some()
+        BUILT_IN_TAXONOMIES.contains(&name)
+            || matches!(name, "wp_template_part_area" | "wp_pattern_category")
+            || self.taxonomy(name).is_some()
     }
 
     /// `get_post_types( [ 'public' => true ] )`: the built-in public types, then the custom ones.
     pub fn public_post_types(&self) -> Vec<&str> {
         let mut all: Vec<&str> = BUILT_IN_POST_TYPES.to_vec();
-        all.extend(self.post_types.iter().filter(|t| t.public).map(|t| t.name.as_str()));
+        all.extend(
+            self.post_types
+                .iter()
+                .filter(|t| t.public)
+                .map(|t| t.name.as_str()),
+        );
         all
     }
 
     /// The types a search covers (`exclude_from_search` is false): everything public but attachments.
     pub fn searchable_post_types(&self) -> Vec<&str> {
-        self.public_post_types().into_iter().filter(|t| *t != "attachment" && !self.post_types.iter().any(|p| p.name == *t && p.exclude_from_search)).collect()
+        self.public_post_types()
+            .into_iter()
+            .filter(|t| {
+                *t != "attachment"
+                    && !self
+                        .post_types
+                        .iter()
+                        .any(|p| p.name == *t && p.exclude_from_search)
+            })
+            .collect()
     }
 }
 
@@ -842,9 +1089,15 @@ pub fn scan_source(php: &str) -> Vec<Registration> {
         let rest = &php[i..];
         let Some(c) = rest.chars().next() else { break };
         if c == '$' {
-            let name_len = rest[1..].find(|ch: char| !is_identifier_char(ch)).unwrap_or(rest.len() - 1);
+            let name_len = rest[1..]
+                .find(|ch: char| !is_identifier_char(ch))
+                .unwrap_or(rest.len() - 1);
             let after = rest[1 + name_len..].trim_start();
-            if name_len > 0 && after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
+            if name_len > 0
+                && after.starts_with('=')
+                && !after.starts_with("==")
+                && !after.starts_with("=>")
+            {
                 let value_at = php.len() - after.len() + 1;
                 let mut parser = Parser::new(php, value_at, &vars);
                 let value = parser.expr();
@@ -872,10 +1125,20 @@ pub fn scan_source(php: &str) -> Vec<Registration> {
                             _ => Vec::new(),
                         };
                     }
-                    let args = if parser.eat(",") { parser.expr() } else { Lit::Unknown };
+                    let args = if parser.eat(",") {
+                        parser.expr()
+                    } else {
+                        Lit::Unknown
+                    };
                     let end = parser.at;
                     if let Lit::Str(name) = name {
-                        out.push(Registration { name, taxonomy, args, object_types, priority: 10 });
+                        out.push(Registration {
+                            name,
+                            taxonomy,
+                            args,
+                            object_types,
+                            priority: 10,
+                        });
                     }
                     i = end.max(i + call.len());
                     advanced = true;
@@ -894,7 +1157,9 @@ pub fn scan_source(php: &str) -> Vec<Registration> {
 /// PHP files below `dir`, at most `depth` levels down and a few hundred files.
 fn php_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     const LIMIT: usize = 400;
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut entries: Vec<_> = entries.flatten().map(|e| e.path()).collect();
     entries.sort();
     for path in entries {
@@ -903,7 +1168,12 @@ fn php_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {
-            if depth > 0 && !matches!(name, "node_modules" | "vendor" | "tests" | "languages" | "assets" | ".git") {
+            if depth > 0
+                && !matches!(
+                    name,
+                    "node_modules" | "vendor" | "tests" | "languages" | "assets" | ".git"
+                )
+            {
                 php_files(&path, depth - 1, out);
             }
         } else if name.ends_with(".php") {
@@ -913,13 +1183,19 @@ fn php_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 }
 
 /// The registrations of the must-use plugins, the active plugins and the theme(s).
-pub fn scan_registrations(wp_root: &Path, active_plugins: &[String], theme_dirs: &[PathBuf]) -> Vec<Registration> {
+pub fn scan_registrations(
+    wp_root: &Path,
+    active_plugins: &[String],
+    theme_dirs: &[PathBuf],
+) -> Vec<Registration> {
     let content = wp_root.join("wp-content");
     let mut files = Vec::new();
     php_files(&content.join("mu-plugins"), 0, &mut files);
     for plugin in active_plugins {
         match plugin.split_once('/') {
-            Some((dir, _)) if !dir.is_empty() => php_files(&content.join("plugins").join(dir), 3, &mut files),
+            Some((dir, _)) if !dir.is_empty() => {
+                php_files(&content.join("plugins").join(dir), 3, &mut files)
+            }
             _ => files.push(content.join("plugins").join(plugin)),
         }
     }
@@ -968,44 +1244,111 @@ mod tests {
         let regs = scan_source(php);
         assert_eq!(regs.len(), 3);
         assert_eq!((regs[0].name.as_str(), regs[0].taxonomy), ("book", false));
-        assert_eq!(regs[0].args.get("labels").and_then(|l| l.get("name")).and_then(Lit::as_str), Some("Books"));
-        assert_eq!((regs[1].name.as_str(), regs[1].taxonomy, regs[1].object_types.clone()), ("genre", true, vec!["book".to_owned()]));
+        assert_eq!(
+            regs[0]
+                .args
+                .get("labels")
+                .and_then(|l| l.get("name"))
+                .and_then(Lit::as_str),
+            Some("Books")
+        );
+        assert_eq!(
+            (
+                regs[1].name.as_str(),
+                regs[1].taxonomy,
+                regs[1].object_types.clone()
+            ),
+            ("genre", true, vec!["book".to_owned()])
+        );
         assert_eq!(regs[2].args, Lit::Unknown);
     }
 
     #[test]
     fn registrations_fill_in_labels() {
-        let r = rules(&[("buecher/([^/]+)(?:/([0-9]+))?/?$", "index.php?book=$matches[1]&page=$matches[2]")]);
+        let r = rules(&[(
+            "buecher/([^/]+)(?:/([0-9]+))?/?$",
+            "index.php?book=$matches[1]&page=$matches[2]",
+        )]);
         let mut types = Types::infer(&r, &["book".to_owned()], &[], &[], &[]);
         types.apply(&scan_source("register_post_type( 'book', array( 'label' => 'Buecher', 'public' => true, 'show_in_rest' => true, 'supports' => array( 'title' ) ) );"), false);
         let book = types.post_type("book").unwrap();
-        assert_eq!((book.plural_label().as_str(), book.singular_label().as_str()), ("Buecher", "Buecher"));
-        assert!(book.show_in_rest && book.supports("title") && !book.supports("editor") && !book.exclude_from_search);
+        assert_eq!(
+            (book.plural_label().as_str(), book.singular_label().as_str()),
+            ("Buecher", "Buecher")
+        );
+        assert!(
+            book.show_in_rest
+                && book.supports("title")
+                && !book.supports("editor")
+                && !book.exclude_from_search
+        );
     }
 
     #[test]
     fn types_come_from_their_rewrite_rules() {
         let r = rules(&[
             ("buecher/?$", "index.php?post_type=book"),
-            ("buecher/([^/]+)/embed/?$", "index.php?book=$matches[1]&embed=true"),
-            ("buecher/([^/]+)(?:/([0-9]+))?/?$", "index.php?book=$matches[1]&page=$matches[2]"),
-            ("termine/(.+?)(?:/([0-9]+))?/?$", "index.php?event=$matches[1]&page=$matches[2]"),
+            (
+                "buecher/([^/]+)/embed/?$",
+                "index.php?book=$matches[1]&embed=true",
+            ),
+            (
+                "buecher/([^/]+)(?:/([0-9]+))?/?$",
+                "index.php?book=$matches[1]&page=$matches[2]",
+            ),
+            (
+                "termine/(.+?)(?:/([0-9]+))?/?$",
+                "index.php?event=$matches[1]&page=$matches[2]",
+            ),
             ("kalender/?$", "index.php?post_type=event"),
             ("genre/(.+?)/?$", "index.php?genre=$matches[1]"),
         ]);
         let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let types = Types::infer(&r, &names(&["post", "book", "event", "secret", "wp_template"]), &names(&["category", "genre", "hidden"]), &[("genre".to_owned(), "book".to_owned())], &names(&["genre"]));
+        let types = Types::infer(
+            &r,
+            &names(&["post", "book", "event", "secret", "wp_template"]),
+            &names(&["category", "genre", "hidden"]),
+            &[("genre".to_owned(), "book".to_owned())],
+            &names(&["genre"]),
+        );
         assert_eq!(types.post_types.len(), 2);
         let book = types.post_type("book").unwrap();
-        assert_eq!((book.slug.as_str(), book.archive_slug.as_deref(), book.hierarchical), ("buecher", Some("buecher"), false));
+        assert_eq!(
+            (
+                book.slug.as_str(),
+                book.archive_slug.as_deref(),
+                book.hierarchical
+            ),
+            ("buecher", Some("buecher"), false)
+        );
         let event = types.post_type("event").unwrap();
-        assert_eq!((event.slug.as_str(), event.archive_slug.as_deref(), event.hierarchical), ("termine", Some("kalender"), true));
+        assert_eq!(
+            (
+                event.slug.as_str(),
+                event.archive_slug.as_deref(),
+                event.hierarchical
+            ),
+            ("termine", Some("kalender"), true)
+        );
         assert!(types.post_type("secret").is_none());
         let genre = types.taxonomy("genre").unwrap();
-        assert_eq!((genre.slug.as_str(), genre.hierarchical, genre.rewrite_hierarchical), ("genre", true, true));
+        assert_eq!(
+            (
+                genre.slug.as_str(),
+                genre.hierarchical,
+                genre.rewrite_hierarchical
+            ),
+            ("genre", true, true)
+        );
         assert_eq!(genre.object_types, ["book"]);
         assert!(types.taxonomy("hidden").is_none());
-        assert_eq!(types.public_post_types(), ["post", "page", "attachment", "book", "event"]);
-        assert_eq!(types.searchable_post_types(), ["post", "page", "book", "event"]);
+        assert_eq!(
+            types.public_post_types(),
+            ["post", "page", "attachment", "book", "event"]
+        );
+        assert_eq!(
+            types.searchable_post_types(),
+            ["post", "page", "book", "event"]
+        );
     }
 }

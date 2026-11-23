@@ -15,16 +15,32 @@ use rustpress_theme::{Theme, render_document};
 
 /// Where the WordPress files are when `RUSTPRESS_WP_ROOT` is not set: `wordpress/` in the repository (not checked in).
 const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress");
-const URLS: &[&str] = &["/", "/ueber-uns/", "/testbeitrag-1/", "/gibt-es-nicht/", "/category/uncategorized/", "/?s=test", "/bilder/", "/cover-bilder/", "/bildliste/"];
+const URLS: &[&str] = &[
+    "/",
+    "/ueber-uns/",
+    "/testbeitrag-1/",
+    "/gibt-es-nicht/",
+    "/category/uncategorized/",
+    "/?s=test",
+    "/bilder/",
+    "/cover-bilder/",
+    "/bildliste/",
+];
 
 fn fetch(path: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect("127.0.0.1:8080")?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    write!(stream, "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n"
+    )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     let text = String::from_utf8_lossy(&raw).into_owned();
-    Ok(text.split_once("\r\n\r\n").map(|(_, b)| b.to_owned()).unwrap_or(text))
+    Ok(text
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b.to_owned())
+        .unwrap_or(text))
 }
 
 fn between(html: &str, open: &str, close: &str) -> Option<String> {
@@ -36,7 +52,9 @@ fn between(html: &str, open: &str, close: &str) -> Option<String> {
 /// The text of `<style id="...">` in the head.
 fn style_text(html: &str, id: &str) -> Option<String> {
     let head = between(html, "<head>", "</head>")?;
-    let open = [format!("<style id='{id}'>"), format!("<style id=\"{id}\">")].into_iter().find(|o| head.contains(o.as_str()))?;
+    let open = [format!("<style id='{id}'>"), format!("<style id=\"{id}\">")]
+        .into_iter()
+        .find(|o| head.contains(o.as_str()))?;
     let start = head.find(&open)? + open.len();
     Some(head[start..start + head[start..].find("</style>")?].to_owned())
 }
@@ -67,16 +85,27 @@ fn head_ids(html: &str) -> Vec<String> {
 
 #[tokio::test]
 async fn documents_match_wordpress() {
-    let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
-    let (Ok(db), true) = (Db::connect(&url, "wp_").await, root.join("wp-includes").is_dir()) else {
+    let root =
+        PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let (Ok(db), true) = (
+        Db::connect(&url, "wp_").await,
+        root.join("wp-includes").is_dir(),
+    ) else {
         eprintln!("reference stack not available, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
     if fetch("/").is_err() {
         eprintln!("WordPress not reachable, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     }
     let site = Site::load_at(db, &root).await.unwrap();
@@ -87,16 +116,28 @@ async fn documents_match_wordpress() {
     for path in URLS {
         let (p, qs) = path.split_once('?').unwrap_or((path, ""));
         let result = site.query(p, qs).await.unwrap();
-        let doc = render_document(&theme, &site, &result, &registry).await.unwrap();
+        let doc = render_document(&theme, &site, &result, &registry)
+            .await
+            .unwrap();
         let reference = fetch(path).unwrap();
 
-        let (t_ref, t_ours) = (between(&reference, "<title>", "</title>"), between(&doc.html, "<title>", "</title>"));
+        let (t_ref, t_ours) = (
+            between(&reference, "<title>", "</title>"),
+            between(&doc.html, "<title>", "</title>"),
+        );
         if t_ref != t_ours {
-            problems.push(format!("{path}: title\n  wp:   {t_ref:?}\n  ours: {t_ours:?}"));
+            problems.push(format!(
+                "{path}: title\n  wp:   {t_ref:?}\n  ours: {t_ours:?}"
+            ));
         }
-        let (c_ref, c_ours) = (between(&reference, "<body class=\"", "\""), between(&doc.html, "<body class=\"", "\""));
+        let (c_ref, c_ours) = (
+            between(&reference, "<body class=\"", "\""),
+            between(&doc.html, "<body class=\"", "\""),
+        );
         if c_ref != c_ours {
-            problems.push(format!("{path}: body class\n  wp:   {c_ref:?}\n  ours: {c_ours:?}"));
+            problems.push(format!(
+                "{path}: body class\n  wp:   {c_ref:?}\n  ours: {c_ours:?}"
+            ));
         }
         let (i_ref, i_ours) = (head_ids(&reference), head_ids(&doc.html));
         if i_ref != i_ours {
@@ -109,7 +150,9 @@ async fn documents_match_wordpress() {
         let (s_ref, s_ours) = (style_text(&reference, id), style_text(&doc.html, id));
         assert!(s_ref.is_some(), "{path}: the reference has no {id}");
         if s_ref != s_ours {
-            problems.push(format!("{path}: {id}\n  wp:   {s_ref:?}\n  ours: {s_ours:?}"));
+            problems.push(format!(
+                "{path}: {id}\n  wp:   {s_ref:?}\n  ours: {s_ours:?}"
+            ));
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));

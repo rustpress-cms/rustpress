@@ -10,8 +10,8 @@ use std::sync::OnceLock;
 use regex::Regex;
 use rustpress_phpser::Value;
 
-use super::options::{item, php_string, truthy, Options};
-use super::services::{self, Known, Tag, SOCIAL_MARKERS, STATS_MARKERS, THIRDPARTY_MARKERS};
+use super::options::{Options, item, php_string, truthy};
+use super::services::{self, Known, SOCIAL_MARKERS, STATS_MARKERS, THIRDPARTY_MARKERS, Tag};
 
 /// `esc_attr()`.
 fn esc_attr(text: &str) -> String {
@@ -19,11 +19,16 @@ fn esc_attr(text: &str) -> String {
 }
 
 /// `cmplz_strpos_arr( $haystack, $needles )` of a list (numeric keys): the first needle that occurs.
-pub fn strpos_arr<'n>(haystack: &str, needles: impl IntoIterator<Item = &'n str>) -> Option<&'n str> {
+pub fn strpos_arr<'n>(
+    haystack: &str,
+    needles: impl IntoIterator<Item = &'n str>,
+) -> Option<&'n str> {
     if haystack.is_empty() || haystack == "0" {
         return None;
     }
-    needles.into_iter().find(|n| !n.is_empty() && haystack.contains(*n))
+    needles
+        .into_iter()
+        .find(|n| !n.is_empty() && haystack.contains(*n))
 }
 
 /// `cmplz_strpos_arr()` of an array with string keys (the dependencies): the key of the first value that occurs.
@@ -31,7 +36,10 @@ fn strpos_arr_keyed<'n>(haystack: &str, needles: &'n [(String, String)]) -> Opti
     if haystack.is_empty() || haystack == "0" {
         return None;
     }
-    needles.iter().find(|(_, v)| !v.is_empty() && haystack.contains(v.as_str())).map(|(k, _)| k.as_str())
+    needles
+        .iter()
+        .find(|(_, v)| !v.is_empty() && haystack.contains(v.as_str()))
+        .map(|(k, _)| k.as_str())
 }
 
 /// `cmplz_sanitize_title_preserve_uppercase()` (`sanitize_service_name()` with `'general'` for an empty name).
@@ -43,11 +51,19 @@ pub fn sanitize_service_name(title: &str) -> String {
     static OTHER: OnceLock<Regex> = OnceLock::new();
     static SPACE: OnceLock<Regex> = OnceLock::new();
     static DASHES: OnceLock<Regex> = OnceLock::new();
-    let title = ENTITY.get_or_init(|| Regex::new("&.+?;").expect("valid regex")).replace_all(title, "");
+    let title = ENTITY
+        .get_or_init(|| Regex::new("&.+?;").expect("valid regex"))
+        .replace_all(title, "");
     let title = title.replace('.', "-");
-    let title = OTHER.get_or_init(|| Regex::new("[^%a-zA-Z0-9 _-]").expect("valid regex")).replace_all(&title, "");
-    let title = SPACE.get_or_init(|| Regex::new(r"[\t\n\x0B\x0C\r ]+").expect("valid regex")).replace_all(&title, "-");
-    let title = DASHES.get_or_init(|| Regex::new("-+").expect("valid regex")).replace_all(&title, "-");
+    let title = OTHER
+        .get_or_init(|| Regex::new("[^%a-zA-Z0-9 _-]").expect("valid regex"))
+        .replace_all(&title, "");
+    let title = SPACE
+        .get_or_init(|| Regex::new(r"[\t\n\x0B\x0C\r ]+").expect("valid regex"))
+        .replace_all(&title, "-");
+    let title = DASHES
+        .get_or_init(|| Regex::new("-+").expect("valid regex"))
+        .replace_all(&title, "-");
     // remove_accents() has nothing left to change; sanitize_text_field() drops percent-encoded octets and trims.
     static OCTET: OnceLock<Regex> = OnceLock::new();
     let octet = OCTET.get_or_init(|| Regex::new("(?i)%[a-f0-9]{2}").expect("valid regex"));
@@ -102,7 +118,11 @@ pub struct Placeholders {
 
 impl Placeholders {
     fn transient(&self, name: &str) -> Option<&str> {
-        self.transients.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str()).filter(|v| !v.is_empty() && *v != "0")
+        self.transients
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+            .filter(|v| !v.is_empty() && *v != "0")
     }
 
     /// `cmplz_file_exists_on_url()`.
@@ -112,12 +132,29 @@ impl Placeholders {
 
     /// `cmplz_default_placeholder( $type )`.
     pub fn default(&self, kind: &str) -> String {
-        let kind = if kind == "openstreetmaps" { "google-maps" } else { kind };
+        let kind = if kind == "openstreetmaps" {
+            "google-maps"
+        } else {
+            kind
+        };
         let style = &self.style;
-        let ratio = if kind == "google-maps" { self.maps_format.as_str() } else { "" };
-        let img = [format!("{kind}-{style}-{ratio}.jpg"), format!("{kind}-{style}.jpg")].into_iter().find(|img| self.dir.join(img).exists()).unwrap_or_else(|| format!("default-{style}.jpg"));
+        let ratio = if kind == "google-maps" {
+            self.maps_format.as_str()
+        } else {
+            ""
+        };
+        let img = [
+            format!("{kind}-{style}-{ratio}.jpg"),
+            format!("{kind}-{style}.jpg"),
+        ]
+        .into_iter()
+        .find(|img| self.dir.join(img).exists())
+        .unwrap_or_else(|| format!("default-{style}.jpg"));
         if self.theme_dir.join("complianz-gdpr").join(&img).exists() {
-            return format!("{}/complianz-gdpr/{img}", self.theme_url.trim_end_matches('/'));
+            return format!(
+                "{}/complianz-gdpr/{img}",
+                self.theme_url.trim_end_matches('/')
+            );
         }
         format!("{}{img}", self.url)
     }
@@ -172,7 +209,9 @@ impl Placeholders {
     fn vimeo(&self, placeholder_src: String, src: &str) -> String {
         static ID: OnceLock<Regex> = OnceLock::new();
         let re = ID.get_or_init(|| Regex::new(r"(?i)(?:www\.|player\.)?vimeo.com/(?:channels/(?:[A-Za-z0-9_]+/)?|groups/(?:[^/]*)/videos/|album/(?:[0-9]+)/video/|video/|)([0-9]+)(?:[a-zA-Z0-9_\-]+)?").expect("valid regex"));
-        let Some(caps) = re.captures(src) else { return placeholder_src };
+        let Some(caps) = re.captures(src) else {
+            return placeholder_src;
+        };
         match self.transient(&format!("cmplz_vimeo_image_{}", &caps[1])) {
             Some(url) if url != "failed" && self.file_exists_on_url(url) => url.to_owned(),
             _ => placeholder_src,
@@ -185,9 +224,14 @@ impl Placeholders {
         let re = ID.get_or_init(|| {
             Regex::new(r"(?i)dailymotion\.com/(embed/video)/([^_]+)[^#]*\?|dailymotion\.com/(embed/video|video|hub)/([^_]+)[^#]*(#video=([^_&]+))?|(dai\.ly/([^_]+))!").expect("valid regex")
         });
-        let Some(caps) = re.captures(src) else { return new_src };
+        let Some(caps) = re.captures(src) else {
+            return new_src;
+        };
         // `preg_match()` leaves out unmatched groups at the end only.
-        let last = (1..caps.len()).rev().find(|i| caps.get(*i).is_some()).unwrap_or(0);
+        let last = (1..caps.len())
+            .rev()
+            .find(|i| caps.get(*i).is_some())
+            .unwrap_or(0);
         let group = |i: usize| caps.get(i).map_or("", |m| m.as_str());
         let id = if last >= 6 {
             group(6)
@@ -201,16 +245,27 @@ impl Placeholders {
 
     /// `cmplz_google_maps_placeholder()`: only static maps images have an image of their own.
     fn google_maps(&self, new_src: String, src: &str) -> String {
-        if !src.to_ascii_lowercase().contains("maps.googleapis.com/maps/api/staticmap") {
+        if !src
+            .to_ascii_lowercase()
+            .contains("maps.googleapis.com/maps/api/staticmap")
+        {
             return new_src;
         }
-        let id = src.replace("http://", "").replace("https://", "").replace("maps.googleapis.com/maps/api/staticmap", "");
-        self.cached(&format!("cmplz_googlemaps_image_{}", rustpress_core::slug::sanitize_title(&id)))
+        let id = src
+            .replace("http://", "")
+            .replace("https://", "")
+            .replace("maps.googleapis.com/maps/api/staticmap", "");
+        self.cached(&format!(
+            "cmplz_googlemaps_image_{}",
+            rustpress_core::slug::sanitize_title(&id)
+        ))
     }
 
     /// `cmplz_placeholder_disabled( $service )`.
     fn disabled(&self, service: &str) -> bool {
-        self.disabled.iter().any(|d| d == service || *d == service.replace('-', "_"))
+        self.disabled
+            .iter()
+            .any(|d| d == service || *d == service.replace('-', "_"))
     }
 
     /// `cmplz_use_placeholder( $src )`.
@@ -218,7 +273,9 @@ impl Placeholders {
         if self.dont_use {
             return false;
         }
-        let Some(src) = src.filter(|s| !s.is_empty() && *s != "0") else { return true };
+        let Some(src) = src.filter(|s| !s.is_empty() && *s != "0") else {
+            return true;
+        };
         if src.contains("like.php") {
             return false;
         }
@@ -229,7 +286,11 @@ impl Placeholders {
 /// `cmplz_get_service_by_src( $src )`.
 pub fn service_by_src(src: &str) -> String {
     let mut seen: Vec<&str> = Vec::new();
-    for (service, markers) in THIRDPARTY_MARKERS.iter().chain(SOCIAL_MARKERS).chain(STATS_MARKERS) {
+    for (service, markers) in THIRDPARTY_MARKERS
+        .iter()
+        .chain(SOCIAL_MARKERS)
+        .chain(STATS_MARKERS)
+    {
         // `$services + $social + $stats` keeps the first array's entry of a key.
         if seen.contains(service) {
             continue;
@@ -247,7 +308,10 @@ fn tag_from_value(value: &Value) -> Tag {
     let s = |key: &str| item(value, key).map(php_string).unwrap_or_default();
     let flag = |key: &str| item(value, key).is_some_and(|v| super::options::loose_eq_int(v, 1));
     let dependency = match item(value, "dependency") {
-        Some(Value::Array(items)) => items.iter().map(|(k, v)| (key_string(k), php_string(v))).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|(k, v)| (key_string(k), php_string(v)))
+            .collect(),
         _ => Vec::new(),
     };
     Tag {
@@ -280,7 +344,11 @@ fn set(list: &mut Vec<(String, Tag)>, key: String, tag: Tag) {
 /// The enabled entries of a list of the Script Center (`complianz_options_custom-scripts`).
 fn custom_scripts(custom: &Value, list: &str) -> Vec<Value> {
     match item(custom, list) {
-        Some(Value::Array(items)) => items.iter().map(|(_, v)| v.clone()).filter(|v| item(v, "enable").is_some_and(truthy)).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|(_, v)| v.clone())
+            .filter(|v| item(v, "enable").is_some_and(truthy))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -288,28 +356,64 @@ fn custom_scripts(custom: &Value, list: &str) -> Vec<Value> {
 impl Blocker {
     /// `custom` is `get_option( 'complianz_options_custom-scripts' )`, `transient` the value of
     /// `cmplz_get_transient( 'cmplz_blocked_scripts' )`, `cf7` whether Contact Form 7 5.4+ is active.
-    pub fn new(options: &Options, custom: &Value, transient: Option<&Value>, cf7: bool, placeholders: Placeholders) -> Self {
-        let styles = blocked(services::known_style_tags(options).into_iter().map(Known::Entry).collect(), &placeholders, false);
+    pub fn new(
+        options: &Options,
+        custom: &Value,
+        transient: Option<&Value>,
+        cf7: bool,
+        placeholders: Placeholders,
+    ) -> Self {
+        let styles = blocked(
+            services::known_style_tags(options)
+                .into_iter()
+                .map(Known::Entry)
+                .collect(),
+            &placeholders,
+            false,
+        );
         let scripts = match transient.filter(|v| truthy(v)) {
-            Some(Value::Array(items)) => items.iter().map(|(k, v)| (key_string(k), tag_from_value(v))).collect(),
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|(k, v)| (key_string(k), tag_from_value(v)))
+                .collect(),
             _ => {
                 let mut known = services::known_script_tags(options, cf7);
-                known.extend(custom_scripts(custom, "block_script").iter().map(|v| Known::Entry(tag_from_value(v))));
+                known.extend(
+                    custom_scripts(custom, "block_script")
+                        .iter()
+                        .map(|v| Known::Entry(tag_from_value(v))),
+                );
                 blocked(known, &placeholders, true)
             }
         };
         // placeholder_markers(): the `cmplz_placeholder_markers` filter is empty; the Script Center's `add_script`
         // entries come next, and only entries with a placeholder class stay.
         let mut markers: Vec<Tag> = scripts.iter().map(|(_, t)| t.clone()).collect();
-        markers.extend(custom_scripts(custom, "add_script").iter().map(tag_from_value));
-        markers.retain(|t| t.enable_placeholder && !t.placeholder_class.is_empty() && t.placeholder_class != "0");
+        markers.extend(
+            custom_scripts(custom, "add_script")
+                .iter()
+                .map(tag_from_value),
+        );
+        markers.retain(|t| {
+            t.enable_placeholder && !t.placeholder_class.is_empty() && t.placeholder_class != "0"
+        });
         let mut dependencies: Vec<(String, String)> = Vec::new();
         let mut waiting: Vec<Tag> = scripts.iter().map(|(_, t)| t.clone()).collect();
-        waiting.extend(custom_scripts(custom, "block_script").iter().map(tag_from_value));
-        for tag in waiting.iter().filter(|t| t.enable_dependency && !t.dependency.is_empty()) {
+        waiting.extend(
+            custom_scripts(custom, "block_script")
+                .iter()
+                .map(tag_from_value),
+        );
+        for tag in waiting
+            .iter()
+            .filter(|t| t.enable_dependency && !t.dependency.is_empty())
+        {
             for (k, v) in &tag.dependency {
                 // array_merge(): string keys are overwritten in place, numeric keys appended.
-                match dependencies.iter_mut().find(|(key, _)| key == k && k.parse::<i64>().is_err()) {
+                match dependencies
+                    .iter_mut()
+                    .find(|(key, _)| key == k && k.parse::<i64>().is_err())
+                {
                     Some((_, slot)) => *slot = v.clone(),
                     None => dependencies.push((k.clone(), v.clone())),
                 }
@@ -317,7 +421,9 @@ impl Blocker {
         }
         let mut whitelist = Vec::new();
         for entry in custom_scripts(custom, "whitelist_script") {
-            whitelist.extend(super::options::strings(item(&entry, "urls").unwrap_or(&Value::Null)));
+            whitelist.extend(super::options::strings(
+                item(&entry, "urls").unwrap_or(&Value::Null),
+            ));
         }
         whitelist.extend(services::whitelisted_script_tags(options));
         Self {
@@ -330,7 +436,8 @@ impl Blocker {
             image_tags: services::image_tags(options),
             placeholders,
             consent_per_service: options.is("consent_per_service", "yes"),
-            youtube_or_vimeo: options.uses_thirdparty("youtube") || options.uses_thirdparty("vimeo"),
+            youtube_or_vimeo: options.uses_thirdparty("youtube")
+                || options.uses_thirdparty("vimeo"),
         }
     }
 
@@ -352,8 +459,13 @@ impl Blocker {
 
     fn images(&self, output: &mut String) {
         static IMAGE: OnceLock<Regex> = OnceLock::new();
-        let re = IMAGE.get_or_init(|| Regex::new(r#"(?s)<img.*?src=['|"]([\s\S]*?)['|"].*?>"#).expect("valid regex"));
-        let matches: Vec<(String, String)> = re.captures_iter(output).map(|c| (c[0].to_owned(), c[1].to_owned())).collect();
+        let re = IMAGE.get_or_init(|| {
+            Regex::new(r#"(?s)<img.*?src=['|"]([\s\S]*?)['|"].*?>"#).expect("valid regex")
+        });
+        let matches: Vec<(String, String)> = re
+            .captures_iter(output)
+            .map(|c| (c[0].to_owned(), c[1].to_owned()))
+            .collect();
         for (total, url) in matches {
             if strpos_arr(&url, self.image_tags.iter().map(String::as_str)).is_none() {
                 continue;
@@ -376,14 +488,31 @@ impl Blocker {
 
     fn styles(&self, output: &mut String) {
         static STYLE: OnceLock<Regex> = OnceLock::new();
-        let re = STYLE.get_or_init(|| Regex::new(r#"(?i)<link.*?rel=['|"]stylesheet['|"][^>].*?href=['|"]([\s\S]*?)['|"][^>]*?>"#).expect("valid regex"));
-        let matches: Vec<(String, String)> = re.captures_iter(output).map(|c| (c[0].to_owned(), c[1].to_owned())).collect();
+        let re = STYLE.get_or_init(|| {
+            Regex::new(
+                r#"(?i)<link.*?rel=['|"]stylesheet['|"][^>].*?href=['|"]([\s\S]*?)['|"][^>]*?>"#,
+            )
+            .expect("valid regex")
+        });
+        let matches: Vec<(String, String)> = re
+            .captures_iter(output)
+            .map(|c| (c[0].to_owned(), c[1].to_owned()))
+            .collect();
         for (total, url) in matches {
-            if total.contains("data-category=\"functional\"") || strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some() {
+            if total.contains("data-category=\"functional\"")
+                || strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some()
+            {
                 continue;
             }
-            let Some(found) = strpos_arr(&url, self.styles.iter().map(|(k, _)| k.as_str())) else { continue };
-            let tag = &self.styles.iter().find(|(k, _)| k == found).expect("found among the keys").1;
+            let Some(found) = strpos_arr(&url, self.styles.iter().map(|(k, _)| k.as_str())) else {
+                continue;
+            };
+            let tag = &self
+                .styles
+                .iter()
+                .find(|(k, _)| k == found)
+                .expect("found among the keys")
+                .1;
             let mut new = add_data(&total, "link", "category", &tag.category);
             new = add_data(&new, "link", "service", &sanitize_service_name(&tag.name));
             new = new.replace("href=", "data-href=");
@@ -393,30 +522,60 @@ impl Blocker {
 
     fn tag_for(&self, haystack: &str) -> Option<&Tag> {
         let found = strpos_arr(haystack, self.scripts.iter().map(|(k, _)| k.as_str()))?;
-        self.scripts.iter().find(|(k, _)| k == found).map(|(_, t)| t)
+        self.scripts
+            .iter()
+            .find(|(k, _)| k == found)
+            .map(|(_, t)| t)
     }
 
     fn iframes(&self, output: &mut String) {
         static IFRAME: OnceLock<Regex> = OnceLock::new();
-        let re = IFRAME.get_or_init(|| Regex::new(r#"(?is)<(iframe)[^>].*?src=['"](.*?)['"].*?>.*?</iframe>"#).expect("valid regex"));
+        let re = IFRAME.get_or_init(|| {
+            Regex::new(r#"(?is)<(iframe)[^>].*?src=['"](.*?)['"].*?>.*?</iframe>"#)
+                .expect("valid regex")
+        });
         static OPEN: OnceLock<Regex> = OnceLock::new();
-        let open = OPEN.get_or_init(|| Regex::new(r"(?i)<iframe[\t\n\x0B\x0C\r ]").expect("valid regex"));
-        let matches: Vec<(String, String)> = re.captures_iter(output).map(|c| (c[0].to_owned(), c[2].to_owned())).collect();
+        let open =
+            OPEN.get_or_init(|| Regex::new(r"(?i)<iframe[\t\n\x0B\x0C\r ]").expect("valid regex"));
+        let matches: Vec<(String, String)> = re
+            .captures_iter(output)
+            .map(|c| (c[0].to_owned(), c[2].to_owned()))
+            .collect();
         for (total, src) in matches {
-            let Some(tag) = self.tag_for(&src) else { continue };
+            let Some(tag) = self.tag_for(&src) else {
+                continue;
+            };
             if tag.category == "functional" {
                 continue;
             }
-            let is_video = ["dailymotion", "youtube", "vimeo"].iter().any(|v| src.contains(v));
+            let is_video = ["dailymotion", "youtube", "vimeo"]
+                .iter()
+                .any(|v| src.contains(v));
             let service = sanitize_service_name(&tag.name);
-            let mut new = open.replacen(&total, 1, regex::NoExpand(&format!("<iframe data-cmplz-target=\"src\" data-src-cmplz=\"{src}\" "))).into_owned();
+            let mut new = open
+                .replacen(
+                    &total,
+                    1,
+                    regex::NoExpand(&format!(
+                        "<iframe data-cmplz-target=\"src\" data-src-cmplz=\"{src}\" "
+                    )),
+                )
+                .into_owned();
             new = new.replace("loading=\"lazy\"", "data-deferlazy=\"1\"");
             if strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some() {
                 continue;
             }
-            let video_class = if is_video { "cmplz-video" } else { "cmplz-no-video" };
+            let video_class = if is_video {
+                "cmplz-video"
+            } else {
+                "cmplz-no-video"
+            };
             new = replace_src(&new, "about:blank");
-            new = add_class(&new, "iframe", &format!("cmplz-iframe cmplz-iframe-styles {video_class} "));
+            new = add_class(
+                &new,
+                "iframe",
+                &format!("cmplz-iframe cmplz-iframe-styles {video_class} "),
+            );
             new = add_data(&new, "iframe", "service", &service);
             new = add_data(&new, "iframe", "category", &tag.category);
             if self.placeholders.use_placeholder(Some(&src)) {
@@ -435,19 +594,31 @@ impl Blocker {
         static VIDEO: OnceLock<Regex> = OnceLock::new();
         static CLASS: OnceLock<Regex> = OnceLock::new();
         let re = VIDEO.get_or_init(|| Regex::new(r#"(?is)<video class="wp-video-shortcode".*?<(source) type="video.*?src="(.*?)".*?>.*?</video>"#).expect("valid regex"));
-        let class = CLASS.get_or_init(|| Regex::new(r#"(?is)(["| ])(wp-video)(["| ])"#).expect("valid regex"));
-        let matches: Vec<(String, String)> = re.captures_iter(output).map(|c| (c[0].to_owned(), c[2].to_owned())).collect();
+        let class = CLASS
+            .get_or_init(|| Regex::new(r#"(?is)(["| ])(wp-video)(["| ])"#).expect("valid regex"));
+        let matches: Vec<(String, String)> = re
+            .captures_iter(output)
+            .map(|c| (c[0].to_owned(), c[2].to_owned()))
+            .collect();
         for (total, src) in matches {
-            let Some(tag) = self.tag_for(&src) else { continue };
-            if tag.category == "functional" || strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some() {
+            let Some(tag) = self.tag_for(&src) else {
+                continue;
+            };
+            if tag.category == "functional"
+                || strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some()
+            {
                 continue;
             }
             let service = rustpress_core::slug::sanitize_title(&tag.name);
-            *output = class.replace_all(output, "${1}wp-video cmplz-wp-video${3}").into_owned();
+            *output = class
+                .replace_all(output, "${1}wp-video cmplz-wp-video${3}")
+                .into_owned();
             let mut new = add_class(&total, "video", " cmplz-video ");
             new = add_data(&new, "video", "service", &service);
             new = add_data(&new, "video", "category", &tag.category);
-            new = new.replace("wp-video-shortcode", "cmplz-wp-video-shortcode").replace("controls=\"controls\"", "");
+            new = new
+                .replace("wp-video-shortcode", "cmplz-wp-video-shortcode")
+                .replace("controls=\"controls\"", "");
             if self.placeholders.use_placeholder(Some(&src)) {
                 let placeholder = self.placeholders.placeholder(Some(&tag.placeholder), &src);
                 new = add_class(&new, "video", "cmplz-placeholder-element");
@@ -460,10 +631,20 @@ impl Blocker {
     fn markers(&self, output: &mut String) {
         for marker in &self.markers {
             for class in marker.placeholder_class.split(',').map(str::trim) {
-                let Ok(re) = rustpress_core::formatting::pcre(&format!(r#"(?is)<([a-zA-Z][a-zA-Z0-9-]*)[^>]*(id|class)=['" ]*[^>]*({class})['" ].*?>"#)) else { continue };
-                let matches: Vec<(String, String)> = re.captures_iter(output.as_str()).filter_map(Result::ok).map(|c| (c[0].to_owned(), c[1].to_owned())).collect();
+                let Ok(re) = rustpress_core::formatting::pcre(&format!(
+                    r#"(?is)<([a-zA-Z][a-zA-Z0-9-]*)[^>]*(id|class)=['" ]*[^>]*({class})['" ].*?>"#
+                )) else {
+                    continue;
+                };
+                let matches: Vec<(String, String)> = re
+                    .captures_iter(output.as_str())
+                    .filter_map(Result::ok)
+                    .map(|c| (c[0].to_owned(), c[1].to_owned()))
+                    .collect();
                 for (html, el) in matches {
-                    let image = self.placeholders.placeholder(Some(&marker.placeholder), class);
+                    let image = self
+                        .placeholders
+                        .placeholder(Some(&marker.placeholder), class);
                     let mut new = add_data(&html, &el, "placeholder-image", &image);
                     new = add_data(&new, &el, "category", &marker.category);
                     new = add_data(&new, &el, "service", &marker.name);
@@ -477,12 +658,21 @@ impl Blocker {
     fn scripts(&self, output: &mut String, blocked_content_text: &str) {
         static SCRIPT: OnceLock<Regex> = OnceLock::new();
         static SRC: OnceLock<Regex> = OnceLock::new();
-        let re = SCRIPT.get_or_init(|| Regex::new(r"(?is)(<script.*?>)([\s\S]*?)</script>").expect("valid regex"));
-        let src_re = SRC.get_or_init(|| Regex::new(r#"(?is)<script[^>]*?src=['"]([A-Za-z0-9_.,;ß@?^=%&:()/~+#!\-*]*?)['"].*?>"#).expect("valid regex"));
-        let matches: Vec<(String, String, String)> = re.captures_iter(output).map(|c| (c[0].to_owned(), c[1].to_owned(), c[2].to_owned())).collect();
+        let re = SCRIPT.get_or_init(|| {
+            Regex::new(r"(?is)(<script.*?>)([\s\S]*?)</script>").expect("valid regex")
+        });
+        let src_re = SRC.get_or_init(|| {
+            Regex::new(r#"(?is)<script[^>]*?src=['"]([A-Za-z0-9_.,;ß@?^=%&:()/~+#!\-*]*?)['"].*?>"#)
+                .expect("valid regex")
+        });
+        let matches: Vec<(String, String, String)> = re
+            .captures_iter(output)
+            .map(|c| (c[0].to_owned(), c[1].to_owned(), c[2].to_owned()))
+            .collect();
         let mut index = 0;
         for (total, open, content) in matches {
-            if open.contains("data-category=\"functional\"") || open.contains("application/ld+json") {
+            if open.contains("data-category=\"functional\"") || open.contains("application/ld+json")
+            {
                 continue;
             }
             if strpos_arr(&total, self.whitelist.iter().map(String::as_str)).is_some() {
@@ -493,20 +683,32 @@ impl Blocker {
                     continue;
                 }
                 if let Some(tag) = self.tag_for(&content)
-                    && tag.category != "functional" {
-                        let mut new = add_data(&total, "script", "category", &tag.category);
-                        new = add_data(&new, "script", "service", &sanitize_service_name(&tag.name));
-                        new = set_javascript_to_plain(&new);
-                        if let Some(waitfor) = strpos_arr_keyed(&content, &self.dependencies) {
-                            new = add_data(&new, "script", "waitfor", waitfor);
-                        }
-                        *output = output.replace(&total, &new);
+                    && tag.category != "functional"
+                {
+                    let mut new = add_data(&total, "script", "category", &tag.category);
+                    new = add_data(&new, "script", "service", &sanitize_service_name(&tag.name));
+                    new = set_javascript_to_plain(&new);
+                    if let Some(waitfor) = strpos_arr_keyed(&content, &self.dependencies) {
+                        new = add_data(&new, "script", "waitfor", waitfor);
                     }
+                    *output = output.replace(&total, &new);
+                }
             }
-            let sources: Vec<String> = src_re.captures_iter(&total).map(|c| c[1].to_owned()).collect();
+            let sources: Vec<String> = src_re
+                .captures_iter(&total)
+                .map(|c| c[1].to_owned())
+                .collect();
             for src in sources {
-                let Some(found) = strpos_arr(&src, self.scripts.iter().map(|(k, _)| k.as_str())) else { continue };
-                let tag = &self.scripts.iter().find(|(k, _)| k == found).expect("found among the keys").1;
+                let Some(found) = strpos_arr(&src, self.scripts.iter().map(|(k, _)| k.as_str()))
+                else {
+                    continue;
+                };
+                let tag = &self
+                    .scripts
+                    .iter()
+                    .find(|(k, _)| k == found)
+                    .expect("found among the keys")
+                    .1;
                 let mut new = add_data(&total, "script", "category", &tag.category);
                 new = add_data(&new, "script", "service", &sanitize_service_name(&tag.name));
                 if !new.contains("data-category=\"functional\"") {
@@ -515,7 +717,12 @@ impl Blocker {
                     if strpos_arr(found, self.post_scribe.iter().map(String::as_str)).is_some() {
                         // The plugin also sets the option `cmplz_post_scribe_required` here, which RustPress does not write.
                         index += 1;
-                        new = add_data(&new, "script", "post_scribe_id", &format!("cmplz-ps-{index}"));
+                        new = add_data(
+                            &new,
+                            "script",
+                            "post_scribe_id",
+                            &format!("cmplz-ps-{index}"),
+                        );
                         new.push_str(&format!("<div class=\"cmplz-blocked-content-container\">{blocked_content_text}<div id=\"cmplz-ps-{index}\"><img src=\"{}\"></div></div>", self.placeholders.placeholder(Some("div"), "")));
                     }
                     if let Some(waitfor) = strpos_arr_keyed(&src, &self.dependencies) {
@@ -541,7 +748,16 @@ fn blocked(known: Vec<Known>, placeholders: &Placeholders, scripts: bool) -> Vec
             Known::Entry(tag) => tag,
             Known::Url(url) => {
                 let service = service_by_src(&url);
-                Tag { name: service.clone(), placeholder: service, category: "marketing".into(), urls: vec![url], enable_placeholder: true, placeholder_class: String::new(), enable_dependency: false, dependency: Vec::new() }
+                Tag {
+                    name: service.clone(),
+                    placeholder: service,
+                    category: "marketing".into(),
+                    urls: vec![url],
+                    enable_placeholder: true,
+                    placeholder_class: String::new(),
+                    enable_dependency: false,
+                    dependency: Vec::new(),
+                }
             }
         };
         if tag.category.is_empty() {
@@ -574,25 +790,48 @@ fn preg_quote(text: &str) -> String {
 pub fn add_data(html: &str, el: &str, id: &str, content: &str) -> String {
     let content = esc_attr(content);
     let id = esc_attr(id);
-    let pattern = format!(r#"(?i)<{}[^>].*?(data-{}=['|"]{}['|"])(?=.*>)"#, preg_quote(el), preg_quote(&id), preg_quote(&content));
-    let exists = rustpress_core::formatting::pcre(&pattern).ok().and_then(|re| re.is_match(html).ok()).unwrap_or(false);
+    let pattern = format!(
+        r#"(?i)<{}[^>].*?(data-{}=['|"]{}['|"])(?=.*>)"#,
+        preg_quote(el),
+        preg_quote(&id),
+        preg_quote(&content)
+    );
+    let exists = rustpress_core::formatting::pcre(&pattern)
+        .ok()
+        .and_then(|re| re.is_match(html).ok())
+        .unwrap_or(false);
     if exists {
         return html.to_owned();
     }
     match html.find(&format!("<{el}")) {
-        Some(pos) => format!("{}<{el} data-{id}=\"{content}\"{}", &html[..pos], &html[pos + el.len() + 1..]),
+        Some(pos) => format!(
+            "{}<{el} data-{id}=\"{content}\"{}",
+            &html[..pos],
+            &html[pos + el.len() + 1..]
+        ),
         None => html.to_owned(),
     }
 }
 
 /// `cmplz_cookie_blocker::add_class( $html, $el, $class )`.
 pub fn add_class(html: &str, el: &str, class: &str) -> String {
-    let classes: Vec<&str> = class.split(' ').filter(|c| !c.is_empty() && *c != "0").collect();
-    let check = Regex::new(&format!(r#"(?i)<{}[^>]*[\t\n\x0B\x0C\r ]+(class=")(.*)""#, preg_quote(el))).expect("valid regex");
+    let classes: Vec<&str> = class
+        .split(' ')
+        .filter(|c| !c.is_empty() && *c != "0")
+        .collect();
+    let check = Regex::new(&format!(
+        r#"(?i)<{}[^>]*[\t\n\x0B\x0C\r ]+(class=")(.*)""#,
+        preg_quote(el)
+    ))
+    .expect("valid regex");
     let mut html = html.to_owned();
     if let Some(caps) = check.captures(&html) {
         let existing = caps[2].to_owned();
-        let insert = Regex::new(&format!(r#"(?i)(<{}[^>]*[\t\n\x0B\x0C\r ]+)(class=")"#, preg_quote(el))).expect("valid regex");
+        let insert = Regex::new(&format!(
+            r#"(?i)(<{}[^>]*[\t\n\x0B\x0C\r ]+)(class=")"#,
+            preg_quote(el)
+        ))
+        .expect("valid regex");
         for class in classes {
             if !existing.contains(class) && !class.trim().is_empty() {
                 let replacement = format!("${{1}}class=\"{} ", esc_attr(class).replace('$', "$$"));
@@ -600,7 +839,12 @@ pub fn add_class(html: &str, el: &str, class: &str) -> String {
             }
         }
     } else if let Some(pos) = html.find(&format!("<{el}")) {
-        html = format!("{}<{el} class=\"{}\"{}", &html[..pos], esc_attr(class), &html[pos + el.len() + 1..]);
+        html = format!(
+            "{}<{el} class=\"{}\"{}",
+            &html[..pos],
+            esc_attr(class),
+            &html[pos + el.len() + 1..]
+        );
     }
     html
 }
@@ -612,16 +856,35 @@ pub fn set_javascript_to_plain(script: &str) -> String {
     }
     static JS: OnceLock<fancy_regex::Regex> = OnceLock::new();
     static MODULE: OnceLock<Regex> = OnceLock::new();
-    let js = JS.get_or_init(|| rustpress_core::formatting::pcre(r#"(?i)(<script[^>].*?)(type=['|"]text/javascript['|"])(?=.*>)"#).expect("valid regex"));
+    let js = JS.get_or_init(|| {
+        rustpress_core::formatting::pcre(
+            r#"(?i)(<script[^>].*?)(type=['|"]text/javascript['|"])(?=.*>)"#,
+        )
+        .expect("valid regex")
+    });
     if js.is_match(script).unwrap_or(false) {
-        return js.replacen(script, 1, "${1}type=\"text/plain\"").into_owned();
+        return js
+            .replacen(script, 1, "${1}type=\"text/plain\"")
+            .into_owned();
     }
-    let module = MODULE.get_or_init(|| Regex::new(r#"(?i)(<script[^>]*?)(type=['|"]module['|"])([^>]*?>)"#).expect("valid regex"));
+    let module = MODULE.get_or_init(|| {
+        Regex::new(r#"(?i)(<script[^>]*?)(type=['|"]module['|"])([^>]*?>)"#).expect("valid regex")
+    });
     if module.is_match(script) {
-        return module.replacen(script, 1, "${1} type=\"text/plain\" data-script-type=\"module\" ${3}").into_owned();
+        return module
+            .replacen(
+                script,
+                1,
+                "${1} type=\"text/plain\" data-script-type=\"module\" ${3}",
+            )
+            .into_owned();
     }
     match script.find("<script") {
-        Some(pos) => format!("{}<script type=\"text/plain\"{}", &script[..pos], &script[pos + 7..]),
+        Some(pos) => format!(
+            "{}<script type=\"text/plain\"{}",
+            &script[..pos],
+            &script[pos + 7..]
+        ),
         None => script.to_owned(),
     }
 }
@@ -631,14 +894,25 @@ pub fn set_javascript_to_plain(script: &str) -> String {
 pub fn replace_src(script: &str, new_src: &str) -> String {
     static SRC: OnceLock<regex::bytes::Regex> = OnceLock::new();
     let re = SRC.get_or_init(|| {
-        let bytes = |chars: &str| chars.bytes().map(|b| format!("\\x{b:02X}")).collect::<String>();
+        let bytes = |chars: &str| {
+            chars
+                .bytes()
+                .map(|b| format!("\\x{b:02X}"))
+                .collect::<String>()
+        };
         let accents = bytes("êëèéēėęàáâæãåāäöôòóœøüÄÖÜß");
         let first = format!(r"[\s\w{accents}.,@!?^=%&:/~+#-;]");
         let last = r"[\w@!?^=%&/~+#-;]".to_string();
-        regex::bytes::Regex::new(&format!(r#"(?i-u)src=['"](http://|https://|//)({first}*{last}?)['"]"#)).expect("valid regex")
+        regex::bytes::Regex::new(&format!(
+            r#"(?i-u)src=['"](http://|https://|//)({first}*{last}?)['"]"#
+        ))
+        .expect("valid regex")
     });
     let replacement = format!(" src=\"{new_src}\" ");
-    let out = re.replace_all(script.as_bytes(), regex::bytes::NoExpand(replacement.as_bytes()));
+    let out = re.replace_all(
+        script.as_bytes(),
+        regex::bytes::NoExpand(replacement.as_bytes()),
+    );
     String::from_utf8_lossy(&out).into_owned()
 }
 
@@ -648,22 +922,54 @@ mod tests {
 
     #[test]
     fn plain_scripts() {
-        assert_eq!(set_javascript_to_plain("<script src=\"x\"></script>"), "<script type=\"text/plain\" src=\"x\"></script>");
-        assert_eq!(set_javascript_to_plain("<script type='text/javascript' src=\"x\"></script>"), "<script type=\"text/plain\" src=\"x\"></script>");
-        assert_eq!(set_javascript_to_plain("<script type=\"module\" src=\"x\"></script>"), "<script  type=\"text/plain\" data-script-type=\"module\"  src=\"x\"></script>");
+        assert_eq!(
+            set_javascript_to_plain("<script src=\"x\"></script>"),
+            "<script type=\"text/plain\" src=\"x\"></script>"
+        );
+        assert_eq!(
+            set_javascript_to_plain("<script type='text/javascript' src=\"x\"></script>"),
+            "<script type=\"text/plain\" src=\"x\"></script>"
+        );
+        assert_eq!(
+            set_javascript_to_plain("<script type=\"module\" src=\"x\"></script>"),
+            "<script  type=\"text/plain\" data-script-type=\"module\"  src=\"x\"></script>"
+        );
     }
 
     #[test]
     fn data_and_classes() {
-        assert_eq!(add_data("<div class=\"a\">", "div", "service", "x"), "<div data-service=\"x\" class=\"a\">");
-        assert_eq!(add_data("<div data-service=\"x\" class=\"a\">", "div", "service", "x"), "<div data-service=\"x\" class=\"a\">");
-        assert_eq!(add_class("<div class=\"a\">", "div", "b c"), "<div class=\"c b a\">");
+        assert_eq!(
+            add_data("<div class=\"a\">", "div", "service", "x"),
+            "<div data-service=\"x\" class=\"a\">"
+        );
+        assert_eq!(
+            add_data(
+                "<div data-service=\"x\" class=\"a\">",
+                "div",
+                "service",
+                "x"
+            ),
+            "<div data-service=\"x\" class=\"a\">"
+        );
+        assert_eq!(
+            add_class("<div class=\"a\">", "div", "b c"),
+            "<div class=\"c b a\">"
+        );
         assert_eq!(add_class("<div>", "div", "b"), "<div class=\"b\">");
     }
 
     #[test]
     fn sources() {
-        assert_eq!(replace_src("<iframe src=\"https://www.youtube.com/embed/x\" width=\"5\">", "about:blank"), "<iframe  src=\"about:blank\"  width=\"5\">");
-        assert_eq!(replace_src("<iframe src='https://a.b/c' width='5'>", "about:blank"), "<iframe  src=\"about:blank\" >");
+        assert_eq!(
+            replace_src(
+                "<iframe src=\"https://www.youtube.com/embed/x\" width=\"5\">",
+                "about:blank"
+            ),
+            "<iframe  src=\"about:blank\"  width=\"5\">"
+        );
+        assert_eq!(
+            replace_src("<iframe src='https://a.b/c' width='5'>", "about:blank"),
+            "<iframe  src=\"about:blank\" >"
+        );
     }
 }

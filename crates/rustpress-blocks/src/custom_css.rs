@@ -21,30 +21,52 @@ pub fn process_custom_css(css: &str, selector: &str) -> String {
         }
         if !part.contains('{') {
             // Plain declarations apply to the block itself.
-            out.push_str(&format!(":root :where({}){{{}}}", selector.trim(), part.trim()));
+            out.push_str(&format!(
+                ":root :where({}){{{}}}",
+                selector.trim(),
+                part.trim()
+            ));
             continue;
         }
         let cleaned = part.replace('}', "");
         let pieces: Vec<&str> = cleaned.split('{').collect();
-        let [nested, value] = pieces[..] else { continue };
+        let [nested, value] = pieces[..] else {
+            continue;
+        };
         // A pseudo-element (`::before`, with the combinators in front of it) goes behind the `:where()`.
         let (nested, pseudo) = match nested.find("::") {
             Some(at) => {
-                let start = nested[..at].trim_end_matches(|c: char| matches!(c, '>' | '+' | '~') || c.is_whitespace()).len();
+                let start = nested[..at]
+                    .trim_end_matches(|c: char| matches!(c, '>' | '+' | '~') || c.is_whitespace())
+                    .len();
                 let tail = &nested[at + 2..];
-                let end = at + 2 + tail.find(|c: char| !(c.is_ascii_alphabetic() || c == '-')).unwrap_or(tail.len());
-                (format!("{}{}", &nested[..start], &nested[end..]), nested[start..end].to_owned())
+                let end = at
+                    + 2
+                    + tail
+                        .find(|c: char| !(c.is_ascii_alphabetic() || c == '-'))
+                        .unwrap_or(tail.len());
+                (
+                    format!("{}{}", &nested[..start], &nested[end..]),
+                    nested[start..end].to_owned(),
+                )
             }
             None => (nested.to_owned(), String::new()),
         };
         // A nested selector that starts with a space is a descendant of the block (each comma part);
         // otherwise it is appended to the block selector as a whole.
         let scoped = if nested.starts_with(' ') {
-            nested.split(',').map(|s| format!("{selector} {}", s.trim()).trim_end().to_owned()).collect::<Vec<_>>().join(", ")
+            nested
+                .split(',')
+                .map(|s| format!("{selector} {}", s.trim()).trim_end().to_owned())
+                .collect::<Vec<_>>()
+                .join(", ")
         } else {
             format!("{selector}{nested}")
         };
-        out.push_str(&format!(":root :where({scoped}){pseudo}{{{}}}", value.trim()));
+        out.push_str(&format!(
+            ":root :where({scoped}){pseudo}{{{}}}",
+            value.trim()
+        ));
     }
     out
 }
@@ -59,14 +81,33 @@ fn parsed_block(block: &Block, attrs: &Map<String, Value>) -> Value {
             Content::InnerBlock => Value::Null,
         })
         .collect();
-    let inner_blocks: Vec<Value> = block.inner_blocks.iter().map(|inner| parsed_block(inner, &inner.attrs)).collect();
+    let inner_blocks: Vec<Value> = block
+        .inner_blocks
+        .iter()
+        .map(|inner| parsed_block(inner, &inner.attrs))
+        .collect();
     json!({ "blockName": block.name, "attrs": attrs, "innerBlocks": inner_blocks, "innerHTML": block.inner_html, "innerContent": inner_content })
 }
 
 /// `wp_render_custom_css_support_styles()`, a `render_block_data` filter.
-pub fn prepare_block_data(env: &Env<'_>, bt: &BlockType, block: &Block, parent_layout: Option<&Value>, attrs: &mut Map<String, Value>) {
-    static MARKUP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?(?-u:\w)+").expect("the pattern is valid"));
-    let Some(css) = attrs.get("style").and_then(|s| s.get("css")).and_then(Value::as_str).filter(|css| !css.trim().is_empty()).map(str::to_owned) else { return };
+pub fn prepare_block_data(
+    env: &Env<'_>,
+    bt: &BlockType,
+    block: &Block,
+    parent_layout: Option<&Value>,
+    attrs: &mut Map<String, Value>,
+) {
+    static MARKUP: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"</?(?-u:\w)+").expect("the pattern is valid"));
+    let Some(css) = attrs
+        .get("style")
+        .and_then(|s| s.get("css"))
+        .and_then(Value::as_str)
+        .filter(|css| !css.trim().is_empty())
+        .map(str::to_owned)
+    else {
+        return;
+    };
     if !bt.has_support(&["customCSS"], true) || MARKUP.is_match(&css) {
         return;
     }
@@ -94,8 +135,19 @@ pub fn prepare_block_data(env: &Env<'_>, bt: &BlockType, block: &Block, parent_l
 
 /// `wp_render_custom_css_class_name()`.
 pub fn render_class_name(attrs: &Map<String, Value>, content: String) -> String {
-    let Some(class) = attrs.get("className").and_then(Value::as_str).and_then(|c| c.split([' ', '\t', '\u{c}', '\r', '\n']).find(|token| token.starts_with(CLASS_PREFIX))) else { return content };
-    let Some(mut editor) = TagEditor::first(&content) else { return content };
+    let Some(class) = attrs
+        .get("className")
+        .and_then(Value::as_str)
+        .and_then(|c| {
+            c.split([' ', '\t', '\u{c}', '\r', '\n'])
+                .find(|token| token.starts_with(CLASS_PREFIX))
+        })
+    else {
+        return content;
+    };
+    let Some(mut editor) = TagEditor::first(&content) else {
+        return content;
+    };
     editor.add_class("has-custom-css");
     editor.add_class(class);
     editor.finish()
@@ -108,13 +160,21 @@ pub fn strip_custom_css(content: &str) -> String {
     let mut was_at = 0;
     for delimiter in crate::parser::block_delimiters(content) {
         let mut attrs = delimiter.attrs;
-        let Some(style) = attrs.get_mut("style").and_then(Value::as_object_mut).filter(|s| s.get("css").is_some_and(|css| !css.is_null())) else { continue };
+        let Some(style) = attrs
+            .get_mut("style")
+            .and_then(Value::as_object_mut)
+            .filter(|s| s.get("css").is_some_and(|css| !css.is_null()))
+        else {
+            continue;
+        };
         style.shift_remove("css");
         if style.is_empty() {
             attrs.shift_remove("style");
         }
         let token = &content[delimiter.start..delimiter.start + delimiter.len];
-        let (Some(open), Some(close)) = (token.find('{'), token.rfind('}')) else { continue };
+        let (Some(open), Some(close)) = (token.find('{'), token.rfind('}')) else {
+            continue;
+        };
         let json_start = delimiter.start + open;
         result.push_str(&content[was_at..json_start]);
         if attrs.is_empty() {
@@ -135,17 +195,32 @@ mod tests {
 
     #[test]
     fn root_declarations_and_nested_rules_are_scoped() {
-        assert_eq!(process_custom_css("color:red;", ".c"), ":root :where(.c){color:red;}");
-        assert_eq!(process_custom_css("color:red;& a{color:blue}", ".c"), ":root :where(.c){color:red;}:root :where(.c a){color:blue}");
-        assert_eq!(process_custom_css("&::before{content:'x'}", ".c"), ":root :where(.c)::before{content:'x'}");
+        assert_eq!(
+            process_custom_css("color:red;", ".c"),
+            ":root :where(.c){color:red;}"
+        );
+        assert_eq!(
+            process_custom_css("color:red;& a{color:blue}", ".c"),
+            ":root :where(.c){color:red;}:root :where(.c a){color:blue}"
+        );
+        assert_eq!(
+            process_custom_css("&::before{content:'x'}", ".c"),
+            ":root :where(.c)::before{content:'x'}"
+        );
     }
 
     #[test]
     fn the_css_of_a_block_is_stripped_and_the_rest_stays() {
         let saved = "<!-- wp:paragraph {\"style\":{\"css\":\"color:red\"}} --><p>a</p><!-- /wp:paragraph -->";
-        assert_eq!(strip_custom_css(saved), "<!-- wp:paragraph --><p>a</p><!-- /wp:paragraph -->");
+        assert_eq!(
+            strip_custom_css(saved),
+            "<!-- wp:paragraph --><p>a</p><!-- /wp:paragraph -->"
+        );
         let saved = "<!-- wp:paragraph {\"style\":{\"css\":\"x\",\"color\":{\"text\":\"red\"}},\"a\":1} /-->";
-        assert_eq!(strip_custom_css(saved), "<!-- wp:paragraph {\"style\":{\"color\":{\"text\":\"red\"}},\"a\":1} /-->");
+        assert_eq!(
+            strip_custom_css(saved),
+            "<!-- wp:paragraph {\"style\":{\"color\":{\"text\":\"red\"}},\"a\":1} /-->"
+        );
         assert_eq!(strip_custom_css("<p>plain</p>"), "<p>plain</p>");
     }
 }

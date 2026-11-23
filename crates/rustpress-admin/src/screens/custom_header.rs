@@ -6,16 +6,18 @@ use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::urls::add_query_arg;
 use rustpress_phpser::{Key, Value};
-use rustpress_theme::classic::custom_header::{self as header, DefaultHeader, RandomHeader, Support, Uploaded};
+use rustpress_theme::classic::custom_header::{
+    self as header, DefaultHeader, RandomHeader, Support, Uploaded,
+};
 
 use rustpress_core::OrLog;
 
 use super::meta_boxes::submit_button;
-use crate::content::{Content, PostData};
-use crate::media;
 use super::notices::notice;
 use super::{AdminResponse, Ctx, render};
 use crate::chrome::{Assets, Help, HelpTab, Screen};
+use crate::content::{Content, PostData};
+use crate::media;
 
 /// What the screen reads: the support of the theme, its headers and the theme mods.
 struct State {
@@ -57,15 +59,28 @@ impl State {
     /// `Custom_Image_Header::set_header_image()` for a choice of the form.
     fn set_header_image(&mut self, choice: &str) {
         let text = |s: &str| Value::Str(s.as_bytes().to_vec());
-        if matches!(choice, "remove-header" | "random-default-image" | "random-uploaded-image") {
+        if matches!(
+            choice,
+            "remove-header" | "random-default-image" | "random-uploaded-image"
+        ) {
             self.set_mod("header_image", text(choice));
             self.remove_mod("header_image_data");
             return;
         }
-        let data = match self.uploaded.iter().find(|u| u.attachment_id.to_string() == choice) {
-            Some(uploaded) => (rustpress_core::formatting::esc_url_raw(&uploaded.url), uploaded.to_php()),
+        let data = match self
+            .uploaded
+            .iter()
+            .find(|u| u.attachment_id.to_string() == choice)
+        {
+            Some(uploaded) => (
+                rustpress_core::formatting::esc_url_raw(&uploaded.url),
+                uploaded.to_php(),
+            ),
             None => match self.defaults.iter().find(|d| d.key == choice) {
-                Some(default) => (rustpress_core::formatting::esc_url_raw(&default.url), default.to_php()),
+                Some(default) => (
+                    rustpress_core::formatting::esc_url_raw(&default.url),
+                    default.to_php(),
+                ),
                 None => return,
             },
         };
@@ -82,18 +97,40 @@ impl State {
         }
         let props = match self.defaults.iter().find(|d| d.url == default) {
             Some(details) => vec![
-                (Key::Str(b"url".to_vec()), Value::Str(details.url.as_bytes().to_vec())),
-                (Key::Str(b"thumbnail_url".to_vec()), Value::Str(details.thumbnail_url.as_bytes().to_vec())),
-                (Key::Str(b"description".to_vec()), Value::Str(details.description.as_bytes().to_vec())),
+                (
+                    Key::Str(b"url".to_vec()),
+                    Value::Str(details.url.as_bytes().to_vec()),
+                ),
+                (
+                    Key::Str(b"thumbnail_url".to_vec()),
+                    Value::Str(details.thumbnail_url.as_bytes().to_vec()),
+                ),
+                (
+                    Key::Str(b"description".to_vec()),
+                    Value::Str(details.description.as_bytes().to_vec()),
+                ),
             ],
             None => Vec::new(),
         };
         self.set_mod("header_image", Value::Str(default.into_bytes()));
-        self.set_mod("header_image_data", Value::Object { class: b"stdClass".to_vec(), props });
+        self.set_mod(
+            "header_image_data",
+            Value::Object {
+                class: b"stdClass".to_vec(),
+                props,
+            },
+        );
     }
 
     /// `Custom_Image_Header::set_header_image()` for an attachment the screen made, saved at once.
-    async fn set_header_image_data(&mut self, ctx: &Ctx<'_>, url: &str, attachment_id: u64, width: u64, height: u64) {
+    async fn set_header_image_data(
+        &mut self,
+        ctx: &Ctx<'_>,
+        url: &str,
+        attachment_id: u64,
+        width: u64,
+        height: u64,
+    ) {
         let url = rustpress_core::formatting::esc_url_raw(url);
         let text = |s: &str| Value::Str(s.as_bytes().to_vec());
         let key = |s: &str| Key::Str(s.as_bytes().to_vec());
@@ -105,10 +142,23 @@ impl State {
             (key("width"), Value::Int(width as i64)),
         ];
         if let Some(writer) = ctx.env.writer {
-            writer.update_post_meta(attachment_id, "_wp_attachment_is_custom_header", &ctx.site().settings.stylesheet).await.or_log();
+            writer
+                .update_post_meta(
+                    attachment_id,
+                    "_wp_attachment_is_custom_header",
+                    &ctx.site().settings.stylesheet,
+                )
+                .await
+                .or_log();
         }
         self.set_mod("header_image", text(&url));
-        self.set_mod("header_image_data", Value::Object { class: b"stdClass".to_vec(), props });
+        self.set_mod(
+            "header_image_data",
+            Value::Object {
+                class: b"stdClass".to_vec(),
+                props,
+            },
+        );
         self.save(ctx).await;
     }
 
@@ -120,7 +170,12 @@ impl State {
             // `remove_theme_mods()`.
             writer.delete_option(&self.mods_name).await
         } else {
-            writer.update_option(&self.mods_name, &String::from_utf8_lossy(&rustpress_phpser::serialize(&self.mods))).await
+            writer
+                .update_option(
+                    &self.mods_name,
+                    &String::from_utf8_lossy(&rustpress_phpser::serialize(&self.mods)),
+                )
+                .await
         };
         if let Err(error) = result {
             tracing::error!(%error, "saving the theme mods failed");
@@ -131,7 +186,8 @@ impl State {
 /// Whether the screen exists: a ported classic theme that supports `custom-header`.
 pub fn available(ctx: &Ctx<'_>) -> bool {
     let theme = ctx.env.theme;
-    !ctx.env.block_theme && header::support(&theme.template, &theme.template_directory_uri()).is_some()
+    !ctx.env.block_theme
+        && header::support(&theme.template, &theme.template_directory_uri()).is_some()
 }
 
 /// `Custom_Image_Header::help()`.
@@ -174,7 +230,9 @@ fn help(ctx: &Ctx<'_>) -> Help {
     let sidebar = format!(
         "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
         tr("For more information:"),
-        tr("<a href=\"https://codex.wordpress.org/Appearance_Header_Screen\">Documentation on Custom Header</a>"),
+        tr(
+            "<a href=\"https://codex.wordpress.org/Appearance_Header_Screen\">Documentation on Custom Header</a>"
+        ),
         tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
     );
     Help { tabs, sidebar }
@@ -182,7 +240,9 @@ fn help(ctx: &Ctx<'_>) -> Help {
 
 /// `Custom_Image_Header::step()`.
 fn step(ctx: &Ctx<'_>) -> u8 {
-    let Some(raw) = ctx.request.get("step") else { return 1 };
+    let Some(raw) = ctx.request.get("step") else {
+        return 1;
+    };
     let step = super::media_upload::php_int(raw);
     match step {
         2 if ctx.verify_nonce_field("custom-header-upload", "_wpnonce-custom-header-upload") => 2,
@@ -197,7 +257,13 @@ fn take_action(ctx: &Ctx<'_>, state: &mut State) -> Result<bool, AdminResponse> 
     if !ctx.can("edit_theme_options") || !request.post || request.form.is_empty() {
         return Ok(false);
     }
-    let check = || if ctx.verify_nonce_field("custom-header-options", "_wpnonce-custom-header-options") { Ok(()) } else { Err(super::options::nonce_ays(ctx)) };
+    let check = || {
+        if ctx.verify_nonce_field("custom-header-options", "_wpnonce-custom-header-options") {
+            Ok(())
+        } else {
+            Err(super::options::nonce_ays(ctx))
+        }
+    };
     if request.post_field("resetheader").is_some() {
         check()?;
         state.reset_header_image();
@@ -213,7 +279,11 @@ fn take_action(ctx: &Ctx<'_>, state: &mut State) -> Result<bool, AdminResponse> 
         if request.post_field("display-header-text").is_none() {
             state.set_mod("header_textcolor", Value::Str(b"blank".to_vec()));
         } else {
-            let color: String = color.replace('#', "").chars().filter(char::is_ascii_hexdigit).collect();
+            let color: String = color
+                .replace('#', "")
+                .chars()
+                .filter(char::is_ascii_hexdigit)
+                .collect();
             if color.len() == 6 || color.len() == 3 {
                 state.set_mod("header_textcolor", Value::Str(color.into_bytes()));
             } else if color.is_empty() {
@@ -237,13 +307,42 @@ fn checked(on: bool) -> &'static str {
 fn header_selector(ctx: &Ctx<'_>, state: &State, kind: &str) -> String {
     // `(key, url, thumbnail, alt, is_attachment)`.
     let headers: Vec<(String, String, String, String, bool)> = if kind == "default" {
-        state.defaults.iter().map(|d| (d.key.clone(), d.url.clone(), d.thumbnail_url.clone(), String::new(), false)).collect()
+        state
+            .defaults
+            .iter()
+            .map(|d| {
+                (
+                    d.key.clone(),
+                    d.url.clone(),
+                    d.thumbnail_url.clone(),
+                    String::new(),
+                    false,
+                )
+            })
+            .collect()
     } else {
-        state.uploaded.iter().map(|u| (u.attachment_id.to_string(), u.url.clone(), u.url.clone(), u.alt_text.clone(), u.attachment_id != 0)).collect()
+        state
+            .uploaded
+            .iter()
+            .map(|u| {
+                (
+                    u.attachment_id.to_string(),
+                    u.url.clone(),
+                    u.url.clone(),
+                    u.alt_text.clone(),
+                    u.attachment_id != 0,
+                )
+            })
+            .collect()
     };
     let mut out = String::new();
     if headers.len() > 1 {
-        let random = header::is_random_header_image(kind, &state.mods, &state.support, state.random.as_ref());
+        let random = header::is_random_header_image(
+            kind,
+            &state.mods,
+            &state.support,
+            state.random.as_ref(),
+        );
         out.push_str(&format!(
             "<div class=\"random-header\"><label><input name=\"default-header\" type=\"radio\" value=\"random-{kind}-image\"{} />{}</label></div>",
             checked(random),
@@ -272,25 +371,42 @@ fn header_selector(ctx: &Ctx<'_>, state: &State, kind: &str) -> String {
 }
 
 fn set_url_scheme(ctx: &Ctx<'_>, url: &str) -> String {
-    let scheme = if ctx.site().settings.siteurl.starts_with("https://") { "https" } else { "http" };
-    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")).or_else(|| url.strip_prefix("//"));
+    let scheme = if ctx.site().settings.siteurl.starts_with("https://") {
+        "https"
+    } else {
+        "http"
+    };
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .or_else(|| url.strip_prefix("//"));
     rest.map_or(url.to_owned(), |rest| format!("{scheme}://{rest}"))
 }
 
 /// The theme's default text color with its `#`.
 fn default_color(support: &Support) -> String {
     let color = &support.default_text_color;
-    if !color.is_empty() && !color.contains('#') { format!("#{color}") } else { color.clone() }
+    if !color.is_empty() && !color.contains('#') {
+        format!("#{color}")
+    } else {
+        color.clone()
+    }
 }
 
 /// `bloginfo()`: the `display` filters.
 fn bloginfo(ctx: &Ctx<'_>, text: &str) -> String {
-    esc_html(&rustpress_core::formatting::convert_chars(&ctx.site().texturize(text)))
+    esc_html(&rustpress_core::formatting::convert_chars(
+        &ctx.site().texturize(text),
+    ))
 }
 
 /// `Custom_Image_Header::js_1()`.
 fn js_1(state: &State) -> String {
-    let toggle = if header::display_header_text(&state.mods, &state.support) { "" } else { "\t\ttoggle_text();\n\t\t" };
+    let toggle = if header::display_header_text(&state.mods, &state.support) {
+        ""
+    } else {
+        "\t\ttoggle_text();\n\t\t"
+    };
     format!(
         "<script>\n(function($){{\n\tvar default_color = '{}',\n\t\theader_text_fields;\n\n\tfunction pickColor(color) {{\n\t\t$('#name').css('color', color);\n\t\t$('#desc').css('color', color);\n\t\t$('#text-color').val(color);\n\t}}\n\n\tfunction toggle_text() {{\n\t\tvar checked = $('#display-header-text').prop('checked'),\n\t\t\ttext_color;\n\t\theader_text_fields.toggle( checked );\n\t\tif ( ! checked )\n\t\t\treturn;\n\t\ttext_color = $('#text-color');\n\t\tif ( '' === text_color.val().replace('#', '') ) {{\n\t\t\ttext_color.val( default_color );\n\t\t\tpickColor( default_color );\n\t\t}} else {{\n\t\t\tpickColor( text_color.val() );\n\t\t}}\n\t}}\n\n\t$( function() {{\n\t\tvar text_color = $('#text-color');\n\t\theader_text_fields = $('.displaying-header-text');\n\t\ttext_color.wpColorPicker({{\n\t\t\tchange: function( event, ui ) {{\n\t\t\t\tpickColor( text_color.wpColorPicker('color') );\n\t\t\t}},\n\t\t\tclear: function() {{\n\t\t\t\tpickColor( '' );\n\t\t\t}}\n\t\t}});\n\t\t$('#display-header-text').click( toggle_text );\n\t\t{toggle}\t}} );\n}})(jQuery);\n</script>\n\t\t",
         // `esc_js()` of a hex color is the color.
@@ -303,16 +419,32 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
     let site = ctx.site();
     let tr = |text: &str| ctx.tr(text);
     let support = &state.support;
-    let mut out = format!("\n<div class=\"wrap\">\n<h1>{}</h1>\n\n\t\t", tr("Custom Header"));
+    let mut out = format!(
+        "\n<div class=\"wrap\">\n<h1>{}</h1>\n\n\t\t",
+        tr("Custom Header")
+    );
     if ctx.can("customize") {
-        let message = sprintf(&tr("You can now manage and live-preview Custom Header in the <a href=\"%s\">Customizer</a>."), &[&ctx.admin_url("customize.php?autofocus[control]=header_image")]);
-        out.push_str(notice(&message, "info", false, "", &["hide-if-no-customize"], true).trim_end());
+        let message = sprintf(
+            &tr(
+                "You can now manage and live-preview Custom Header in the <a href=\"%s\">Customizer</a>.",
+            ),
+            &[&ctx.admin_url("customize.php?autofocus[control]=header_image")],
+        );
+        out.push_str(
+            notice(&message, "info", false, "", &["hide-if-no-customize"], true).trim_end(),
+        );
     }
     if updated {
-        let message = sprintf(&tr("Header updated. <a href=\"%s\">Visit your site</a> to see how it looks."), &[&esc_url(&site.home_url("/"))]);
+        let message = sprintf(
+            &tr("Header updated. <a href=\"%s\">Visit your site</a> to see how it looks."),
+            &[&esc_url(&site.home_url("/"))],
+        );
         out.push_str(notice(&message, "", false, "message", &["updated"], true).trim_end());
     }
-    out.push_str(&format!("\n<h2>{}</h2>\n\n<table class=\"form-table\" role=\"presentation\">\n<tbody>\n\n\t\t", tr("Header Image")));
+    out.push_str(&format!(
+        "\n<h2>{}</h2>\n\n<table class=\"form-table\" role=\"presentation\">\n<tbody>\n\n\t\t",
+        tr("Header Image")
+    ));
 
     // `get_custom_header()` is an object, so the preview always shows.
     let header_image = state.header_image(ctx);
@@ -328,7 +460,10 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
         image_style.push_str(&format!("height:{height}px;"));
     }
     let text_style = if header::display_header_text(&state.mods, support) {
-        format!(" style=\"color:#{};\"", header::header_textcolor(&state.mods, support))
+        format!(
+            " style=\"color:#{};\"",
+            header::header_textcolor(&state.mods, support)
+        )
     } else {
         " style=\"display:none;\"".to_owned()
     };
@@ -342,26 +477,53 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
     ));
 
     if ctx.can("upload_files") && support.uploads {
-        let pixels = |n: u64| format!("<strong>{}</strong>", sprintf(&tr("%d pixels"), &[&n.to_string()]));
+        let pixels = |n: u64| {
+            format!(
+                "<strong>{}</strong>",
+                sprintf(&tr("%d pixels"), &[&n.to_string()])
+            )
+        };
         let mut sizes = String::new();
         if !support.flex_height && !support.flex_width {
             sizes.push_str(&format!("{}<br />", sprintf(&tr("Images of exactly <strong>%1$d &times; %2$d pixels</strong> will be used as-is."), &[&support.width.to_string(), &support.height.to_string()])));
         } else if support.flex_height {
             if !support.flex_width {
-                sizes.push_str(&format!("{} ", sprintf(&tr("Images should be at least %s wide."), &[&pixels(support.width)])));
+                sizes.push_str(&format!(
+                    "{} ",
+                    sprintf(
+                        &tr("Images should be at least %s wide."),
+                        &[&pixels(support.width)]
+                    )
+                ));
             }
         } else if support.flex_width && !support.flex_height {
-            sizes.push_str(&format!("{} ", sprintf(&tr("Images should be at least %s tall."), &[&pixels(support.height)])));
+            sizes.push_str(&format!(
+                "{} ",
+                sprintf(
+                    &tr("Images should be at least %s tall."),
+                    &[&pixels(support.height)]
+                )
+            ));
         }
         if support.flex_height || support.flex_width {
             if support.width != 0 {
-                sizes.push_str(&format!("{} ", sprintf(&tr("Suggested width is %s."), &[&pixels(support.width)])));
+                sizes.push_str(&format!(
+                    "{} ",
+                    sprintf(&tr("Suggested width is %s."), &[&pixels(support.width)])
+                ));
             }
             if support.height != 0 {
-                sizes.push_str(&format!("{} ", sprintf(&tr("Suggested height is %s."), &[&pixels(support.height)])));
+                sizes.push_str(&format!(
+                    "{} ",
+                    sprintf(&tr("Suggested height is %s."), &[&pixels(support.height)])
+                ));
             }
         }
-        let modal = format!("{}?page=custom-header&step=2&_wpnonce-custom-header-upload={}", ctx.admin_url("themes.php"), ctx.create_nonce("custom-header-upload"));
+        let modal = format!(
+            "{}?page=custom-header&step=2&_wpnonce-custom-header-upload={}",
+            ctx.admin_url("themes.php"),
+            ctx.create_nonce("custom-header-upload")
+        );
         out.push_str(&format!(
             "<tr>\n<th scope=\"row\">{}</th>\n<td>\n\t<p>{}<br />\n\t\t\t{sizes}\t</p>\n\t<form enctype=\"multipart/form-data\" id=\"upload-form\" class=\"wp-upload-form\" method=\"post\" action=\"{}\">\n\t<p>\n\t\t<label for=\"upload\">{}</label><br />\n\t\t<input type=\"file\" id=\"upload\" name=\"import\" />\n\t\t<input type=\"hidden\" name=\"action\" value=\"save\" />\n\t\t\t{}\t\t\t{}\t</p>\n\t\t\t\t<p>\n\t\t<label for=\"choose-from-library-link\">{}</label><br />\n\t\t<button id=\"choose-from-library-link\" class=\"button\"\n\t\t\tdata-update-link=\"{}\"\n\t\t\tdata-choose=\"{}\"\n\t\t\tdata-update=\"{}\">{}</button>\n\t</p>\n\t</form>\n</td>\n</tr>\n\t\t",
             tr("Select Image"),
@@ -392,7 +554,9 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
     }
     if !state.defaults.is_empty() {
         let text = if support.uploads {
-            tr("If you do not want to upload your own image, you can use one of these cool headers, or show a random one.")
+            tr(
+                "If you do not want to upload your own image, you can use one of these cool headers, or show a random one.",
+            )
         } else {
             tr("You can use one of these cool headers or show a random one on each page.")
         };
@@ -419,15 +583,26 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
     out.push_str("</tbody>\n</table>\n\n\t\t");
     if support.header_text {
         let default = default_color(support);
-        let default_attr = if default.is_empty() { String::new() } else { format!(" data-default-color=\"{}\"", esc_attr(&default)) };
-        let mut color = if header::display_header_text(&state.mods, support) { header::header_textcolor(&state.mods, support) } else { support.default_text_color.clone() };
+        let default_attr = if default.is_empty() {
+            String::new()
+        } else {
+            format!(" data-default-color=\"{}\"", esc_attr(&default))
+        };
+        let mut color = if header::display_header_text(&state.mods, support) {
+            header::header_textcolor(&state.mods, support)
+        } else {
+            support.default_text_color.clone()
+        };
         if !color.is_empty() && !color.contains('#') {
             color = format!("#{color}");
         }
         let hint = if default.is_empty() {
             String::new()
         } else {
-            format!(" <span class=\"description hide-if-js\">{}</span>", sprintf(&site.trx("Default: %s", "color"), &[&esc_html(&default)]))
+            format!(
+                " <span class=\"description hide-if-js\">{}</span>",
+                sprintf(&site.trx("Default: %s", "color"), &[&esc_html(&default)])
+            )
         };
         out.push_str(&format!(
             "\n<h2>{}</h2>\n\n<table class=\"form-table\" role=\"presentation\">\n<tbody>\n<tr>\n<th scope=\"row\">{}</th>\n<td>\n\t<p>\n\t<label><input type=\"checkbox\" name=\"display-header-text\" id=\"display-header-text\"{} /> {}</label>\n\t</p>\n</td>\n</tr>\n\n<tr class=\"displaying-header-text\">\n<th scope=\"row\">{}</th>\n<td>\n\t<p>\n\t\t\t<input type=\"text\" name=\"text-color\" id=\"text-color\" value=\"{}\"{default_attr} />{hint}\t</p>\n</td>\n</tr>\n</tbody>\n</table>\n\t\t\t",
@@ -440,7 +615,17 @@ fn step_1(ctx: &Ctx<'_>, state: &State, updated: bool) -> String {
         ));
     }
     out.push_str(&ctx.nonce_field_named("custom-header-options", "_wpnonce-custom-header-options"));
-    out.push_str(&format!("\n\t\t{}</form>\n</div>\n\n\t\t", submit_button(&tr("Save Changes"), "primary", "save-header-options", true, None, &[])));
+    out.push_str(&format!(
+        "\n\t\t{}</form>\n</div>\n\n\t\t",
+        submit_button(
+            &tr("Save Changes"),
+            "primary",
+            "save-header-options",
+            true,
+            None,
+            &[]
+        )
+    ));
     out
 }
 
@@ -448,13 +633,34 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let site = ctx.site();
     let theme = ctx.env.theme;
     let template_uri = theme.template_directory_uri();
-    let Some(support) = header::support(&theme.template, &template_uri) else { return super::common::forbidden(ctx, &ctx.tr("Sorry, you are not allowed to access this page.")) };
+    let Some(support) = header::support(&theme.template, &template_uri) else {
+        return super::common::forbidden(
+            ctx,
+            &ctx.tr("Sorry, you are not allowed to access this page."),
+        );
+    };
     let mods_name = format!("theme_mods_{}", site.settings.stylesheet);
-    let stored = ctx.env.db.option(&mods_name).await.ok().flatten().unwrap_or_default();
+    let stored = ctx
+        .env
+        .db
+        .option(&mods_name)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let mods = rustpress_core::options::maybe_unserialize(&stored);
-    let uploaded = header::uploaded_header_images(site, &site.settings.stylesheet).await.unwrap_or_default();
+    let uploaded = header::uploaded_header_images(site, &site.settings.stylesheet)
+        .await
+        .unwrap_or_default();
     let defaults = header::default_headers(site, &theme.template, &template_uri);
-    let mut state = State { support, defaults, uploaded, mods_name, mods, random: None };
+    let mut state = State {
+        support,
+        defaults,
+        uploaded,
+        mods_name,
+        mods,
+        random: None,
+    };
 
     let before = state.mods.clone();
     let (updated, failed) = match take_action(ctx, &mut state) {
@@ -464,14 +670,25 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     if state.mods != before {
         state.save(ctx).await;
     }
-    state.random = header::random_header(&state.mods, &state.support, &state.defaults, &state.uploaded);
+    state.random = header::random_header(
+        &state.mods,
+        &state.support,
+        &state.defaults,
+        &state.uploaded,
+    );
     let step = step(ctx);
 
     let mut assets = Assets::default();
     if step == 2 {
         // `css_includes()`, `js_includes()` and `js_2()`.
         // It is not concatenated: it follows the emoji styles.
-        assets.plugin_late_styles.push_str(&format!("<link rel='stylesheet' id='imgareaselect-css' href='{}' media='all' />\n", esc_url(&ctx.site().site_url("wp-includes/js/imgareaselect/imgareaselect.css?ver=0.9.8"))));
+        assets.plugin_late_styles.push_str(&format!(
+            "<link rel='stylesheet' id='imgareaselect-css' href='{}' media='all' />\n",
+            esc_url(
+                &ctx.site()
+                    .site_url("wp-includes/js/imgareaselect/imgareaselect.css?ver=0.9.8")
+            )
+        ));
         assets.late_scripts.push("imgareaselect".into());
         assets.plugin_admin_head.push_str(&js_2(&state.support));
     } else {
@@ -521,12 +738,23 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     };
     let mut response = render(ctx, &screen, &content, &assets).await;
     if let Some(die) = failed {
-        let head = response.body.split(CUT).next().unwrap_or_default().to_owned();
+        let head = response
+            .body
+            .split(CUT)
+            .next()
+            .unwrap_or_default()
+            .to_owned();
         response.body = format!("{head}{}", die.body);
     } else if let Some(message) = died {
         // `_default_wp_die_handler()` after `admin_head`: no document of its own, and the status is sent already.
-        let head = response.body.split(CUT).next().unwrap_or_default().to_owned();
-        response.body = format!("{head}\t<div class=\"wp-die-message\">{message}</div></body>\n</html>\n\t");
+        let head = response
+            .body
+            .split(CUT)
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        response.body =
+            format!("{head}\t<div class=\"wp-die-message\">{message}</div></body>\n</html>\n\t");
     }
     response
 }
@@ -544,7 +772,11 @@ fn php_float(value: f64) -> String {
     }
     let digits = 14 - (value.abs().log10().floor() as i32 + 1);
     let text = format!("{:.*}", digits.max(0) as usize, value);
-    if text.contains('.') { text.trim_end_matches('0').trim_end_matches('.').to_owned() } else { text }
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    } else {
+        text
+    }
 }
 
 /// A number as PHP prints it: an `int` or a float.
@@ -604,21 +836,49 @@ fn max_width(support: &Support) -> u64 {
 }
 
 /// `wp_insert_attachment()` of what the screen makes, with `context` and the file below the uploads.
-async fn insert_attachment(ctx: &Ctx<'_>, writer: &rustpress_db::Writer, data: PostData, relative: &str, context: &str, alt: Option<&str>) -> Option<u64> {
-    let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+async fn insert_attachment(
+    ctx: &Ctx<'_>,
+    writer: &rustpress_db::Writer,
+    data: PostData,
+    relative: &str,
+    context: &str,
+    alt: Option<&str>,
+) -> Option<u64> {
+    let content = Content {
+        site: ctx.site(),
+        db: ctx.env.db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let id = content.insert_post(&data).await.ok()?;
-    writer.update_post_meta(id, "_wp_attached_file", relative).await.or_log();
+    writer
+        .update_post_meta(id, "_wp_attached_file", relative)
+        .await
+        .or_log();
     if let Some(alt) = alt {
-        writer.update_post_meta(id, "_wp_attachment_image_alt", alt).await.or_log();
+        writer
+            .update_post_meta(id, "_wp_attachment_image_alt", alt)
+            .await
+            .or_log();
     }
     if !context.is_empty() {
-        writer.update_post_meta(id, "_wp_attachment_context", context).await.or_log();
+        writer
+            .update_post_meta(id, "_wp_attachment_context", context)
+            .await
+            .or_log();
     }
     Some(id)
 }
 
 /// The fields every attachment of the screen has.
-fn attachment_data(ctx: &Ctx<'_>, title: String, content: String, mime: String, guid: String) -> PostData {
+fn attachment_data(
+    ctx: &Ctx<'_>,
+    title: String,
+    content: String,
+    mime: String,
+    guid: String,
+) -> PostData {
     PostData {
         post_title: Some(title),
         post_content: Some(content),
@@ -628,7 +888,11 @@ fn attachment_data(ctx: &Ctx<'_>, title: String, content: String, mime: String, 
         post_parent: Some(0),
         guid: Some(guid),
         post_author: Some(ctx.user.id),
-        comment_status: Some(ctx.site().options.string("default_comment_status", "closed")),
+        comment_status: Some(
+            ctx.site()
+                .options
+                .string("default_comment_status", "closed"),
+        ),
         ping_status: Some("closed".into()),
         ..Default::default()
     }
@@ -638,20 +902,59 @@ fn attachment_data(ctx: &Ctx<'_>, title: String, content: String, mime: String, 
 async fn manage_upload(ctx: &Ctx<'_>) -> Result<(u64, std::path::PathBuf, String), String> {
     let site = ctx.site();
     let invalid = || ctx.tr("The uploaded file is not a valid image. Please try again.");
-    let Some(file) = ctx.request.files.iter().find(|f| f.field == "import") else { return Err(invalid()) };
+    let Some(file) = ctx.request.files.iter().find(|f| f.field == "import") else {
+        return Err(invalid());
+    };
     // `wp_check_filetype_and_ext()` before the file is stored.
-    let mime = media::check_filetype(&file.filename).and_then(|(_, mime)| media::check_image_upload(&file.filename, &mime, &file.bytes)).map(|(_, mime)| mime);
-    if !mime.as_deref().is_some_and(|mime| mime.starts_with("image/")) {
+    let mime = media::check_filetype(&file.filename)
+        .and_then(|(_, mime)| media::check_image_upload(&file.filename, &mime, &file.bytes))
+        .map(|(_, mime)| mime);
+    if !mime
+        .as_deref()
+        .is_some_and(|mime| mime.starts_with("image/"))
+    {
         return Err(invalid());
     }
-    let Some(writer) = ctx.env.writer else { return Err(invalid()) };
-    let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+    let Some(writer) = ctx.env.writer else {
+        return Err(invalid());
+    };
+    let content = Content {
+        site,
+        db: ctx.env.db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let uploads = super::ajax_media::uploads_dir(ctx.env);
-    let mut upload = media::UploadedFile { name: file.filename.clone(), bytes: file.bytes.clone(), rest: false, media_form_nonce: false };
-    let stored = media::store_upload(&content, &uploads, &mut upload, &media::upload_subdir(&content)).map_err(|media::UploadError(message)| message)?;
-    let filename = stored.relative.rsplit('/').next().unwrap_or_default().to_owned();
-    let data = attachment_data(ctx, filename, stored.url.clone(), stored.mime.clone(), stored.url.clone());
-    let id = insert_attachment(ctx, writer, data, &stored.relative, "custom-header", None).await.ok_or_else(invalid)?;
+    let mut upload = media::UploadedFile {
+        name: file.filename.clone(),
+        bytes: file.bytes.clone(),
+        rest: false,
+        media_form_nonce: false,
+    };
+    let stored = media::store_upload(
+        &content,
+        &uploads,
+        &mut upload,
+        &media::upload_subdir(&content),
+    )
+    .map_err(|media::UploadError(message)| message)?;
+    let filename = stored
+        .relative
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    let data = attachment_data(
+        ctx,
+        filename,
+        stored.url.clone(),
+        stored.mime.clone(),
+        stored.url.clone(),
+    );
+    let id = insert_attachment(ctx, writer, data, &stored.relative, "custom-header", None)
+        .await
+        .ok_or_else(invalid)?;
     Ok((id, stored.path, stored.url))
 }
 
@@ -663,11 +966,25 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
         return Outcome::Die(no_uploads(ctx));
     }
     let uploads = super::ajax_media::uploads_dir(ctx.env);
-    let from_library = ctx.request.form.is_empty() && ctx.request.files.is_empty() && ctx.request.get("file").is_some();
+    let from_library = ctx.request.form.is_empty()
+        && ctx.request.files.is_empty()
+        && ctx.request.get("file").is_some();
     let (attachment_id, file, mut url) = if from_library {
-        let id = super::media_upload::php_int(ctx.request.get("file").unwrap_or_default()).unsigned_abs();
-        let attached = ctx.env.db.post_meta_value(id, "_wp_attached_file").await.ok().flatten().unwrap_or_default();
-        let url = if attached.is_empty() { String::new() } else { rustpress_blocks::images::attachment_url(site, &attached) };
+        let id = super::media_upload::php_int(ctx.request.get("file").unwrap_or_default())
+            .unsigned_abs();
+        let attached = ctx
+            .env
+            .db
+            .post_meta_value(id, "_wp_attached_file")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let url = if attached.is_empty() {
+            String::new()
+        } else {
+            rustpress_blocks::images::attachment_url(site, &attached)
+        };
         (id, uploads.join(&attached), url)
     } else {
         match manage_upload(ctx).await {
@@ -678,7 +995,15 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
     let (mut width, mut height) = match image::image_dimensions(&file) {
         Ok((w, h)) if file.is_file() => (Number::Int(i64::from(w)), Number::Int(i64::from(h))),
         _ => {
-            let meta = ctx.env.db.post_meta_value(attachment_id, "_wp_attachment_metadata").await.ok().flatten().map(|raw| rustpress_core::options::maybe_unserialize(&raw)).unwrap_or(Value::Null);
+            let meta = ctx
+                .env
+                .db
+                .post_meta_value(attachment_id, "_wp_attachment_metadata")
+                .await
+                .ok()
+                .flatten()
+                .map(|raw| rustpress_core::options::maybe_unserialize(&raw))
+                .unwrap_or(Value::Null);
             let number = |name: &str| meta.get(name).and_then(Value::as_i64).unwrap_or(0);
             (Number::Int(number("width")), Number::Int(number("height")))
         }
@@ -686,28 +1011,89 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
     let support = state.support.clone();
     let max = max_width(&support);
     let oitar;
-    if !support.flex_height && !support.flex_width && support.width as f64 == width.value() && support.height as f64 == height.value() {
+    if !support.flex_height
+        && !support.flex_width
+        && support.width as f64 == width.value()
+        && support.height as f64 == height.value()
+    {
         // The image has the size of the theme: it becomes the header as it is.
         if file.is_file()
             && let Some(writer) = ctx.env.writer
         {
-            let relative = file.strip_prefix(&uploads).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
-            let mime = media::check_filetype(&relative).map(|(_, mime)| mime).unwrap_or_default();
+            let relative = file
+                .strip_prefix(&uploads)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            let mime = media::check_filetype(&relative)
+                .map(|(_, mime)| mime)
+                .unwrap_or_default();
             let (options, uploads, rel) = (site.options.clone(), uploads.clone(), relative.clone());
-            if let Some((metadata, ..)) = media::blocking(move || media::generate_image_metadata(&options, &uploads, &rel, &mime)).await {
-                writer.update_post_meta(attachment_id, "_wp_attachment_metadata", &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata))).await.or_log();
+            if let Some((metadata, ..)) = media::blocking(move || {
+                media::generate_image_metadata(&options, &uploads, &rel, &mime)
+            })
+            .await
+            {
+                writer
+                    .update_post_meta(
+                        attachment_id,
+                        "_wp_attachment_metadata",
+                        &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata)),
+                    )
+                    .await
+                    .or_log();
             }
         }
-        state.set_header_image_data(ctx, &url, attachment_id, width.value() as u64, height.value() as u64).await;
+        state
+            .set_header_image_data(
+                ctx,
+                &url,
+                attachment_id,
+                width.value() as u64,
+                height.value() as u64,
+            )
+            .await;
         return Outcome::Page(step_1(ctx, &*state, true));
     } else if width.value() > max as f64 {
         let ratio = width.value() / max as f64;
-        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let mime = media::check_filetype(&name).map(|(_, mime)| mime).unwrap_or_default();
-        let (source, w, h, dst_h) = (file.clone(), width.value() as u32, height.value() as u32, (height.value() / ratio) as u32);
-        let midsize = media::blocking(move || media::crop_image_as(&source, 0, 0, w, h, max as u32, dst_h, &mime, &format!("midsize-{name}"))).await;
-        let Ok(midsize) = midsize else { return Outcome::Die(tr("Image could not be processed. Please go back and try again.")) };
-        let (old, new) = (url.rsplit('/').next().unwrap_or_default().to_owned(), midsize.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        let name = file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let mime = media::check_filetype(&name)
+            .map(|(_, mime)| mime)
+            .unwrap_or_default();
+        let (source, w, h, dst_h) = (
+            file.clone(),
+            width.value() as u32,
+            height.value() as u32,
+            (height.value() / ratio) as u32,
+        );
+        let midsize = media::blocking(move || {
+            media::crop_image_as(
+                &source,
+                0,
+                0,
+                w,
+                h,
+                max as u32,
+                dst_h,
+                &mime,
+                &format!("midsize-{name}"),
+            )
+        })
+        .await;
+        let Ok(midsize) = midsize else {
+            return Outcome::Die(tr(
+                "Image could not be processed. Please go back and try again.",
+            ));
+        };
+        let (old, new) = (
+            url.rsplit('/').next().unwrap_or_default().to_owned(),
+            midsize
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
         url = url.replace(&old, &new);
         width = Number::Float(width.value() / ratio);
         height = Number::Float(height.value() / ratio);
@@ -715,9 +1101,20 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
     } else {
         oitar = Number::Int(1);
     }
-    let create_new = if from_library { "\t<input type=\"hidden\" name=\"create-new-attachment\" value=\"true\" />\n\t" } else { "" };
+    let create_new = if from_library {
+        "\t<input type=\"hidden\" name=\"create-new-attachment\" value=\"true\" />\n\t"
+    } else {
+        ""
+    };
     let skip = if matches!(oitar, Number::Int(1)) && (support.flex_height || support.flex_width) {
-        submit_button(&tr("Skip Cropping, Publish Image as Is"), "", "skip-cropping", false, None, &[])
+        submit_button(
+            &tr("Skip Cropping, Publish Image as Is"),
+            "",
+            "skip-cropping",
+            false,
+            None,
+            &[],
+        )
     } else {
         String::new()
     };
@@ -730,7 +1127,14 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
         esc_url(&url),
         oitar.text(),
         ctx.nonce_field("custom-header-crop-image"),
-        submit_button(&tr("Crop and Publish"), "primary", "submit", false, None, &[]),
+        submit_button(
+            &tr("Crop and Publish"),
+            "primary",
+            "submit",
+            false,
+            None,
+            &[]
+        ),
         w = esc_attr(&width.text()),
         h = esc_attr(&height.text()),
     ))
@@ -739,7 +1143,10 @@ async fn step_2(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
 /// A number of the form as PHP's arithmetic reads it.
 fn form_number(ctx: &Ctx<'_>, name: &str) -> f64 {
     let text = ctx.request.post_field(name).unwrap_or_default().trim();
-    let end = text.char_indices().find(|(i, c)| !(c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+')))).map_or(text.len(), |(i, _)| i);
+    let end = text
+        .char_indices()
+        .find(|(i, c)| !(c.is_ascii_digit() || *c == '.' || (*i == 0 && (*c == '-' || *c == '+'))))
+        .map_or(text.len(), |(i, _)| i);
     text[..end].parse::<f64>().unwrap_or(0.0)
 }
 
@@ -751,23 +1158,53 @@ async fn step_3(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
     if !support.uploads {
         return Outcome::Die(no_uploads(ctx));
     }
-    let skip = ctx.request.post_field("skip-cropping").is_some_and(|v| !v.is_empty() && v != "0");
-    let create_new = ctx.request.post_field("create-new-attachment").is_some_and(|v| !v.is_empty() && v != "0");
+    let skip = ctx
+        .request
+        .post_field("skip-cropping")
+        .is_some_and(|v| !v.is_empty() && v != "0");
+    let create_new = ctx
+        .request
+        .post_field("create-new-attachment")
+        .is_some_and(|v| !v.is_empty() && v != "0");
     if skip && !support.flex_height && !support.flex_width {
-        return Outcome::Die(format!("<h1>{}</h1><p>{}</p>", tr("An error occurred while processing your header image."), tr("The active theme does not support a flexible sized header image.")));
+        return Outcome::Die(format!(
+            "<h1>{}</h1><p>{}</p>",
+            tr("An error occurred while processing your header image."),
+            tr("The active theme does not support a flexible sized header image.")
+        ));
     }
     let oitar = form_number(ctx, "oitar");
     let scale = |value: f64| if oitar > 1.0 { value * oitar } else { value };
-    let (x1, y1, crop_w, crop_h) = (scale(form_number(ctx, "x1")), scale(form_number(ctx, "y1")), scale(form_number(ctx, "width")), scale(form_number(ctx, "height")));
-    let attachment_id = super::media_upload::php_int(ctx.request.post_field("attachment_id").unwrap_or_default()).unsigned_abs();
+    let (x1, y1, crop_w, crop_h) = (
+        scale(form_number(ctx, "x1")),
+        scale(form_number(ctx, "y1")),
+        scale(form_number(ctx, "width")),
+        scale(form_number(ctx, "height")),
+    );
+    let attachment_id =
+        super::media_upload::php_int(ctx.request.post_field("attachment_id").unwrap_or_default())
+            .unsigned_abs();
     let uploads = super::ajax_media::uploads_dir(ctx.env);
-    let attached = ctx.env.db.post_meta_value(attachment_id, "_wp_attached_file").await.ok().flatten().unwrap_or_default();
+    let attached = ctx
+        .env
+        .db
+        .post_meta_value(attachment_id, "_wp_attached_file")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let original = uploads.join(&attached);
 
     // `get_header_dimensions()`.
     let (width, height) = (crop_w.trunc().abs() as u64, crop_h.trunc().abs() as u64);
     let max = max_width(&support);
-    let ratio = |n: u64| if width == 0 { 0 } else { (n as f64 * (max as f64 / width as f64)).trunc().abs() as u64 };
+    let ratio = |n: u64| {
+        if width == 0 {
+            0
+        } else {
+            (n as f64 * (max as f64 / width as f64)).trunc().abs() as u64
+        }
+    };
     let dst_height = if support.flex_height && (!support.flex_width || width > max) {
         ratio(height)
     } else if support.flex_height && support.flex_width {
@@ -783,58 +1220,154 @@ async fn step_3(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
         support.width
     };
 
-    let failed = || Outcome::Die(tr("Image could not be processed. Please go back and try again."));
-    let Some(writer) = ctx.env.writer else { return failed() };
-    let Some(parent) = ctx.env.db.post(attachment_id).await.ok().flatten() else { return failed() };
-    let name = original.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let failed = || {
+        Outcome::Die(tr(
+            "Image could not be processed. Please go back and try again.",
+        ))
+    };
+    let Some(writer) = ctx.env.writer else {
+        return failed();
+    };
+    let Some(parent) = ctx.env.db.post(attachment_id).await.ok().flatten() else {
+        return failed();
+    };
+    let name = original
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let mime = parent.post_mime_type.clone();
     let cropped = if !skip {
         let (source, mime) = (original.clone(), mime.clone());
-        let (x, y, w, h, dw, dh) = (x1 as i64 as u32, y1 as i64 as u32, crop_w as i64 as u32, crop_h as i64 as u32, dst_width as u32, dst_height as u32);
-        media::blocking(move || media::crop_image(&source, x, y, w, h, dw, dh, &mime)).await.ok()
+        let (x, y, w, h, dw, dh) = (
+            x1 as i64 as u32,
+            y1 as i64 as u32,
+            crop_w as i64 as u32,
+            crop_h as i64 as u32,
+            dst_width as u32,
+            dst_height as u32,
+        );
+        media::blocking(move || media::crop_image(&source, x, y, w, h, dw, dh, &mime))
+            .await
+            .ok()
     } else if create_new {
         // `_copy_image_file()`.
-        let dir = original.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+        let dir = original
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
         let target = dir.join(media::unique_filename(&dir, &format!("copy-{name}")));
         std::fs::copy(&original, &target).ok().map(|_| target)
     } else {
         original.is_file().then(|| original.clone())
     };
-    let Some(cropped) = cropped else { return failed() };
+    let Some(cropped) = cropped else {
+        return failed();
+    };
 
     // `wp_copy_parent_attachment_properties()`.
     let parent_url = rustpress_blocks::images::attachment_url(site, &attached);
     let parent_basename = parent_url.rsplit('/').next().unwrap_or_default().to_owned();
-    let cropped_name = cropped.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let cropped_name = cropped
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let url = parent_url.replace(&parent_basename, &cropped_name);
-    let image_type = image::ImageFormat::from_path(&cropped).ok().map(|format| format.to_mime_type().to_owned()).unwrap_or_else(|| "image/jpeg".to_owned());
+    let image_type = image::ImageFormat::from_path(&cropped)
+        .ok()
+        .map(|format| format.to_mime_type().to_owned())
+        .unwrap_or_else(|| "image/jpeg".to_owned());
     let sanitized_title = crate::sanitize::file_name(&parent.post_title, &site.locale());
-    let parent_stem = parent_basename.rsplit_once('.').map_or(parent_basename.as_str(), |(stem, _)| stem);
-    let use_original_title = !parent.post_title.trim().is_empty() && parent_basename != sanitized_title && parent_stem != sanitized_title;
-    let title = if use_original_title { parent.post_title.clone() } else { cropped_name.clone() };
-    let description = if parent.post_content.trim().is_empty() { url.clone() } else { parent.post_content.clone() };
+    let parent_stem = parent_basename
+        .rsplit_once('.')
+        .map_or(parent_basename.as_str(), |(stem, _)| stem);
+    let use_original_title = !parent.post_title.trim().is_empty()
+        && parent_basename != sanitized_title
+        && parent_stem != sanitized_title;
+    let title = if use_original_title {
+        parent.post_title.clone()
+    } else {
+        cropped_name.clone()
+    };
+    let description = if parent.post_content.trim().is_empty() {
+        url.clone()
+    } else {
+        parent.post_content.clone()
+    };
     let mut data = attachment_data(ctx, title, description, image_type.clone(), url.clone());
     if !parent.post_excerpt.trim().is_empty() {
         data.post_excerpt = Some(parent.post_excerpt.clone());
     }
-    let alt = ctx.env.db.post_meta_value(attachment_id, "_wp_attachment_image_alt").await.ok().flatten().filter(|alt| !alt.trim().is_empty());
-    let relative = cropped.strip_prefix(&uploads).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_else(|_| cropped_name.clone());
+    let alt = ctx
+        .env
+        .db
+        .post_meta_value(attachment_id, "_wp_attachment_image_alt")
+        .await
+        .ok()
+        .flatten()
+        .filter(|alt| !alt.trim().is_empty());
+    let relative = cropped
+        .strip_prefix(&uploads)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| cropped_name.clone());
 
     // `insert_attachment()`: the metadata of the new file, with the original as `attachment_parent`.
-    let Some(new_id) = insert_attachment(ctx, writer, data, &relative, "custom-header", alt.as_deref()).await else { return failed() };
-    let (options, uploads_dir, rel, generated_mime) = (site.options.clone(), uploads.clone(), relative.clone(), image_type.clone());
-    if let Some((metadata, final_relative, _)) = media::blocking(move || media::generate_image_metadata(&options, &uploads_dir, &rel, &generated_mime)).await {
+    let Some(new_id) = insert_attachment(
+        ctx,
+        writer,
+        data,
+        &relative,
+        "custom-header",
+        alt.as_deref(),
+    )
+    .await
+    else {
+        return failed();
+    };
+    let (options, uploads_dir, rel, generated_mime) = (
+        site.options.clone(),
+        uploads.clone(),
+        relative.clone(),
+        image_type.clone(),
+    );
+    if let Some((metadata, final_relative, _)) = media::blocking(move || {
+        media::generate_image_metadata(&options, &uploads_dir, &rel, &generated_mime)
+    })
+    .await
+    {
         let mut metadata = metadata;
         if let Value::Array(items) = &mut metadata {
-            items.push((Key::Str(b"attachment_parent".to_vec()), Value::Int(attachment_id as i64)));
+            items.push((
+                Key::Str(b"attachment_parent".to_vec()),
+                Value::Int(attachment_id as i64),
+            ));
         }
         if final_relative != relative {
-            writer.update_post_meta(new_id, "_wp_attached_file", &final_relative).await.or_log();
+            writer
+                .update_post_meta(new_id, "_wp_attached_file", &final_relative)
+                .await
+                .or_log();
         }
-        writer.update_post_meta(new_id, "_wp_attachment_metadata", &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata))).await.or_log();
+        writer
+            .update_post_meta(
+                new_id,
+                "_wp_attachment_metadata",
+                &String::from_utf8_lossy(&rustpress_phpser::serialize(&metadata)),
+            )
+            .await
+            .or_log();
     }
-    let attached_url = ctx.env.db.post_meta_value(new_id, "_wp_attached_file").await.ok().flatten().map(|file| rustpress_blocks::images::attachment_url(site, &file)).unwrap_or(url);
-    state.set_header_image_data(ctx, &attached_url, new_id, dst_width, dst_height).await;
+    let attached_url = ctx
+        .env
+        .db
+        .post_meta_value(new_id, "_wp_attached_file")
+        .await
+        .ok()
+        .flatten()
+        .map(|file| rustpress_blocks::images::attachment_url(site, &file))
+        .unwrap_or(url);
+    state
+        .set_header_image_data(ctx, &attached_url, new_id, dst_width, dst_height)
+        .await;
 
     // Cleanup.
     let midsize = original.with_file_name(format!("midsize-{name}"));
@@ -844,7 +1377,9 @@ async fn step_3(ctx: &Ctx<'_>, state: &mut State) -> Outcome {
     if !create_new && !skip {
         let _ = std::fs::remove_file(&original);
     }
-    state.uploaded = header::uploaded_header_images(site, &site.settings.stylesheet).await.unwrap_or_default();
+    state.uploaded = header::uploaded_header_images(site, &site.settings.stylesheet)
+        .await
+        .unwrap_or_default();
     Outcome::Page(step_1(ctx, &*state, true))
 }
 

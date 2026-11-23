@@ -131,12 +131,20 @@ pub(crate) fn register(params: &mut Params, name: &str, value: String) {
 }
 
 fn next_index(params: &Params) -> String {
-    let next = params.iter().filter_map(|(k, _)| k.parse::<i64>().ok()).max().map_or(0, |m| m + 1);
+    let next = params
+        .iter()
+        .filter_map(|(k, _)| k.parse::<i64>().ok())
+        .max()
+        .map_or(0, |m| m + 1);
     next.max(0).to_string()
 }
 
 fn insert(params: &mut Params, key: &str, indices: &[String], value: String) {
-    let key = if key.is_empty() { next_index(params) } else { key.to_owned() };
+    let key = if key.is_empty() {
+        next_index(params)
+    } else {
+        key.to_owned()
+    };
     let Some((first, rest)) = indices.split_first() else {
         set(params, &key, Param::Str(value));
         return;
@@ -172,7 +180,9 @@ fn build(parts: &mut Vec<String>, params: &Params, prefix: Option<&str>) {
 
 /// `is_numeric()`.
 pub fn is_numeric(text: &str) -> bool {
-    let t = text.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']).trim_end_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let t = text
+        .trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c'])
+        .trim_end_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
     let t = t.strip_prefix(['+', '-']).unwrap_or(t);
     let (mantissa, exponent) = match t.find(['e', 'E']) {
         Some(i) => (&t[..i], Some(&t[i + 1..])),
@@ -183,7 +193,9 @@ pub fn is_numeric(text: &str) -> bool {
         None => (mantissa, None),
     };
     let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
-    let mantissa_ok = digits(int) && frac.is_none_or(digits) && (!int.is_empty() || frac.is_some_and(|f| !f.is_empty()));
+    let mantissa_ok = digits(int)
+        && frac.is_none_or(digits)
+        && (!int.is_empty() || frac.is_some_and(|f| !f.is_empty()));
     let exponent_ok = exponent.is_none_or(|e| {
         let e = e.strip_prefix(['+', '-']).unwrap_or(e);
         !e.is_empty() && digits(e)
@@ -228,21 +240,66 @@ mod tests {
 
     #[test]
     fn parse_str_builds_arrays_and_renames() {
-        assert_eq!(parse_str("x=1&y[]=2&y[]=3"), vec![("x".into(), s("1")), ("y".into(), Param::Arr(vec![("0".into(), s("2")), ("1".into(), s("3"))]))]);
-        assert_eq!(parse_str("a.b=1& c d=2&e[x=3"), vec![("a_b".into(), s("1")), ("c_d".into(), s("2")), ("e_x".into(), s("3"))]);
-        assert_eq!(parse_str("a[b][c]=1&a[b][d]=2"), vec![("a".into(), Param::Arr(vec![("b".into(), Param::Arr(vec![("c".into(), s("1")), ("d".into(), s("2"))]))]))]);
-        assert_eq!(parse_str("k&v=a+b%20c"), vec![("k".into(), s("")), ("v".into(), s("a b c"))]);
+        assert_eq!(
+            parse_str("x=1&y[]=2&y[]=3"),
+            vec![
+                ("x".into(), s("1")),
+                (
+                    "y".into(),
+                    Param::Arr(vec![("0".into(), s("2")), ("1".into(), s("3"))])
+                )
+            ]
+        );
+        assert_eq!(
+            parse_str("a.b=1& c d=2&e[x=3"),
+            vec![
+                ("a_b".into(), s("1")),
+                ("c_d".into(), s("2")),
+                ("e_x".into(), s("3"))
+            ]
+        );
+        assert_eq!(
+            parse_str("a[b][c]=1&a[b][d]=2"),
+            vec![(
+                "a".into(),
+                Param::Arr(vec![(
+                    "b".into(),
+                    Param::Arr(vec![("c".into(), s("1")), ("d".into(), s("2"))])
+                )])
+            )]
+        );
+        assert_eq!(
+            parse_str("k&v=a+b%20c"),
+            vec![("k".into(), s("")), ("v".into(), s("a b c"))]
+        );
     }
 
     #[test]
     fn build_query() {
-        let params = vec![("a".into(), s("1 2")), ("n".into(), Param::Null), ("y".into(), Param::Arr(vec![("0".into(), s("~"))]))];
+        let params = vec![
+            ("a".into(), s("1 2")),
+            ("n".into(), Param::Null),
+            ("y".into(), Param::Arr(vec![("0".into(), s("~"))])),
+        ];
         assert_eq!(http_build_query(&params), "a=1+2&y%5B0%5D=%7E");
     }
 
     #[test]
     fn numeric() {
-        assert!(is_numeric("1") && is_numeric(" 12") && is_numeric("1.5") && is_numeric(".5") && is_numeric("1e3") && is_numeric("-2"));
-        assert!(!is_numeric("") && !is_numeric("1a") && !is_numeric(".") && !is_numeric("1e") && !is_numeric("abc"));
+        assert!(
+            is_numeric("1")
+                && is_numeric(" 12")
+                && is_numeric("1.5")
+                && is_numeric(".5")
+                && is_numeric("1e3")
+                && is_numeric("-2")
+        );
+        assert!(
+            !is_numeric("")
+                && !is_numeric("1a")
+                && !is_numeric(".")
+                && !is_numeric("1e")
+                && !is_numeric("abc")
+        );
     }
 }

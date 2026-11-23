@@ -10,15 +10,30 @@ use crate::{Outcome, Resp, Rest, Result};
 
 impl Tax {
     pub(crate) fn category() -> Self {
-        Tax { name: "category".into(), base: "categories".into(), hierarchical: true, object_types: vec!["post".into()] }
+        Tax {
+            name: "category".into(),
+            base: "categories".into(),
+            hierarchical: true,
+            object_types: vec!["post".into()],
+        }
     }
 
     pub(crate) fn pattern_category() -> Self {
-        Tax { name: "wp_pattern_category".into(), base: "wp_pattern_category".into(), hierarchical: false, object_types: vec!["wp_block".into()] }
+        Tax {
+            name: "wp_pattern_category".into(),
+            base: "wp_pattern_category".into(),
+            hierarchical: false,
+            object_types: vec!["wp_block".into()],
+        }
     }
 
     pub(crate) fn tag() -> Self {
-        Tax { name: "post_tag".into(), base: "tags".into(), hierarchical: false, object_types: vec!["post".into()] }
+        Tax {
+            name: "post_tag".into(),
+            base: "tags".into(),
+            hierarchical: false,
+            object_types: vec!["post".into()],
+        }
     }
 }
 
@@ -36,15 +51,30 @@ impl Rest<'_> {
     /// A taxonomy with REST routes: categories, tags and the custom ones with `show_in_rest`.
     pub(crate) fn tax(&self, name: &str) -> Option<Tax> {
         match name {
-            "category" => Some(Tax { name: name.into(), base: "categories".into(), hierarchical: true, object_types: vec!["post".into()] }),
-            "post_tag" => Some(Tax { name: name.into(), base: "tags".into(), hierarchical: false, object_types: vec!["post".into()] }),
-            "wp_pattern_category" => Some(Tax::pattern_category()),
-            other => self.site.types.taxonomy(other).filter(|t| t.show_in_rest).map(|t| Tax {
-                name: t.name.clone(),
-                base: t.rest_base().to_owned(),
-                hierarchical: t.hierarchical,
-                object_types: t.object_types.clone(),
+            "category" => Some(Tax {
+                name: name.into(),
+                base: "categories".into(),
+                hierarchical: true,
+                object_types: vec!["post".into()],
             }),
+            "post_tag" => Some(Tax {
+                name: name.into(),
+                base: "tags".into(),
+                hierarchical: false,
+                object_types: vec!["post".into()],
+            }),
+            "wp_pattern_category" => Some(Tax::pattern_category()),
+            other => self
+                .site
+                .types
+                .taxonomy(other)
+                .filter(|t| t.show_in_rest)
+                .map(|t| Tax {
+                    name: t.name.clone(),
+                    base: t.rest_base().to_owned(),
+                    hierarchical: t.hierarchical,
+                    object_types: t.object_types.clone(),
+                }),
         }
     }
 
@@ -56,7 +86,8 @@ impl Rest<'_> {
             out.extend(self.tax("post_tag"));
         }
         for info in &self.site.types.taxonomies {
-            if info.show_in_rest && info.object_types.iter().any(|t| t == post_type)
+            if info.show_in_rest
+                && info.object_types.iter().any(|t| t == post_type)
                 && let Some(tax) = self.tax(&info.name)
             {
                 out.push(tax);
@@ -71,7 +102,12 @@ impl Rest<'_> {
             "post" => Some("posts".into()),
             "page" => Some("pages".into()),
             "attachment" => Some("media".into()),
-            other => self.site.types.post_type(other).filter(|t| t.show_in_rest).map(|t| t.rest_base().to_owned()),
+            other => self
+                .site
+                .types
+                .post_type(other)
+                .filter(|t| t.show_in_rest)
+                .map(|t| t.rest_base().to_owned()),
         }
     }
 
@@ -86,30 +122,75 @@ impl Rest<'_> {
             };
         }
         if params.get("context") == Some("edit") {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit terms in this taxonomy.", 401)));
+            return Ok(Err(RestError::new(
+                "rest_forbidden_context",
+                "Sorry, you are not allowed to edit terms in this taxonomy.",
+                401,
+            )));
         }
         let per_page = try_param!(params.integer("per_page", 10, 1, Some(100)));
         let page = try_param!(params.integer("page", 1, 1, None));
         let offset = try_param!(params.integer("offset", 0, 0, None));
         let order = try_param!(params.one_of("order", &["asc", "desc"], "asc"));
-        let orderby = try_param!(params.one_of("orderby", &["id", "include", "name", "slug", "include_slugs", "term_group", "description", "count"], "name"));
+        let orderby = try_param!(params.one_of(
+            "orderby",
+            &[
+                "id",
+                "include",
+                "name",
+                "slug",
+                "include_slugs",
+                "term_group",
+                "description",
+                "count"
+            ],
+            "name"
+        ));
         let include = params.id_list("include").unwrap_or_default();
         let slugs = params.list("slug").unwrap_or_default();
         let exclude = params.id_list("exclude").unwrap_or_default();
         let hide_empty = params.truthy("hide_empty");
-        let search = params.get("search").filter(|s| !s.is_empty()).map(str::to_lowercase);
-        let parent = if tax.hierarchical { params.parent_list("parent") } else { None };
-        let of_post = match params.id_list("post").and_then(|ids| ids.first().copied()).filter(|id| *id != 0) {
+        let search = params
+            .get("search")
+            .filter(|s| !s.is_empty())
+            .map(str::to_lowercase);
+        let parent = if tax.hierarchical {
+            params.parent_list("parent")
+        } else {
+            None
+        };
+        let of_post = match params
+            .id_list("post")
+            .and_then(|ids| ids.first().copied())
+            .filter(|id| *id != 0)
+        {
             Some(post) => {
                 // `get_items_permissions_check()`: the post must exist, be of a type of the taxonomy and, for a
                 // visitor, be publicly viewable (`check_read_terms_permission_for_post()`).
                 let Some(found) = self.site.db.post(post).await? else {
-                    return Ok(Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 400)));
+                    return Ok(Err(RestError::new(
+                        "rest_post_invalid_id",
+                        "Invalid post ID.",
+                        400,
+                    )));
                 };
-                if !tax.object_types.contains(&found.post_type) || !self.site.publicly_viewable(&found).await? {
-                    return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to view terms for this post.", 401)));
+                if !tax.object_types.contains(&found.post_type)
+                    || !self.site.publicly_viewable(&found).await?
+                {
+                    return Ok(Err(RestError::new(
+                        "rest_forbidden_context",
+                        "Sorry, you are not allowed to view terms for this post.",
+                        401,
+                    )));
                 }
-                let ids: Vec<u64> = self.site.db.terms_for_post(post, Some(taxonomy)).await?.iter().map(|t| t.term_id).collect();
+                let ids: Vec<u64> = self
+                    .site
+                    .db
+                    .terms_for_post(post, Some(taxonomy))
+                    .await?
+                    .iter()
+                    .map(|t| t.term_id)
+                    .collect();
                 Some(ids)
             }
             None => None,
@@ -118,15 +199,24 @@ impl Rest<'_> {
         let all = self.site.db.terms(taxonomy).await?;
         // `hide_empty` keeps a parent whose children have posts (WordPress pads the counts).
         let non_empty: Vec<u64> = {
-            let mut keep: Vec<u64> = all.iter().filter(|t| t.count > 0).map(|t| t.term_id).collect();
+            let mut keep: Vec<u64> = all
+                .iter()
+                .filter(|t| t.count > 0)
+                .map(|t| t.term_id)
+                .collect();
             if tax.hierarchical {
                 let mut frontier = keep.clone();
                 while let Some(id) = frontier.pop() {
-                    if let Some(parent) = all.iter().find(|t| t.term_id == id).map(|t| t.parent).filter(|p| *p != 0)
-                        && !keep.contains(&parent) {
-                            keep.push(parent);
-                            frontier.push(parent);
-                        }
+                    if let Some(parent) = all
+                        .iter()
+                        .find(|t| t.term_id == id)
+                        .map(|t| t.parent)
+                        .filter(|p| *p != 0)
+                        && !keep.contains(&parent)
+                    {
+                        keep.push(parent);
+                        frontier.push(parent);
+                    }
                 }
             }
             keep
@@ -139,24 +229,50 @@ impl Rest<'_> {
             .filter(|t| !hide_empty || non_empty.contains(&t.term_id))
             .filter(|t| parent.as_ref().is_none_or(|p| p.contains(&t.parent)))
             .filter(|t| of_post.as_ref().is_none_or(|ids| ids.contains(&t.term_id)))
-            .filter(|t| search.as_ref().is_none_or(|s| t.name.to_lowercase().contains(s) || t.slug.to_lowercase().contains(s)))
+            .filter(|t| {
+                search.as_ref().is_none_or(|s| {
+                    t.name.to_lowercase().contains(s) || t.slug.to_lowercase().contains(s)
+                })
+            })
             .collect();
         // Ties keep the lower ID first, also for `order=desc`.
         let descending = order == "desc";
         let direction = |o: std::cmp::Ordering| if descending { o.reverse() } else { o };
         match orderby {
             "id" | "term_group" => terms.sort_by(|a, b| direction(a.term_id.cmp(&b.term_id))),
-            "slug" => terms.sort_by(|a, b| direction(a.slug.to_lowercase().cmp(&b.slug.to_lowercase())).then(a.term_id.cmp(&b.term_id))),
-            "count" => terms.sort_by(|a, b| direction(a.count.cmp(&b.count)).then(a.term_id.cmp(&b.term_id))),
-            "description" => terms.sort_by(|a, b| direction(a.description.to_lowercase().cmp(&b.description.to_lowercase())).then(a.term_id.cmp(&b.term_id))),
+            "slug" => terms.sort_by(|a, b| {
+                direction(a.slug.to_lowercase().cmp(&b.slug.to_lowercase()))
+                    .then(a.term_id.cmp(&b.term_id))
+            }),
+            "count" => terms
+                .sort_by(|a, b| direction(a.count.cmp(&b.count)).then(a.term_id.cmp(&b.term_id))),
+            "description" => terms.sort_by(|a, b| {
+                direction(
+                    a.description
+                        .to_lowercase()
+                        .cmp(&b.description.to_lowercase()),
+                )
+                .then(a.term_id.cmp(&b.term_id))
+            }),
             "include" => terms.sort_by_key(|t| include.iter().position(|i| *i == t.term_id)),
             "include_slugs" => terms.sort_by_key(|t| slugs.iter().position(|s| *s == t.slug)),
-            _ => terms.sort_by(|a, b| direction(a.name.to_lowercase().cmp(&b.name.to_lowercase())).then(a.term_id.cmp(&b.term_id))),
+            _ => terms.sort_by(|a, b| {
+                direction(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    .then(a.term_id.cmp(&b.term_id))
+            }),
         }
         // WordPress counts without padding parents, so `X-WP-Total` can be lower than the list.
-        let total = if hide_empty { terms.iter().filter(|t| t.count > 0).count() as u64 } else { terms.len() as u64 };
+        let total = if hide_empty {
+            terms.iter().filter(|t| t.count > 0).count() as u64
+        } else {
+            terms.len() as u64
+        };
         let max_pages = total.div_ceil(per_page);
-        let start = if offset > 0 { offset } else { (page - 1).saturating_mul(per_page) } as usize;
+        let start = if offset > 0 {
+            offset
+        } else {
+            (page - 1).saturating_mul(per_page)
+        } as usize;
         let context = params.get("context").unwrap_or("view");
         let mut items = Vec::new();
         for term in terms.iter().skip(start).take(per_page as usize) {
@@ -165,23 +281,47 @@ impl Rest<'_> {
         let mut resp = Resp::item(Value::Array(items));
         resp.total = Some(total);
         resp.total_pages = Some(max_pages);
-        resp.link = link_header(self, &format!("wp/v2/{}", tax.base), params, &LinkParams { arrays: &["exclude", "include", "slug"], booleans: &["hide_empty"] }, page, max_pages);
+        resp.link = link_header(
+            self,
+            &format!("wp/v2/{}", tax.base),
+            params,
+            &LinkParams {
+                arrays: &["exclude", "include", "slug"],
+                booleans: &["hide_empty"],
+            },
+            page,
+            max_pages,
+        );
         Ok(Ok(resp))
     }
 
     pub(crate) async fn terms_item(&self, tax: &Tax, id: &str, params: &Params) -> Result<Outcome> {
         let taxonomy = tax.name.as_str();
         let Ok(id) = id.parse::<u64>() else {
-            return Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            )));
         };
         if params.get("context") == Some("edit") {
-            return Ok(Err(RestError::new("rest_forbidden_context", "Sorry, you are not allowed to edit this term.", 401)));
+            return Ok(Err(RestError::new(
+                "rest_forbidden_context",
+                "Sorry, you are not allowed to edit this term.",
+                401,
+            )));
         }
         let Some(term) = self.site.db.term_by_id(Some(taxonomy), id).await? else {
-            return Ok(Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)));
+            return Ok(Err(RestError::new(
+                "rest_term_invalid",
+                "Term does not exist.",
+                404,
+            )));
         };
         let context = params.get("context").unwrap_or("view");
-        Ok(Ok(Resp::item(self.prepare_term(&term, tax, context).await?)))
+        Ok(Ok(Resp::item(
+            self.prepare_term(&term, tax, context).await?,
+        )))
     }
 
     async fn prepare_term(&self, term: &Term, tax: &Tax, context: &str) -> Result<Value> {
@@ -199,27 +339,54 @@ impl Rest<'_> {
             data.insert("parent".into(), Value::from(term.parent));
         }
         data.insert("meta".into(), Value::Array(Vec::new()));
-        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Term(term)).await?;
+        let plugin_fields = self
+            .plugin_fields(rustpress_core::native::RestObject::Term(term))
+            .await?;
         let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
         data.extend(plugin_fields);
 
         let mut links = Links::new();
         links.self_link(self.rest_url(&format!("wp/v2/{base}/{}", term.term_id)));
-        links.add("collection", vec![], self.rest_url(&format!("wp/v2/{base}")));
-        links.add("about", vec![], self.rest_url(&format!("wp/v2/taxonomies/{taxonomy}")));
+        links.add(
+            "collection",
+            vec![],
+            self.rest_url(&format!("wp/v2/{base}")),
+        );
+        links.add(
+            "about",
+            vec![],
+            self.rest_url(&format!("wp/v2/taxonomies/{taxonomy}")),
+        );
         if tax.hierarchical && term.parent != 0 {
-            links.embeddable("up", self.rest_url(&format!("wp/v2/{base}/{}", term.parent)));
+            links.embeddable(
+                "up",
+                self.rest_url(&format!("wp/v2/{base}/{}", term.parent)),
+            );
         }
         for object_type in &tax.object_types {
             if let Some(type_base) = self.post_type_base(object_type) {
-                links.add("wp:post_type", vec![], rustpress_core::urls::add_query_arg(&self.rest_url(&format!("wp/v2/{type_base}")), base, &term.term_id.to_string()));
+                links.add(
+                    "wp:post_type",
+                    vec![],
+                    rustpress_core::urls::add_query_arg(
+                        &self.rest_url(&format!("wp/v2/{type_base}")),
+                        base,
+                        &term.term_id.to_string(),
+                    ),
+                );
             }
         }
         data.insert("_links".into(), links.finish());
-        self.add_plugin_links(rustpress_core::native::RestObject::Term(term), &mut data).await?;
+        self.add_plugin_links(rustpress_core::native::RestObject::Term(term), &mut data)
+            .await?;
 
         if context == "embed" {
-            data.retain(|k, _| matches!(k.as_str(), "id" | "link" | "name" | "slug" | "taxonomy" | "_links") || plugin_keys.contains(k));
+            data.retain(|k, _| {
+                matches!(
+                    k.as_str(),
+                    "id" | "link" | "name" | "slug" | "taxonomy" | "_links"
+                ) || plugin_keys.contains(k)
+            });
         }
         Ok(Value::Object(data))
     }

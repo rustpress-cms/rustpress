@@ -43,13 +43,21 @@ fn newest(env: &Env<'_>) -> bool {
 /// comment once: a damaged table with a comment that is its own ancestor neither loops nor overflows the stack.
 fn descendants<'a>(all: &'a [Comment], parent: u64, out: &mut Vec<&'a Comment>) {
     let mut seen = std::collections::HashSet::from([parent]);
-    let mut stack: Vec<&'a Comment> = all.iter().filter(|c| c.comment_parent == parent).rev().collect();
+    let mut stack: Vec<&'a Comment> = all
+        .iter()
+        .filter(|c| c.comment_parent == parent)
+        .rev()
+        .collect();
     while let Some(comment) = stack.pop() {
         if !seen.insert(comment.comment_id) {
             continue;
         }
         out.push(comment);
-        stack.extend(all.iter().filter(|c| c.comment_parent == comment.comment_id).rev());
+        stack.extend(
+            all.iter()
+                .filter(|c| c.comment_parent == comment.comment_id)
+                .rev(),
+        );
     }
 }
 
@@ -61,7 +69,8 @@ pub async fn comments_for_template(env: &Env<'_>, post_id: u64) -> Result<Commen
     if !env.site.plugins.is_empty()
         && let Some(post) = env.site.db.post(post_id).await?
     {
-        env.site.filter_comments_array(&post, env.query.viewer.as_ref(), &mut page.comments);
+        env.site
+            .filter_comments_array(&post, env.query.viewer.as_ref(), &mut page.comments);
     }
     // `cpage` becomes the newest (or first) page only while there is more than one page, and only for the template.
     if env.query.vars.u64("cpage").unwrap_or(0) == 0 {
@@ -84,7 +93,10 @@ pub async fn listed_comments(env: &Env<'_>, post_id: u64) -> Result<Vec<Comment>
     let listed = if include.user.is_none() && include.email.is_none() {
         env.site.db.approved_comments(post_id).await?
     } else {
-        env.site.db.comments_with_pending(post_id, include.user, include.email.as_deref()).await?
+        env.site
+            .db
+            .comments_with_pending(post_id, include.user, include.email.as_deref())
+            .await?
     };
     env.with_state(|s| {
         for comment in &listed {
@@ -98,23 +110,33 @@ pub async fn listed_comments(env: &Env<'_>, post_id: u64) -> Result<Vec<Comment>
 pub async fn comments_for_post(env: &Env<'_>, post_id: u64) -> Result<CommentPage> {
     let all = listed_comments(env, post_id).await?;
     let threaded = threaded(env);
-    let top: Vec<&Comment> = if threaded { all.iter().filter(|c| c.comment_parent == 0).collect() } else { all.iter().collect() };
-    let (mut selected, max_pages, page): (Vec<&Comment>, u64, u64) = if paginated(env) && per_page(env) > 0 {
-        let per = per_page(env);
-        let max_pages = (top.len() as u64).div_ceil(per);
-        let requested = env.query.vars.u64("cpage").unwrap_or(0);
-        let page = if requested != 0 {
-            requested
-        } else if newest(env) {
-            max_pages.max(1)
-        } else {
-            1
-        };
-        let start = usize::try_from(page.saturating_sub(1).saturating_mul(per)).unwrap_or(usize::MAX);
-        (top.iter().skip(start).take(per as usize).copied().collect(), max_pages, page)
+    let top: Vec<&Comment> = if threaded {
+        all.iter().filter(|c| c.comment_parent == 0).collect()
     } else {
-        (top, 0, 0)
+        all.iter().collect()
     };
+    let (mut selected, max_pages, page): (Vec<&Comment>, u64, u64) =
+        if paginated(env) && per_page(env) > 0 {
+            let per = per_page(env);
+            let max_pages = (top.len() as u64).div_ceil(per);
+            let requested = env.query.vars.u64("cpage").unwrap_or(0);
+            let page = if requested != 0 {
+                requested
+            } else if newest(env) {
+                max_pages.max(1)
+            } else {
+                1
+            };
+            let start =
+                usize::try_from(page.saturating_sub(1).saturating_mul(per)).unwrap_or(usize::MAX);
+            (
+                top.iter().skip(start).take(per as usize).copied().collect(),
+                max_pages,
+                page,
+            )
+        } else {
+            (top, 0, 0)
+        };
     let mut comments: Vec<Comment> = Vec::new();
     for comment in selected.drain(..) {
         comments.push(comment.clone());
@@ -124,14 +146,26 @@ pub async fn comments_for_post(env: &Env<'_>, post_id: u64) -> Result<CommentPag
             comments.extend(below.into_iter().cloned());
         }
     }
-    Ok(CommentPage { comments, max_pages, page })
+    Ok(CommentPage {
+        comments,
+        max_pages,
+        page,
+    })
 }
 
 /// `get_comments_pagenum_link()`.
-pub fn pagenum_link(site: &rustpress_core::Site, permalink: &str, pagenum: u64, max_page: u64) -> String {
+pub fn pagenum_link(
+    site: &rustpress_core::Site,
+    permalink: &str,
+    pagenum: u64,
+    max_page: u64,
+) -> String {
     let paged_url = |pagenum: u64| {
         if site.uses_pretty_permalinks() {
-            site.user_trailingslashit(&format!("{}comment-page-{pagenum}", trailingslashit(permalink)))
+            site.user_trailingslashit(&format!(
+                "{}comment-page-{pagenum}",
+                trailingslashit(permalink)
+            ))
         } else {
             add_query_arg(permalink, "cpage", &pagenum.to_string())
         }
@@ -154,26 +188,47 @@ pub fn page_of_comment(env: &Env<'_>, all: &[Comment], comment: &Comment) -> u64
     if per < 1 {
         return 1;
     }
-    let max_depth = if threaded(env) { env.site.options.u64("thread_comments_depth", 5) } else { 0 };
+    let max_depth = if threaded(env) {
+        env.site.options.u64("thread_comments_depth", 5)
+    } else {
+        0
+    };
     let mut target = comment;
     // A reply sits on the page of its top-level ancestor.
     if max_depth > 1 {
         let mut seen = std::collections::HashSet::from([target.comment_id]);
         while target.comment_parent != 0 {
-            match all.iter().find(|c| c.comment_id == target.comment_parent).filter(|p| seen.insert(p.comment_id)) {
+            match all
+                .iter()
+                .find(|c| c.comment_id == target.comment_parent)
+                .filter(|p| seen.insert(p.comment_id))
+            {
                 Some(parent) => target = parent,
                 None => break,
             }
         }
     }
-    let older = all.iter().filter(|c| c.comment_parent == 0 && c.comment_date_gmt < target.comment_date_gmt).count() as u64;
-    if older == 0 { 1 } else { (older + 1).div_ceil(per) }
+    let older = all
+        .iter()
+        .filter(|c| c.comment_parent == 0 && c.comment_date_gmt < target.comment_date_gmt)
+        .count() as u64;
+    if older == 0 {
+        1
+    } else {
+        (older + 1).div_ceil(per)
+    }
 }
 
 /// `get_comment_link()`. `in_loop` is the `cpage` of the running comment list, if there is one.
-pub async fn comment_link(env: &Env<'_>, comment: &Comment, in_loop: Option<u64>) -> Result<String> {
+pub async fn comment_link(
+    env: &Env<'_>,
+    comment: &Comment,
+    in_loop: Option<u64>,
+) -> Result<String> {
     let site = env.site;
-    let Some(post) = site.db.post(comment.comment_post_id).await? else { return Ok(format!("#comment-{}", comment.comment_id)) };
+    let Some(post) = site.db.post(comment.comment_post_id).await? else {
+        return Ok(format!("#comment-{}", comment.comment_id));
+    };
     let mut link = site.permalink(&post).await?;
     let mut cpage = 0;
     if paginated(env) && per_page(env) > 0 {
@@ -189,7 +244,11 @@ pub async fn comment_link(env: &Env<'_>, comment: &Comment, in_loop: Option<u64>
         }
     }
     if cpage != 0 && paginated(env) {
-        link = if site.uses_pretty_permalinks() { format!("{}comment-page-{cpage}", trailingslashit(&link)) } else { add_query_arg(&link, "cpage", &cpage.to_string()) };
+        link = if site.uses_pretty_permalinks() {
+            format!("{}comment-page-{cpage}", trailingslashit(&link))
+        } else {
+            add_query_arg(&link, "cpage", &cpage.to_string())
+        };
     }
     if site.uses_pretty_permalinks() {
         link = site.user_trailingslashit(&link);
@@ -198,21 +257,42 @@ pub async fn comment_link(env: &Env<'_>, comment: &Comment, in_loop: Option<u64>
 }
 
 /// `get_previous_comments_link()`: `None` on the first page.
-pub async fn previous_link(env: &Env<'_>, label: &str, page: u64, permalink: &str, attributes: &str) -> Option<String> {
+pub async fn previous_link(
+    env: &Env<'_>,
+    label: &str,
+    page: u64,
+    permalink: &str,
+    attributes: &str,
+) -> Option<String> {
     if page <= 1 {
         return None;
     }
-    Some(format!("<a href=\"{}\" {attributes}>{}</a>", esc_url(&pagenum_link(env.site, permalink, page - 1, 0)), replace_ampersands(label)))
+    Some(format!(
+        "<a href=\"{}\" {attributes}>{}</a>",
+        esc_url(&pagenum_link(env.site, permalink, page - 1, 0)),
+        replace_ampersands(label)
+    ))
 }
 
 /// `get_next_comments_link()`: `None` on the last page.
-pub fn next_link(env: &Env<'_>, label: &str, page: u64, max_page: u64, permalink: &str, attributes: &str) -> Option<String> {
+pub fn next_link(
+    env: &Env<'_>,
+    label: &str,
+    page: u64,
+    max_page: u64,
+    permalink: &str,
+    attributes: &str,
+) -> Option<String> {
     let page = page.max(1);
     let next = page + 1;
     if max_page == 0 || next > max_page {
         return None;
     }
-    Some(format!("<a href=\"{}\" {attributes}>{}</a>", esc_url(&pagenum_link(env.site, permalink, next, max_page)), replace_ampersands(label)))
+    Some(format!(
+        "<a href=\"{}\" {attributes}>{}</a>",
+        esc_url(&pagenum_link(env.site, permalink, next, max_page)),
+        replace_ampersands(label)
+    ))
 }
 
 /// `preg_replace( '/&([^#])(?![a-z]{1,8};)/i', '&#038;$1', $label )`.
@@ -226,8 +306,14 @@ fn replace_ampersands(label: &str) -> String {
             && next != b'#'
         {
             let rest = &label[i + 1..];
-            let entity = rest.char_indices().take(9).find(|(_, c)| *c == ';').map(|(n, _)| n);
-            let is_entity = entity.is_some_and(|n| (1..=8).contains(&n) && rest[..n].chars().all(|c| c.is_ascii_alphabetic()));
+            let entity = rest
+                .char_indices()
+                .take(9)
+                .find(|(_, c)| *c == ';')
+                .map(|(n, _)| n);
+            let is_entity = entity.is_some_and(|n| {
+                (1..=8).contains(&n) && rest[..n].chars().all(|c| c.is_ascii_alphabetic())
+            });
             if !is_entity {
                 out.push_str("&#038;");
                 i += 1;

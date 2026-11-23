@@ -14,7 +14,23 @@ use crate::util::{Links, env, rfc3339};
 use crate::{Outcome, Rest, Result};
 
 /// The members of an attachment in the `embed` context.
-const EMBED_FIELDS: &[&str] = &["id", "date", "slug", "type", "link", "title", "author", "featured_media", "caption", "alt_text", "media_type", "mime_type", "media_details", "source_url", "_links"];
+const EMBED_FIELDS: &[&str] = &[
+    "id",
+    "date",
+    "slug",
+    "type",
+    "link",
+    "title",
+    "author",
+    "featured_media",
+    "caption",
+    "alt_text",
+    "media_type",
+    "mime_type",
+    "media_details",
+    "source_url",
+    "_links",
+];
 
 impl Rest<'_> {
     pub(crate) async fn media_collection(&self, params: &Params) -> Result<Outcome> {
@@ -31,31 +47,72 @@ impl Rest<'_> {
         let shared = Arc::new(post.clone());
         let (metadata, attached_file) = images::load_metadata(self.site, post).await?;
         let meta_rows = self.site.db.post_meta(post.id).await?;
-        let meta_value = |key: &str| meta_rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
-        let source_url = attached_file.as_deref().map(|f| images::attachment_url(self.site, f)).unwrap_or_default();
-        let alt = meta_value("_wp_attachment_image_alt").map(|a| rustpress_core::formatting::strip_tags(&a).trim().to_owned()).unwrap_or_default();
+        let meta_value = |key: &str| {
+            meta_rows
+                .iter()
+                .find(|m| m.meta_key.as_deref() == Some(key))
+                .and_then(|m| m.meta_value.clone())
+        };
+        let source_url = attached_file
+            .as_deref()
+            .map(|f| images::attachment_url(self.site, f))
+            .unwrap_or_default();
+        let alt = meta_value("_wp_attachment_image_alt")
+            .map(|a| rustpress_core::formatting::strip_tags(&a).trim().to_owned())
+            .unwrap_or_default();
 
         let mut data = Map::new();
         data.insert("id".into(), Value::from(post.id));
         data.insert("date".into(), Value::from(rfc3339(&post.post_date)));
-        data.insert("date_gmt".into(), self.date_gmt(&post.post_date_gmt, &post.post_date));
+        data.insert(
+            "date_gmt".into(),
+            self.date_gmt(&post.post_date_gmt, &post.post_date),
+        );
         data.insert("guid".into(), json!({"rendered": post.guid}));
         data.insert("modified".into(), Value::from(rfc3339(&post.post_modified)));
-        data.insert("modified_gmt".into(), self.date_gmt(&post.post_modified_gmt, &post.post_modified));
+        data.insert(
+            "modified_gmt".into(),
+            self.date_gmt(&post.post_modified_gmt, &post.post_modified),
+        );
         data.insert("slug".into(), Value::from(post.post_name.clone()));
         data.insert("status".into(), Value::from(post.post_status.clone()));
         data.insert("type".into(), Value::from("attachment"));
         data.insert("link".into(), Value::from(self.site.permalink(post).await?));
-        let plain = Post { post_password: String::new(), post_status: "publish".into(), ..post.clone() };
-        data.insert("title".into(), json!({"rendered": the_title_for(self.site, &plain)}));
+        let plain = Post {
+            post_password: String::new(),
+            post_status: "publish".into(),
+            ..post.clone()
+        };
+        data.insert(
+            "title".into(),
+            json!({"rendered": the_title_for(self.site, &plain)}),
+        );
         data.insert("author".into(), Value::from(post.post_author));
         data.insert("featured_media".into(), Value::from(0));
-        data.insert("comment_status".into(), Value::from(post.comment_status.clone()));
+        data.insert(
+            "comment_status".into(),
+            Value::from(post.comment_status.clone()),
+        );
         data.insert("ping_status".into(), Value::from(post.ping_status.clone()));
-        let template = meta_value("_wp_page_template").filter(|t| !t.is_empty() && t != "default").unwrap_or_default();
+        let template = meta_value("_wp_page_template")
+            .filter(|t| !t.is_empty() && t != "default")
+            .unwrap_or_default();
         data.insert("template".into(), Value::from(template));
-        let registered: Map<String, Value> = self.site.plugins.registered_post_meta("attachment").iter().map(|m| (m.key.to_owned(), m.rest_value(meta_value(m.key).as_deref()))).collect();
-        data.insert("meta".into(), if registered.is_empty() { Value::Array(Vec::new()) } else { Value::Object(registered) });
+        let registered: Map<String, Value> = self
+            .site
+            .plugins
+            .registered_post_meta("attachment")
+            .iter()
+            .map(|m| (m.key.to_owned(), m.rest_value(meta_value(m.key).as_deref())))
+            .collect();
+        data.insert(
+            "meta".into(),
+            if registered.is_empty() {
+                Value::Array(Vec::new())
+            } else {
+                Value::Object(registered)
+            },
+        );
         // `get_post_class()` names the post type only outside the administration.
         let mut classes = post_class(&env, post, &[], false, false).await?;
         if self.admin && classes.get(1) == Some(&post.post_type) {
@@ -63,29 +120,70 @@ impl Rest<'_> {
         }
         data.insert("class_list".into(), Value::from(classes));
         // The fields of plugins come with the posts controller's part, before the attachment's own.
-        let plugin_fields = self.plugin_fields(rustpress_core::native::RestObject::Post(post)).await?;
+        let plugin_fields = self
+            .plugin_fields(rustpress_core::native::RestObject::Post(post))
+            .await?;
         let plugin_keys: Vec<String> = plugin_fields.iter().map(|(k, _)| k.clone()).collect();
         data.extend(plugin_fields);
 
         // `description`: the content filters plus `prepend_attachment()`.
-        let prefix = rustpress_blocks::content::attachment_prefix(&env, post, metadata.as_ref(), attached_file.as_deref(), &alt).await?;
+        let prefix = rustpress_blocks::content::attachment_prefix(
+            &env,
+            post,
+            metadata.as_ref(),
+            attached_file.as_deref(),
+            &alt,
+        )
+        .await?;
         let description = the_content_prefixed(&env, &shared, &post.post_content, &prefix).await?;
         data.insert("description".into(), json!({"rendered": description}));
         let raw_caption = self.excerpt(&env, &shared).await?;
         let caption = wpautop(&convert_chars(&self.site.texturize(&raw_caption)));
         data.insert("caption".into(), json!({"rendered": caption}));
         data.insert("alt_text".into(), Value::from(alt));
-        data.insert("media_type".into(), Value::from(if images::is_image(post) { "image" } else { "file" }));
+        data.insert(
+            "media_type".into(),
+            Value::from(if images::is_image(post) {
+                "image"
+            } else {
+                "file"
+            }),
+        );
         data.insert("mime_type".into(), Value::from(post.post_mime_type.clone()));
-        data.insert("media_details".into(), self.media_details(post, metadata.as_ref(), attached_file.as_deref()));
-        data.insert("post".into(), if post.post_parent == 0 { Value::Null } else { Value::from(post.post_parent) });
+        data.insert(
+            "media_details".into(),
+            self.media_details(post, metadata.as_ref(), attached_file.as_deref()),
+        );
+        data.insert(
+            "post".into(),
+            if post.post_parent == 0 {
+                Value::Null
+            } else {
+                Value::from(post.post_parent)
+            },
+        );
         data.insert("source_url".into(), Value::from(source_url));
         // `get_attachment_filename()`: images that were scaled down report the original file (`wp_get_original_image_path()`).
-        let original = metadata.as_ref().and_then(|m| m.0.get("original_image")).and_then(Value::as_str).filter(|_| images::is_image(post));
-        let filename = attached_file.as_deref().map(|file| original.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file)).to_owned());
+        let original = metadata
+            .as_ref()
+            .and_then(|m| m.0.get("original_image"))
+            .and_then(Value::as_str)
+            .filter(|_| images::is_image(post));
+        let filename = attached_file.as_deref().map(|file| {
+            original
+                .unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file))
+                .to_owned()
+        });
         data.insert("filename".into(), filename.map_or(Value::Null, Value::from));
         // `get_attachment_filesize()`: the size in the metadata, else the size of the file, else null.
-        let stored = metadata.as_ref().and_then(|m| m.0.get("filesize")).and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))).filter(|size| *size > 0);
+        let stored = metadata
+            .as_ref()
+            .and_then(|m| m.0.get("filesize"))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            })
+            .filter(|size| *size > 0);
         let filesize = match (stored, attached_file.as_deref()) {
             (Some(size), _) => Some(size),
             (None, Some(file)) => {
@@ -94,14 +192,17 @@ impl Rest<'_> {
                     (Some(name), None) => name.to_owned(),
                     (None, _) => file.to_owned(),
                 };
-                std::fs::metadata(self.theme.wp_root.join("wp-content/uploads").join(path)).ok().map(|m| m.len())
+                std::fs::metadata(self.theme.wp_root.join("wp-content/uploads").join(path))
+                    .ok()
+                    .map(|m| m.len())
             }
             (None, None) => None,
         };
         data.insert("filesize".into(), filesize.map_or(Value::Null, Value::from));
 
         data.insert("_links".into(), self.media_links(post).await?);
-        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), &mut data).await?;
+        self.add_plugin_links(rustpress_core::native::RestObject::Post(post), &mut data)
+            .await?;
         if context == "embed" {
             data.retain(|key, _| EMBED_FIELDS.contains(&key.as_str()) || plugin_keys.contains(key));
             if let Some(Value::Object(caption)) = data.get_mut("caption") {
@@ -112,23 +213,49 @@ impl Rest<'_> {
     }
 
     /// `media_details`: the stored metadata with `source_url`s and the `full` size.
-    fn media_details(&self, post: &Post, metadata: Option<&Metadata>, attached_file: Option<&str>) -> Value {
+    fn media_details(
+        &self,
+        post: &Post,
+        metadata: Option<&Metadata>,
+        attached_file: Option<&str>,
+    ) -> Value {
         // `empty( wp_get_attachment_metadata() )`: an empty object.
-        let Some(metadata) = metadata.filter(|m| !rustpress_blocks::style_engine::is_empty(&m.0)) else { return rustpress_blocks::php_json::empty_object() };
+        let Some(metadata) = metadata.filter(|m| !rustpress_blocks::style_engine::is_empty(&m.0))
+        else {
+            return rustpress_blocks::php_json::empty_object();
+        };
         let mut details = metadata.0.as_object().cloned().unwrap_or_default();
         if let Some(Value::Object(sizes)) = details.get_mut("sizes") {
-            let directory = attached_file.and_then(|f| f.rsplit_once('/')).map(|(d, _)| format!("{d}/")).unwrap_or_default();
+            let directory = attached_file
+                .and_then(|f| f.rsplit_once('/'))
+                .map(|(d, _)| format!("{d}/"))
+                .unwrap_or_default();
             for size in sizes.values_mut() {
                 let Value::Object(entry) = size else { continue };
                 if let Some(mime) = entry.remove("mime-type") {
                     entry.insert("mime_type".into(), mime);
                 }
-                let file = entry.get("file").and_then(Value::as_str).unwrap_or_default().to_owned();
-                entry.insert("source_url".into(), Value::from(format!("{}/{directory}{file}", images::upload_baseurl(self.site))));
+                let file = entry
+                    .get("file")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
+                entry.insert(
+                    "source_url".into(),
+                    Value::from(format!(
+                        "{}/{directory}{file}",
+                        images::upload_baseurl(self.site)
+                    )),
+                );
             }
             if let Some(file) = attached_file {
                 // `wp_get_attachment_image_src( $id, 'full' )`: a PDF shows its preview image.
-                let shown = if images::is_image(post) { Some((file.to_owned(), metadata.width(), metadata.height())) } else { images::preview_metadata(Some(metadata), Some(file)).map(|(m, path)| (path, m.width(), m.height())) };
+                let shown = if images::is_image(post) {
+                    Some((file.to_owned(), metadata.width(), metadata.height()))
+                } else {
+                    images::preview_metadata(Some(metadata), Some(file))
+                        .map(|(m, path)| (path, m.width(), m.height()))
+                };
                 if let Some((path, width, height)) = shown {
                     sizes.insert(
                         "full".into(),
@@ -144,7 +271,9 @@ impl Rest<'_> {
             }
         }
         // Details without any sizes still get an (empty) object.
-        let sizes_empty = details.get("sizes").is_none_or(rustpress_blocks::style_engine::is_empty);
+        let sizes_empty = details
+            .get("sizes")
+            .is_none_or(rustpress_blocks::style_engine::is_empty);
         if !details.is_empty() && sizes_empty {
             details.insert("sizes".into(), rustpress_blocks::php_json::empty_object());
         }
@@ -157,17 +286,40 @@ impl Rest<'_> {
         links.add("collection", vec![], self.rest_url("wp/v2/media"));
         links.add("about", vec![], self.rest_url("wp/v2/types/attachment"));
         if post.post_author != 0 {
-            links.embeddable("author", self.rest_url(&format!("wp/v2/users/{}", post.post_author)));
+            links.embeddable(
+                "author",
+                self.rest_url(&format!("wp/v2/users/{}", post.post_author)),
+            );
         }
-        links.embeddable("replies", rustpress_core::urls::add_query_arg(&self.rest_url("wp/v2/comments"), "post", &post.id.to_string()));
+        links.embeddable(
+            "replies",
+            rustpress_core::urls::add_query_arg(
+                &self.rest_url("wp/v2/comments"),
+                "post",
+                &post.id.to_string(),
+            ),
+        );
         if post.post_parent != 0 {
-            let parent_type = self.site.db.post(post.post_parent).await?.map_or_else(|| "post".to_owned(), |p| p.post_type);
+            let parent_type = self
+                .site
+                .db
+                .post(post.post_parent)
+                .await?
+                .map_or_else(|| "post".to_owned(), |p| p.post_type);
             let base = match parent_type.as_str() {
                 "page" => "pages",
                 "post" => "posts",
                 other => other,
             };
-            links.add("wp:attached-to", vec![("embeddable", Value::Bool(true)), ("post_type", Value::from(parent_type.clone())), ("id", Value::from(post.post_parent))], self.rest_url(&format!("wp/v2/{base}/{}", post.post_parent)));
+            links.add(
+                "wp:attached-to",
+                vec![
+                    ("embeddable", Value::Bool(true)),
+                    ("post_type", Value::from(parent_type.clone())),
+                    ("id", Value::from(post.post_parent)),
+                ],
+                self.rest_url(&format!("wp/v2/{base}/{}", post.post_parent)),
+            );
         }
         Ok(links.finish())
     }

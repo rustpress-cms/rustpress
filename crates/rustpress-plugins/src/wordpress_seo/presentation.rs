@@ -5,9 +5,9 @@ use rustpress_core::urls::{add_query_arg, trailingslashit};
 use rustpress_core::{Queried, Result};
 use rustpress_db::{Post, Term, User};
 
+use super::Page;
 use super::images::{self, ImageData};
 use super::replace_vars::{Source, php_trim, strip_all_tags_breaks};
-use super::Page;
 
 /// `Current_Page_Helper::get_page_type()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,7 +81,11 @@ fn non_empty(value: String) -> Option<String> {
 
 /// `WPSEO_Meta::get_value( $key, $post_id )`: `_yoast_wpseo_{key}`, else the field's default.
 pub async fn post_meta(page: &Page<'_>, post_id: u64, key: &str) -> Result<String> {
-    let raw = page.site.db.post_meta_value(post_id, &format!("_yoast_wpseo_{key}")).await?;
+    let raw = page
+        .site
+        .db
+        .post_meta_value(post_id, &format!("_yoast_wpseo_{key}"))
+        .await?;
     Ok(meta_or_default(raw, key))
 }
 
@@ -89,12 +93,21 @@ pub async fn post_meta(page: &Page<'_>, post_id: u64, key: &str) -> Result<Strin
 /// the field (`WPSEO_Meta::$defaults`).
 fn meta_or_default(raw: Option<String>, key: &str) -> String {
     if let Some(raw) = raw
-        && !matches!(rustpress_core::options::maybe_unserialize(&raw), rustpress_phpser::Value::Array(_) | rustpress_phpser::Value::Object { .. })
+        && !matches!(
+            rustpress_core::options::maybe_unserialize(&raw),
+            rustpress_phpser::Value::Array(_) | rustpress_phpser::Value::Object { .. }
+        )
     {
         return raw;
     }
     match key {
-        "linkdex" | "content_score" | "inclusive_language_score" | "seo_title_score" | "meta_description_score" | "meta-robots-noindex" | "meta-robots-nofollow" => "0",
+        "linkdex"
+        | "content_score"
+        | "inclusive_language_score"
+        | "seo_title_score"
+        | "meta_description_score"
+        | "meta-robots-noindex"
+        | "meta-robots-nofollow" => "0",
         "is_cornerstone" => "false",
         _ => "",
     }
@@ -125,7 +138,11 @@ impl Page<'_> {
         if f.is_posts_page && matches!(&q.queried, Queried::Post(p) if p.post_type == "page") {
             return Kind::StaticPostsPage;
         }
-        if f.is_front_page && static_front && f.is_page && matches!(&q.queried, Queried::Post(p) if p.id == settings.page_on_front) {
+        if f.is_front_page
+            && static_front
+            && f.is_page
+            && matches!(&q.queried, Queried::Post(p) if p.id == settings.page_on_front)
+        {
             return Kind::StaticHomePage;
         }
         if f.is_home && (settings.page_on_front == 0 || !static_front) {
@@ -161,7 +178,9 @@ impl Page<'_> {
                 _ => 0,
             };
         }
-        if q.flags.is_home && self.site.settings.show_on_front == rustpress_core::settings::ShowOnFront::Page {
+        if q.flags.is_home
+            && self.site.settings.show_on_front == rustpress_core::settings::ShowOnFront::Page
+        {
             return self.site.settings.page_for_posts;
         }
         0
@@ -170,7 +189,9 @@ impl Page<'_> {
     /// `Url_Helper::home()`.
     pub fn home(&self) -> String {
         let home = self.site.home_url("");
-        let path = home.split_once("://").map_or("", |(_, rest)| rest.find('/').map_or("", |i| &rest[i..]));
+        let path = home
+            .split_once("://")
+            .map_or("", |(_, rest)| rest.find('/').map_or("", |i| &rest[i..]));
         if path == "/" {
             home
         } else if path.is_empty() {
@@ -194,18 +215,29 @@ impl Page<'_> {
 
     /// `$_GET[ $key ]`.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.get.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.get
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `Pagination_Helper::get_key_query_loop()`: a `query-N-page` parameter.
     fn query_loop_key(&self) -> Option<&str> {
-        static KEY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^query-\d+-page$").expect("valid pattern"));
-        self.get.iter().find(|(k, _)| KEY.is_match(k)).map(|(k, _)| k.as_str())
+        static KEY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"^query-\d+-page$").expect("valid pattern")
+        });
+        self.get
+            .iter()
+            .find(|(k, _)| KEY.is_match(k))
+            .map(|(k, _)| k.as_str())
     }
 
     /// `Pagination_Helper::get_page_number_from_query_loop()`.
     fn query_loop_page(&self) -> u64 {
-        self.query_loop_key().and_then(|k| self.get(k)).map_or(0, super::php_int).max(0) as u64
+        self.query_loop_key()
+            .and_then(|k| self.get(k))
+            .map_or(0, super::php_int)
+            .max(0) as u64
     }
 
     /// `Pagination_Helper::get_current_archive_page_number()`.
@@ -221,7 +253,11 @@ impl Page<'_> {
     /// `Pagination_Helper::get_current_post_page_number()`.
     pub fn post_page_number(&self) -> u64 {
         let loop_page = self.query_loop_page();
-        if loop_page > 1 { loop_page } else { self.query.vars.u64("page").unwrap_or(0) }
+        if loop_page > 1 {
+            loop_page
+        } else {
+            self.query.vars.u64("page").unwrap_or(0)
+        }
     }
 
     /// `Pagination_Helper::get_current_page_number()`.
@@ -255,7 +291,11 @@ impl Page<'_> {
             }
             return self.site.user_trailingslashit(&format!("{url}{page}"));
         }
-        add_query_arg(&self.site.user_trailingslashit(url), key.unwrap_or("page"), &page.to_string())
+        add_query_arg(
+            &self.site.user_trailingslashit(url),
+            key.unwrap_or("page"),
+            &page.to_string(),
+        )
     }
 
     /// `Current_Page_Helper::get_date_archive_permalink()`.
@@ -296,7 +336,10 @@ impl Page<'_> {
         if self.options.truthy(&format!("disable-{post_type}")) {
             return false;
         }
-        matches!(self.options.get(&format!("noindex-{post_type}")), None | Some(rustpress_phpser::Value::Bool(false)))
+        matches!(
+            self.options.get(&format!("noindex-{post_type}")),
+            None | Some(rustpress_phpser::Value::Bool(false))
+        )
     }
 }
 
@@ -343,14 +386,30 @@ pub async fn model(page: &Page<'_>) -> Result<(Model, Object)> {
     } else if q.flags.is_search {
         return Ok((system_model(page, "search-result"), Object::None));
     } else if q.flags.is_post_type_archive {
-        let post_type = q.vars.get("post_type").unwrap_or_default().split(',').next().unwrap_or_default().to_owned();
-        return Ok((post_type_archive_model(page, &post_type), Object::PostType(post_type)));
+        let post_type = q
+            .vars
+            .get("post_type")
+            .unwrap_or_default()
+            .split(',')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        return Ok((
+            post_type_archive_model(page, &post_type),
+            Object::PostType(post_type),
+        ));
     } else if q.flags.is_author {
         // `check_if_user_should_be_indexed()`: no indexable without author archives, or for an author without public
         // posts while those are not indexed.
         if let Queried::User(user) = &q.queried
             && !page.options.truthy("disable-author")
-            && !(page.options.is_true("noindex-author-noposts-wpseo") && page.site.db.count_published_user_posts("post", user.id).await? == 0)
+            && !(page.options.is_true("noindex-author-noposts-wpseo")
+                && page
+                    .site
+                    .db
+                    .count_published_user_posts("post", user.id)
+                    .await?
+                    == 0)
         {
             let model = author_model(page, user).await?;
             return Ok((model, Object::User(user.clone())));
@@ -358,25 +417,46 @@ pub async fn model(page: &Page<'_>) -> Result<(Model, Object)> {
     } else if q.flags.is_404 {
         return Ok((system_model(page, "404"), Object::None));
     }
-    Ok((Model { object_type: "unknown", post_status: "unindexed".into(), ..Model::default() }, Object::None))
+    Ok((
+        Model {
+            object_type: "unknown",
+            post_status: "unindexed".into(),
+            ..Model::default()
+        },
+        Object::None,
+    ))
 }
 
 /// The indexable of an object the REST API asks for (`Meta_Surface::for_*()`); `unknown` when the plugin builds
 /// none.
 async fn target_model(page: &Page<'_>, kind: Kind, object: &Object) -> Result<(Model, Object)> {
-    let unknown = || Model { object_type: "unknown", post_status: "unindexed".into(), ..Model::default() };
+    let unknown = || Model {
+        object_type: "unknown",
+        post_status: "unindexed".into(),
+        ..Model::default()
+    };
     Ok(match (kind, object) {
         (Kind::HomePage, _) => (home_model(page).await?, Object::None),
         (_, Object::Post(post)) => (post_model(page, post).await?, object.clone()),
         (_, Object::Term(term)) => (term_model(page, term).await?, object.clone()),
         (_, Object::User(user)) => {
-            if page.options.truthy("disable-author") || (page.options.is_true("noindex-author-noposts-wpseo") && page.site.db.count_published_user_posts("post", user.id).await? == 0) {
+            if page.options.truthy("disable-author")
+                || (page.options.is_true("noindex-author-noposts-wpseo")
+                    && page
+                        .site
+                        .db
+                        .count_published_user_posts("post", user.id)
+                        .await?
+                        == 0)
+            {
                 (unknown(), Object::None)
             } else {
                 (author_model(page, user).await?, object.clone())
             }
         }
-        (_, Object::PostType(post_type)) => (post_type_archive_model(page, post_type), object.clone()),
+        (_, Object::PostType(post_type)) => {
+            (post_type_archive_model(page, post_type), object.clone())
+        }
         _ => (unknown(), Object::None),
     })
 }
@@ -387,11 +467,16 @@ pub async fn post_model(page: &Page<'_>, post: &Post) -> Result<Model> {
     let stored = page.site.db.post_meta(post.id).await?;
     let meta = |key: &'static str| {
         let name = format!("_yoast_wpseo_{key}");
-        let raw = stored.iter().find(|m| m.meta_key.as_deref() == Some(name.as_str())).and_then(|m| m.meta_value.clone());
+        let raw = stored
+            .iter()
+            .find(|m| m.meta_key.as_deref() == Some(name.as_str()))
+            .and_then(|m| m.meta_value.clone());
         std::future::ready(Ok::<_, rustpress_core::Error>(meta_or_default(raw, key)))
     };
     let permalink = if post.post_type == "attachment" {
-        images::attachment(page, post.id).await?.and_then(|a| a.url(page))
+        images::attachment(page, post.id)
+            .await?
+            .and_then(|a| a.url(page))
     } else {
         Some(page.site.permalink(post).await?)
     };
@@ -426,8 +511,10 @@ pub async fn post_model(page: &Page<'_>, post: &Post) -> Result<Model> {
         twitter_description: opt(meta("twitter-description").await?),
         twitter_image: opt(meta("twitter-image").await?),
         twitter_image_id: id(meta("twitter-image-id").await?),
-        reading_time: opt(meta("estimated-reading-time-minutes").await?).map(|v| super::php_int(&v)),
-        number_of_pages: Some(post.post_content.matches("<!--nextpage-->").count() as u64 + 1).filter(|n| *n > 1),
+        reading_time: opt(meta("estimated-reading-time-minutes").await?)
+            .map(|v| super::php_int(&v)),
+        number_of_pages: Some(post.post_content.matches("<!--nextpage-->").count() as u64 + 1)
+            .filter(|n| *n > 1),
         post_status: post.post_status.clone(),
         author_id: post.post_author,
         schema_page_type: opt(meta("schema_page_type").await?),
@@ -435,7 +522,9 @@ pub async fn post_model(page: &Page<'_>, post: &Post) -> Result<Model> {
         ..Model::default()
     };
     if model.breadcrumb_title.is_none() {
-        model.breadcrumb_title = Some(strip_all_tags_breaks(&rustpress_blocks::content::the_title_for(page.site, post)));
+        model.breadcrumb_title = Some(strip_all_tags_breaks(
+            &rustpress_blocks::content::the_title_for(page.site, post),
+        ));
     }
     social_images(page, &mut model, || alternative_post_image(page, post)).await?;
     Ok(model)
@@ -460,7 +549,9 @@ where
     if model.og_image_source.is_some() && model.twitter_image_source.is_some() {
         return Ok(());
     }
-    let Some(alternative) = alternative().await? else { return Ok(()) };
+    let Some(alternative) = alternative().await? else {
+        return Ok(());
+    };
     match alternative {
         Alternative::Id(id, source) => {
             if model.og_image_source.is_none() && model.og_image_id.is_none() {
@@ -490,7 +581,9 @@ where
 
 /// `set_open_graph_image_meta_data()`.
 async fn og_image_meta(page: &Page<'_>, model: &mut Model) -> Result<()> {
-    let Some(id) = model.og_image_id else { return Ok(()) };
+    let Some(id) = model.og_image_id else {
+        return Ok(());
+    };
     if let Some(image) = images::open_graph_image(page, id).await? {
         model.og_image = Some(image.url.clone());
         model.og_image_meta = Some(image);
@@ -530,13 +623,29 @@ async fn alternative_post_image(page: &Page<'_>, post: &Post) -> Result<Option<A
 /// `get_post_gallery_images()`, first image: the first `src` of the first `[gallery]` as WordPress prints it (in the
 /// gallery's `size`, `thumbnail` by default).
 async fn gallery_image(page: &Page<'_>, post: &Post) -> Result<Option<String>> {
-    let Some(start) = post.post_content.find("[gallery") else { return Ok(None) };
+    let Some(start) = post.post_content.find("[gallery") else {
+        return Ok(None);
+    };
     let rest = &post.post_content[start + "[gallery".len()..];
-    let Some(end) = rest.find(']') else { return Ok(None) };
+    let Some(end) = rest.find(']') else {
+        return Ok(None);
+    };
     let atts = rustpress_core::shortcodes::parse_atts(&rest[..end]);
-    let size = atts.get("size").filter(|s| !s.is_empty()).unwrap_or("thumbnail").to_owned();
-    let list = atts.get("ids").filter(|s| !s.is_empty()).or_else(|| atts.get("include")).unwrap_or_default().to_owned();
-    let mut ids: Vec<u64> = list.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    let size = atts
+        .get("size")
+        .filter(|s| !s.is_empty())
+        .unwrap_or("thumbnail")
+        .to_owned();
+    let list = atts
+        .get("ids")
+        .filter(|s| !s.is_empty())
+        .or_else(|| atts.get("include"))
+        .unwrap_or_default()
+        .to_owned();
+    let mut ids: Vec<u64> = list
+        .split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
     if ids.is_empty() {
         ids = page.site.db.attachment_children(post.id).await?;
     }
@@ -553,7 +662,13 @@ async fn gallery_image(page: &Page<'_>, post: &Post) -> Result<Option<String>> {
 
 /// `get_post_thumbnail_id()` when `has_post_thumbnail()`.
 pub async fn thumbnail_id(page: &Page<'_>, post_id: u64) -> Result<u64> {
-    Ok(page.site.db.post_meta_value(post_id, "_thumbnail_id").await?.and_then(|v| v.trim().parse().ok()).unwrap_or(0))
+    Ok(page
+        .site
+        .db
+        .post_meta_value(post_id, "_thumbnail_id")
+        .await?
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0))
 }
 
 /// `Indexable_Home_Page_Builder::build()`.
@@ -572,7 +687,12 @@ async fn home_model(page: &Page<'_>) -> Result<Model> {
         noindex: Some(page.site.options.get("blog_public") == Some("0")),
         og_title: Some(o.string("open_graph_frontpage_title")),
         og_image: Some(o.string("open_graph_frontpage_image")),
-        og_image_id: o.string("open_graph_frontpage_image_id").trim().parse().ok().filter(|n| *n != 0),
+        og_image_id: o
+            .string("open_graph_frontpage_image_id")
+            .trim()
+            .parse()
+            .ok()
+            .filter(|n| *n != 0),
         og_description: Some(o.string("open_graph_frontpage_desc")),
         ..Model::default()
     };
@@ -586,7 +706,12 @@ async fn home_model(page: &Page<'_>) -> Result<Model> {
 /// `Indexable_Term_Builder::build()`.
 async fn term_model(page: &Page<'_>, term: &Term) -> Result<Model> {
     let meta = page.options.term_meta(&term.taxonomy, term.term_id);
-    let get = |key: &str| meta.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).filter(|v| !v.is_empty());
+    let get = |key: &str| {
+        meta.iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty())
+    };
     let mut model = Model {
         object_type: "term",
         object_sub_type: term.taxonomy.clone(),
@@ -604,11 +729,15 @@ async fn term_model(page: &Page<'_>, term: &Term) -> Result<Model> {
         og_title: get("wpseo_opengraph-title"),
         og_description: get("wpseo_opengraph-description"),
         og_image: get("wpseo_opengraph-image"),
-        og_image_id: get("wpseo_opengraph-image-id").and_then(|v| v.trim().parse().ok()).filter(|n| *n != 0),
+        og_image_id: get("wpseo_opengraph-image-id")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|n| *n != 0),
         twitter_title: get("wpseo_twitter-title"),
         twitter_description: get("wpseo_twitter-description"),
         twitter_image: get("wpseo_twitter-image"),
-        twitter_image_id: get("wpseo_twitter-image-id").and_then(|v| v.trim().parse().ok()).filter(|n| *n != 0),
+        twitter_image_id: get("wpseo_twitter-image-id")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|n| *n != 0),
         ..Model::default()
     };
     if !set(&model.breadcrumb_title) {
@@ -618,7 +747,8 @@ async fn term_model(page: &Page<'_>, term: &Term) -> Result<Model> {
     social_images(page, &mut model, || async move {
         // `Image_Helper::get_term_content_image()`: the first image of `term_description()`.
         let html = term_description(&description);
-        Ok(images::first_content_image(&html).map(|url| Alternative::Url(url, "first-content-image")))
+        Ok(images::first_content_image(&html)
+            .map(|url| Alternative::Url(url, "first-content-image")))
     })
     .await?;
     Ok(model)
@@ -636,7 +766,15 @@ pub fn term_description(description: &str) -> String {
 
 /// `Indexable_Author_Builder::build()`.
 async fn author_model(page: &Page<'_>, user: &User) -> Result<Model> {
-    let meta = |key: &'static str| async move { Ok::<_, rustpress_core::Error>(page.site.db.user_meta(user.id, key).await?.filter(|v| !v.is_empty())) };
+    let meta = |key: &'static str| async move {
+        Ok::<_, rustpress_core::Error>(
+            page.site
+                .db
+                .user_meta(user.id, key)
+                .await?
+                .filter(|v| !v.is_empty()),
+        )
+    };
     let noindex = meta("wpseo_noindex_author").await?.as_deref() == Some("on");
     let mut model = Model {
         object_type: "user",
@@ -649,7 +787,8 @@ async fn author_model(page: &Page<'_>, user: &User) -> Result<Model> {
     };
     let email = user.user_email.clone();
     social_images(page, &mut model, || async move {
-        let url = rustpress_blocks::content::avatar_url(&page.site.options, &email, 500).replacen("http://", "https://", 1);
+        let url = rustpress_blocks::content::avatar_url(&page.site.options, &email, 500)
+            .replacen("http://", "https://", 1);
         Ok(Some(Alternative::Url(url, "gravatar-image")))
     })
     .await?;
@@ -665,7 +804,11 @@ fn post_type_archive_model(page: &Page<'_>, post_type: &str) -> Model {
         object_sub_type: post_type.to_owned(),
         title: Some(o.string(&format!("title-ptarchive-{post_type}"))),
         description: Some(o.string(&format!("metadesc-ptarchive-{post_type}"))),
-        breadcrumb_title: Some(if bctitle.is_empty() { page.site.post_type_label(post_type) } else { bctitle }),
+        breadcrumb_title: Some(if bctitle.is_empty() {
+            page.site.post_type_label(post_type)
+        } else {
+            bctitle
+        }),
         permalink: page.site.post_type_archive_link(post_type),
         noindex: Some(o.truthy(&format!("noindex-ptarchive-{post_type}"))),
         ..Model::default()
@@ -675,8 +818,19 @@ fn post_type_archive_model(page: &Page<'_>, post_type: &str) -> Model {
 /// `Indexable_System_Page_Builder::build()`.
 fn system_model(page: &Page<'_>, sub_type: &str) -> Model {
     let o = page.options;
-    let (title, crumb) = if sub_type == "404" { ("title-404-wpseo", Some(o.string("breadcrumbs-404crumb"))) } else { ("title-search-wpseo", None) };
-    Model { object_type: "system-page", object_sub_type: sub_type.to_owned(), title: Some(o.string(title)), noindex: Some(true), breadcrumb_title: crumb, ..Model::default() }
+    let (title, crumb) = if sub_type == "404" {
+        ("title-404-wpseo", Some(o.string("breadcrumbs-404crumb")))
+    } else {
+        ("title-search-wpseo", None)
+    };
+    Model {
+        object_type: "system-page",
+        object_sub_type: sub_type.to_owned(),
+        title: Some(o.string(title)),
+        noindex: Some(true),
+        breadcrumb_title: crumb,
+        ..Model::default()
+    }
 }
 
 /// One `robots` value as the presentation keeps it (`index` => `noindex`, ...), in order.
@@ -734,11 +888,23 @@ impl Presentation {
 
 /// `filter_robots()` with the plugin's own `wpseo_robots_array` filters.
 fn filter_robots(page: &Page<'_>, robots: Vec<(&str, Option<String>)>) -> Robots {
-    let noindex = robots.iter().any(|(k, v)| *k == "index" && v.as_deref() == Some("noindex"));
+    let noindex = robots
+        .iter()
+        .any(|(k, v)| *k == "index" && v.as_deref() == Some("noindex"));
     let mut out: Robots = Vec::new();
     for (key, value) in robots {
         let Some(value) = value else { continue };
-        if noindex && matches!(key, "imageindex" | "archive" | "snippet" | "max-snippet" | "max-image-preview" | "max-video-preview") {
+        if noindex
+            && matches!(
+                key,
+                "imageindex"
+                    | "archive"
+                    | "snippet"
+                    | "max-snippet"
+                    | "max-image-preview"
+                    | "max-video-preview"
+            )
+        {
             continue;
         }
         if value.is_empty() {
@@ -766,8 +932,28 @@ fn filter_robots(page: &Page<'_>, robots: Vec<(&str, Option<String>)>) -> Robots
 
 fn base_robots(model: &Model) -> Vec<(&'static str, Option<String>)> {
     vec![
-        ("index", Some(if model.noindex == Some(true) { "noindex" } else { "index" }.to_owned())),
-        ("follow", Some(if model.nofollow == Some(true) { "nofollow" } else { "follow" }.to_owned())),
+        (
+            "index",
+            Some(
+                if model.noindex == Some(true) {
+                    "noindex"
+                } else {
+                    "index"
+                }
+                .to_owned(),
+            ),
+        ),
+        (
+            "follow",
+            Some(
+                if model.nofollow == Some(true) {
+                    "nofollow"
+                } else {
+                    "follow"
+                }
+                .to_owned(),
+            ),
+        ),
         ("max-snippet", Some("max-snippet:-1".into())),
         ("max-image-preview", Some("max-image-preview:large".into())),
         ("max-video-preview", Some("max-video-preview:-1".into())),
@@ -786,16 +972,28 @@ async fn robots(page: &Page<'_>, kind: Kind, model: &Model, object: &Object) -> 
     let mut robots = base_robots(model);
     match kind {
         Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage => {
-            robots.push(("imageindex", (model.noimageindex == Some(true)).then(|| "noimageindex".into())));
-            robots.push(("archive", (model.noarchive == Some(true)).then(|| "noarchive".into())));
-            robots.push(("snippet", (model.nosnippet == Some(true)).then(|| "nosnippet".into())));
+            robots.push((
+                "imageindex",
+                (model.noimageindex == Some(true)).then(|| "noimageindex".into()),
+            ));
+            robots.push((
+                "archive",
+                (model.noarchive == Some(true)).then(|| "noarchive".into()),
+            ));
+            robots.push((
+                "snippet",
+                (model.nosnippet == Some(true)).then(|| "nosnippet".into()),
+            ));
             if model.nosnippet == Some(true) {
                 set_robot(&mut robots, "max-snippet", None);
             }
             if model.noimageindex == Some(true) {
                 set_robot(&mut robots, "max-image-preview", None);
             }
-            if model.noindex.is_none() && (model.post_status == "private" || !page.post_type_indexable(&model.object_sub_type)) {
+            if model.noindex.is_none()
+                && (model.post_status == "private"
+                    || !page.post_type_indexable(&model.object_sub_type))
+            {
                 set_robot(&mut robots, "index", Some("noindex"));
             }
         }
@@ -807,8 +1005,15 @@ async fn robots(page: &Page<'_>, kind: Kind, model: &Model, object: &Object) -> 
             let noindex = if o.truthy("noindex-author-wpseo") || user.is_none() {
                 true
             } else if let Some(user) = user {
-                (o.truthy("noindex-author-noposts-wpseo") && count_public_posts(page, user.id).await? == 0)
-                    || page.site.db.user_meta(user.id, "wpseo_noindex_author").await?.as_deref() == Some("on")
+                (o.truthy("noindex-author-noposts-wpseo")
+                    && count_public_posts(page, user.id).await? == 0)
+                    || page
+                        .site
+                        .db
+                        .user_meta(user.id, "wpseo_noindex_author")
+                        .await?
+                        .as_deref()
+                        == Some("on")
             } else {
                 false
             };
@@ -838,7 +1043,11 @@ async fn robots(page: &Page<'_>, kind: Kind, model: &Model, object: &Object) -> 
                     set_robot(&mut robots, "index", Some("noindex"));
                 }
                 if let Some(noindex) = model.noindex {
-                    set_robot(&mut robots, "index", Some(if noindex { "noindex" } else { "index" }));
+                    set_robot(
+                        &mut robots,
+                        "index",
+                        Some(if noindex { "noindex" } else { "index" }),
+                    );
                 }
             }
         }
@@ -850,13 +1059,20 @@ async fn robots(page: &Page<'_>, kind: Kind, model: &Model, object: &Object) -> 
 
 /// `count_user_posts( $id, 'post', true )`: the author's public posts.
 async fn count_public_posts(page: &Page<'_>, user_id: u64) -> Result<u64> {
-    Ok(page.site.db.count_published_user_posts("post", user_id).await?)
+    Ok(page
+        .site
+        .db
+        .count_published_user_posts("post", user_id)
+        .await?)
 }
 
 /// `Current_Page_Helper::is_multiple_terms_page()`: a term archive for more than one term (`?cat=1,2`, `tag=a+b`).
 fn multiple_terms(page: &Page<'_>) -> bool {
     let vars = &page.query.vars;
-    ["cat", "tag", "category_name", "tag_id"].iter().filter_map(|v| vars.get(v)).any(|v| v.contains([',', '+', ' ']))
+    ["cat", "tag", "category_name", "tag_id"]
+        .iter()
+        .filter_map(|v| vars.get(v))
+        .any(|v| v.contains([',', '+', ' ']))
 }
 
 /// `generate_presentation()`: everything the presenters print, for the current page.
@@ -868,7 +1084,10 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
         Object::Post(p) if model.object_type == "post" => Some(&**p),
         _ => None,
     };
-    let singular = matches!(kind, Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage);
+    let singular = matches!(
+        kind,
+        Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage
+    );
 
     // generate_permalink()
     let permalink = if page.query.flags.is_date {
@@ -885,19 +1104,33 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
         Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage => {
             let key = format!("title-{}", model.object_sub_type);
             let value = o.string(&key);
-            if truthy_str(&value) { value } else { o.title_default(&key) }
+            if truthy_str(&value) {
+                value
+            } else {
+                o.title_default(&key)
+            }
         }
         Kind::HomePage => o.title_default("title-home-wpseo"),
         Kind::TermArchive => {
             let key = format!("title-tax-{}", model.object_sub_type);
             let value = o.string(&key);
-            if truthy_str(&value) { value } else { o.title_default(&key) }
+            if truthy_str(&value) {
+                value
+            } else {
+                o.title_default(&key)
+            }
         }
         Kind::AuthorArchive => {
             let value = o.string("title-author-wpseo");
-            if truthy_str(&value) { value } else { o.title_default("title-author-wpseo") }
+            if truthy_str(&value) {
+                value
+            } else {
+                o.title_default("title-author-wpseo")
+            }
         }
-        Kind::PostTypeArchive => o.title_default(&format!("title-ptarchive-{}", model.object_sub_type)),
+        Kind::PostTypeArchive => {
+            o.title_default(&format!("title-ptarchive-{}", model.object_sub_type))
+        }
         Kind::DateArchive => o.title_default("title-archive-wpseo"),
         Kind::SearchResult => o.title_default("title-search-wpseo"),
         Kind::ErrorPage => o.title_default("title-404-wpseo"),
@@ -907,12 +1140,18 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
     // generate_meta_description()
     let meta_description = match kind {
         _ if set(&model.description) => model.description.clone().unwrap_or_default(),
-        Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage => o.string(&format!("metadesc-{}", model.object_sub_type)),
+        Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage => {
+            o.string(&format!("metadesc-{}", model.object_sub_type))
+        }
         Kind::HomePage => o.string("metadesc-home-wpseo"),
         Kind::TermArchive => o.string(&format!("metadesc-tax-{}", model.object_sub_type)),
         Kind::AuthorArchive => {
             let value = o.string("metadesc-author-wpseo");
-            if truthy_str(&value) { value } else { o.title_default("metadesc-author-wpseo") }
+            if truthy_str(&value) {
+                value
+            } else {
+                o.title_default("metadesc-author-wpseo")
+            }
         }
         _ => String::new(),
     };
@@ -921,9 +1160,21 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
 
     // generate_canonical()
     let archive_page = page.archive_page_number();
-    let paged_archive = |url: &str| if archive_page > 1 { page.paginated_url(url, archive_page, true) } else { url.to_owned() };
+    let paged_archive = |url: &str| {
+        if archive_page > 1 {
+            page.paginated_url(url, archive_page, true)
+        } else {
+            url.to_owned()
+        }
+    };
     let canonical = match kind {
-        Kind::StaticPostsPage => if set(&model.canonical) { model.canonical.clone().unwrap_or_default() } else { paged_archive(&permalink) },
+        Kind::StaticPostsPage => {
+            if set(&model.canonical) {
+                model.canonical.clone().unwrap_or_default()
+            } else {
+                paged_archive(&permalink)
+            }
+        }
         Kind::PostType | Kind::StaticHomePage => {
             if set(&model.canonical) {
                 model.canonical.clone().unwrap_or_default()
@@ -946,7 +1197,13 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
                 paged_archive(&permalink)
             }
         }
-        Kind::PostTypeArchive => if permalink.is_empty() { String::new() } else { paged_archive(&permalink) },
+        Kind::PostTypeArchive => {
+            if permalink.is_empty() {
+                String::new()
+            } else {
+                paged_archive(&permalink)
+            }
+        }
         Kind::DateArchive => paged_archive(&page.date_archive_permalink()),
         _ => {
             if set(&model.canonical) {
@@ -970,38 +1227,67 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
                     2 => base.clone(),
                     n => page.paginated_url(&base, n - 1, add_base),
                 };
-                let next = if pages <= current { String::new() } else { page.paginated_url(&base, current + 1, add_base) };
+                let next = if pages <= current {
+                    String::new()
+                } else {
+                    page.paginated_url(&base, current + 1, add_base)
+                };
                 (prev, next)
             }
         },
-        Kind::HomePage | Kind::AuthorArchive | Kind::PostTypeArchive | Kind::StaticPostsPage | Kind::TermArchive | Kind::DateArchive => {
-            let base = if kind == Kind::DateArchive { page.date_archive_permalink() } else { permalink.clone() };
+        Kind::HomePage
+        | Kind::AuthorArchive
+        | Kind::PostTypeArchive
+        | Kind::StaticPostsPage
+        | Kind::TermArchive
+        | Kind::DateArchive => {
+            let base = if kind == Kind::DateArchive {
+                page.date_archive_permalink()
+            } else {
+                permalink.clone()
+            };
             let current = archive_page.max(1);
             let prev = match current {
                 1 => String::new(),
                 2 => base.clone(),
                 n => page.paginated_url(&base, n - 1, true),
             };
-            let next = if page.query.max_pages <= current { String::new() } else { page.paginated_url(&base, current + 1, true) };
+            let next = if page.query.max_pages <= current {
+                String::new()
+            } else {
+                page.paginated_url(&base, current + 1, true)
+            };
             (prev, next)
         }
         _ => (String::new(), String::new()),
     };
 
     let og_type = match kind {
-        Kind::PostType | Kind::StaticPostsPage | Kind::TermArchive | Kind::SearchResult => "article",
+        Kind::PostType | Kind::StaticPostsPage | Kind::TermArchive | Kind::SearchResult => {
+            "article"
+        }
         Kind::AuthorArchive => "profile",
         _ => "website",
     };
-    let og_title = if set(&model.og_title) { model.og_title.clone().unwrap_or_default() } else { title.clone() };
+    let og_title = if set(&model.og_title) {
+        model.og_title.clone().unwrap_or_default()
+    } else {
+        title.clone()
+    };
 
     // generate_open_graph_description()
-    let mut og_description = if set(&model.og_description) { model.og_description.clone().unwrap_or_default() } else { meta_description.clone() };
+    let mut og_description = if set(&model.og_description) {
+        model.og_description.clone().unwrap_or_default()
+    } else {
+        meta_description.clone()
+    };
     let mut excerpt = None;
     if og_description.is_empty() {
         match (kind, post) {
             (Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage, Some(post)) => {
-                let text = rustpress_core::formatting::wp_strip_all_tags(&page.services.excerpt(post).await?);
+                let text = rustpress_core::formatting::wp_strip_all_tags(
+                    &page.services.excerpt(post).await?,
+                );
                 excerpt = Some(text.clone());
                 og_description = page.site.strip_shortcodes(&text);
             }
@@ -1012,45 +1298,73 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
 
     let open_graph_enabled = o.is_true("opengraph");
     // generate_open_graph_images()
-    let og_images = if !open_graph_enabled || (singular && post.is_some_and(Page::password_required)) {
-        Vec::new()
-    } else if kind == Kind::AuthorArchive {
-        let mut images = Vec::new();
-        add_from_templates(page, &model, &mut images).await?;
-        if images.is_empty() {
-            open_graph_images(page, &model).await?
+    let og_images =
+        if !open_graph_enabled || (singular && post.is_some_and(Page::password_required)) {
+            Vec::new()
+        } else if kind == Kind::AuthorArchive {
+            let mut images = Vec::new();
+            add_from_templates(page, &model, &mut images).await?;
+            if images.is_empty() {
+                open_graph_images(page, &model).await?
+            } else {
+                images
+            }
         } else {
-            images
-        }
-    } else {
-        open_graph_images(page, &model).await?
-    };
+            open_graph_images(page, &model).await?
+        };
 
     let og_url = match kind {
         Kind::DateArchive => page.date_archive_permalink(),
         Kind::SearchResult => {
             let words = page.query.vars.get("s").unwrap_or_default();
-            static PAGE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^page/\d+$").expect("valid pattern"));
-            if !words.is_empty() && !PAGE.is_match(words) { search_link(page, words) } else { String::new() }
+            static PAGE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"^page/\d+$").expect("valid pattern")
+            });
+            if !words.is_empty() && !PAGE.is_match(words) {
+                search_link(page, words)
+            } else {
+                String::new()
+            }
         }
         Kind::StaticPostsPage => permalink.clone(),
-        _ => if set(&model.canonical) { model.canonical.clone().unwrap_or_default() } else { permalink.clone() },
+        _ => {
+            if set(&model.canonical) {
+                model.canonical.clone().unwrap_or_default()
+            } else {
+                permalink.clone()
+            }
+        }
     };
 
     let represents = super::schema::site_represents(page).await?;
-    let (article_publisher, article_author, article_published_time, article_modified_time) = match post.filter(|_| singular) {
-        Some(post) => {
-            let publisher = match &represents {
-                super::schema::Represents::Person(id) => super::replace_vars::author_meta(page, *id, "facebook").await?,
-                _ => o.string("facebook_site"),
-            };
-            let author = if model.object_sub_type == "post" { super::replace_vars::author_meta(page, post.post_author, "facebook").await? } else { String::new() };
-            let published = if model.object_sub_type == "post" { w3c(&post.post_date_gmt) } else { String::new() };
-            let modified = if gmt(&post.post_modified_gmt) > gmt(&post.post_date_gmt) { w3c(&post.post_modified_gmt) } else { String::new() };
-            (publisher, author, published, modified)
-        }
-        None => Default::default(),
-    };
+    let (article_publisher, article_author, article_published_time, article_modified_time) =
+        match post.filter(|_| singular) {
+            Some(post) => {
+                let publisher = match &represents {
+                    super::schema::Represents::Person(id) => {
+                        super::replace_vars::author_meta(page, *id, "facebook").await?
+                    }
+                    _ => o.string("facebook_site"),
+                };
+                let author = if model.object_sub_type == "post" {
+                    super::replace_vars::author_meta(page, post.post_author, "facebook").await?
+                } else {
+                    String::new()
+                };
+                let published = if model.object_sub_type == "post" {
+                    w3c(&post.post_date_gmt)
+                } else {
+                    String::new()
+                };
+                let modified = if gmt(&post.post_modified_gmt) > gmt(&post.post_date_gmt) {
+                    w3c(&post.post_modified_gmt)
+                } else {
+                    String::new()
+                };
+                (publisher, author, published, modified)
+            }
+            None => Default::default(),
+        };
 
     // generate_twitter_title()
     let twitter_title = if kind == Kind::SearchResult {
@@ -1076,7 +1390,9 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
             (Kind::PostType | Kind::StaticHomePage | Kind::StaticPostsPage, Some(post)) => {
                 twitter_description = match excerpt {
                     Some(text) => text,
-                    None => rustpress_core::formatting::wp_strip_all_tags(&page.services.excerpt(post).await?),
+                    None => rustpress_core::formatting::wp_strip_all_tags(
+                        &page.services.excerpt(post).await?,
+                    ),
                 };
             }
             (Kind::TermArchive, _) => twitter_description = term_description_text(&object),
@@ -1099,7 +1415,11 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
 
     let twitter_creator = match post.filter(|_| singular && model.object_sub_type == "post") {
         Some(post) => {
-            let account = php_trim(&super::replace_vars::author_meta(page, post.post_author, "twitter").await?).trim_start_matches('@').to_owned();
+            let account = php_trim(
+                &super::replace_vars::author_meta(page, post.post_author, "twitter").await?,
+            )
+            .trim_start_matches('@')
+            .to_owned();
             if !account.is_empty() {
                 format!("@{account}")
             } else if !o.string("twitter_site").is_empty() {
@@ -1113,7 +1433,11 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
     let twitter_site = match &represents {
         super::schema::Represents::Person(id) => {
             let account = super::replace_vars::author_meta(page, *id, "twitter").await?;
-            if account.is_empty() { o.string("twitter_site") } else { account }
+            if account.is_empty() {
+                o.string("twitter_site")
+            } else {
+                account
+            }
         }
         _ => o.string("twitter_site"),
     };
@@ -1121,7 +1445,14 @@ pub async fn present(page: &Page<'_>) -> Result<Presentation> {
     // generate_estimated_reading_time_minutes()
     let reading_time = match (model.reading_time, post) {
         (Some(minutes), _) => Some(minutes),
-        (None, Some(post)) => Some((super::schema::str_word_count(&rustpress_core::formatting::wp_strip_all_tags(&post.post_content), "") as f64 / 200.0).round() as i64),
+        (None, Some(post)) => Some(
+            (super::schema::str_word_count(
+                &rustpress_core::formatting::wp_strip_all_tags(&post.post_content),
+                "",
+            ) as f64
+                / 200.0)
+                .round() as i64,
+        ),
         (None, None) => None,
     };
 
@@ -1162,7 +1493,9 @@ fn truthy_str(value: &str) -> bool {
 /// `Taxonomy_Helper::get_term_description()`.
 fn term_description_text(object: &Object) -> String {
     match object {
-        Object::Term(t) => rustpress_core::formatting::wp_strip_all_tags(&term_description(&t.description)),
+        Object::Term(t) => {
+            rustpress_core::formatting::wp_strip_all_tags(&term_description(&t.description))
+        }
         _ => String::new(),
     }
 }
@@ -1174,7 +1507,10 @@ pub fn search_link(page: &Page<'_>, words: &str) -> String {
         let encoded = rustpress_core::canonical::php_urlencode(words).replace("%2F", "/");
         site.user_trailingslashit(&site.home_url(&format!("{}search/{encoded}", site.root())))
     } else {
-        site.home_url(&format!("?s={}", rustpress_core::canonical::php_urlencode(words)))
+        site.home_url(&format!(
+            "?s={}",
+            rustpress_core::canonical::php_urlencode(words)
+        ))
     }
 }
 
@@ -1213,7 +1549,8 @@ fn add_image(page: &Page<'_>, images: &mut Vec<ImageData>, mut image: ImageData)
     if image.url.is_empty() {
         return;
     }
-    if !(image.url.starts_with("http") || image.url.starts_with("//")) && image.url.starts_with('/') {
+    if !(image.url.starts_with("http") || image.url.starts_with("//")) && image.url.starts_with('/')
+    {
         image.url = build_absolute_url(page, &image.url);
     }
     if images.iter().any(|i| i.url == image.url) {
@@ -1239,12 +1576,23 @@ async fn add_image_by_url(page: &Page<'_>, images: &mut Vec<ImageData>, url: &st
     if id != 0 {
         return add_image_by_id(page, images, id).await;
     }
-    add_image(page, images, ImageData { url: url.to_owned(), ..ImageData::default() });
+    add_image(
+        page,
+        images,
+        ImageData {
+            url: url.to_owned(),
+            ..ImageData::default()
+        },
+    );
     Ok(())
 }
 
 /// `Open_Graph_Image_Generator::add_from_templates()`.
-async fn add_from_templates(page: &Page<'_>, model: &Model, images: &mut Vec<ImageData>) -> Result<()> {
+async fn add_from_templates(
+    page: &Page<'_>,
+    model: &Model,
+    images: &mut Vec<ImageData>,
+) -> Result<()> {
     if !images.is_empty() {
         return Ok(());
     }
@@ -1265,11 +1613,23 @@ async fn open_graph_images(page: &Page<'_>, model: &Model) -> Result<Vec<ImageDa
     } else if let Some(id) = model.og_image_id {
         add_image_by_id(page, &mut images, id).await?;
     } else if set(&model.og_image) {
-        add_image(page, &mut images, ImageData { url: model.og_image.clone().unwrap_or_default(), ..ImageData::default() });
+        add_image(
+            page,
+            &mut images,
+            ImageData {
+                url: model.og_image.clone().unwrap_or_default(),
+                ..ImageData::default()
+            },
+        );
     }
     add_from_templates(page, model, &mut images).await?;
     if images.is_empty() {
-        let default_id = page.options.string("og_default_image_id").trim().parse::<u64>().unwrap_or(0);
+        let default_id = page
+            .options
+            .string("og_default_image_id")
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(0);
         if default_id != 0 {
             add_image_by_id(page, &mut images, default_id).await?;
         } else {
@@ -1285,11 +1645,17 @@ async fn twitter_images(page: &Page<'_>, model: &Model) -> Result<Option<String>
     if let Some(id) = model.twitter_image_id {
         return Ok(non_empty(images::twitter_image(page, id).await?));
     }
-    let Some(url) = model.twitter_image.as_deref().filter(|u| !u.is_empty()) else { return Ok(None) };
+    let Some(url) = model.twitter_image.as_deref().filter(|u| !u.is_empty()) else {
+        return Ok(None);
+    };
     let id = images::attachment_by_url_linked(page, url).await?;
     if id != 0 {
         return Ok(non_empty(images::twitter_image(page, id).await?));
     }
-    let url = if !(url.starts_with("http") || url.starts_with("//")) && url.starts_with('/') { build_absolute_url(page, url) } else { url.to_owned() };
+    let url = if !(url.starts_with("http") || url.starts_with("//")) && url.starts_with('/') {
+        build_absolute_url(page, url)
+    } else {
+        url.to_owned()
+    };
     Ok(Some(url))
 }

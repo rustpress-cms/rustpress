@@ -32,11 +32,21 @@ fn xml_text(value: &str) -> String {
 fn xml_children(data: &Map<String, Value>) -> String {
     let mut out = String::new();
     for (key, value) in data {
-        let key = if key.parse::<u64>().is_ok() { "oembed" } else { key.as_str() };
+        let key = if key.parse::<u64>().is_ok() {
+            "oembed"
+        } else {
+            key.as_str()
+        };
         match value {
-            Value::Object(inner) => out.push_str(&format!("<{key}>{}</{key}>", xml_children(inner))),
+            Value::Object(inner) => {
+                out.push_str(&format!("<{key}>{}</{key}>", xml_children(inner)))
+            }
             Value::Array(items) => {
-                let inner: Map<String, Value> = items.iter().enumerate().map(|(i, v)| (i.to_string(), v.clone())).collect();
+                let inner: Map<String, Value> = items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i.to_string(), v.clone()))
+                    .collect();
                 out.push_str(&format!("<{key}>{}</{key}>", xml_children(&inner)));
             }
             Value::String(s) => out.push_str(&format!("<{key}>{}</{key}>", xml_text(s))),
@@ -47,7 +57,10 @@ fn xml_children(data: &Map<String, Value>) -> String {
 }
 
 pub(crate) fn xml_of(data: &Map<String, Value>) -> String {
-    format!("<?xml version=\"1.0\"?>\n<oembed>{}</oembed>\n", xml_children(data))
+    format!(
+        "<?xml version=\"1.0\"?>\n<oembed>{}</oembed>\n",
+        xml_children(data)
+    )
 }
 
 impl Rest<'_> {
@@ -57,16 +70,25 @@ impl Rest<'_> {
             return Ok(Err(RestError::missing_params(&["url"])));
         };
         let url = url.to_owned();
-        let format = if params.get("format") == Some("xml") { "xml" } else { "json" };
+        let format = if params.get("format") == Some("xml") {
+            "xml"
+        } else {
+            "json"
+        };
         // `absint( $maxwidth )`: a number, else 0.
-        let maxwidth = params.get("maxwidth").map_or(600, |w| w.trim().parse::<i64>().map_or(0, |n| n.unsigned_abs()));
+        let maxwidth = params.get("maxwidth").map_or(600, |w| {
+            w.trim().parse::<i64>().map_or(0, |n| n.unsigned_abs())
+        });
 
         let id = self.site.url_to_postid(&url).await?;
-        let not_found = || RestError::new("oembed_invalid_url", "Not Found", 404).after_permission_check();
+        let not_found =
+            || RestError::new("oembed_invalid_url", "Not Found", 404).after_permission_check();
         if id == 0 {
             return Ok(Err(not_found()));
         }
-        let Some(post) = self.site.db.post(id).await? else { return Ok(Err(not_found())) };
+        let Some(post) = self.site.db.post(id).await? else {
+            return Ok(Err(not_found()));
+        };
         // `is_post_publicly_viewable()` and `is_post_embeddable()`.
         let public_type = match post.post_type.as_str() {
             "post" | "page" => true,
@@ -81,21 +103,50 @@ impl Rest<'_> {
         let height = ((width as f64 / 16.0 * 9.0).ceil() as u64).max(200);
         let mut data = Map::new();
         data.insert("version".into(), Value::from("1.0"));
-        data.insert("provider_name".into(), Value::from(self.site.settings.blogname.clone()));
+        data.insert(
+            "provider_name".into(),
+            Value::from(self.site.settings.blogname.clone()),
+        );
         data.insert("provider_url".into(), Value::from(self.site.home_url("")));
         let author = self.site.db.user(post.post_author).await?;
-        data.insert("author_name".into(), Value::from(author.as_ref().map_or_else(|| self.site.settings.blogname.clone(), |a| a.display_name.clone())));
-        data.insert("author_url".into(), Value::from(author.as_ref().map_or_else(|| self.site.home_url(""), |a| self.site.author_url(a))));
+        data.insert(
+            "author_name".into(),
+            Value::from(author.as_ref().map_or_else(
+                || self.site.settings.blogname.clone(),
+                |a| a.display_name.clone(),
+            )),
+        );
+        data.insert(
+            "author_url".into(),
+            Value::from(
+                author
+                    .as_ref()
+                    .map_or_else(|| self.site.home_url(""), |a| self.site.author_url(a)),
+            ),
+        );
         data.insert("title".into(), Value::from(the_title_for(self.site, &post)));
         // `get_oembed_response_data_rich()`.
         data.insert("type".into(), Value::from("rich"));
         data.insert("width".into(), Value::from(width));
         data.insert("height".into(), Value::from(height));
-        data.insert("html".into(), Value::from(rustpress_theme::embed::post_embed_html(self.site, &self.theme.wp_root, &post, width, height).await?));
+        data.insert(
+            "html".into(),
+            Value::from(
+                rustpress_theme::embed::post_embed_html(
+                    self.site,
+                    &self.theme.wp_root,
+                    &post,
+                    width,
+                    height,
+                )
+                .await?,
+            ),
+        );
         let env = crate::util::env(self);
         let thumbnail = images::post_thumbnail_id(&env, post.id).await?;
         if thumbnail != 0
-            && let Some((url, w, h)) = images::attachment_image_src_width(&env, thumbnail, width).await?
+            && let Some((url, w, h)) =
+                images::attachment_image_src_width(&env, thumbnail, width).await?
         {
             data.insert("thumbnail_url".into(), Value::from(url));
             data.insert("thumbnail_width".into(), Value::from(w));
@@ -112,6 +163,10 @@ impl Rest<'_> {
 
     /// `GET oembed/1.0/proxy`: only for editors.
     pub(crate) fn oembed_proxy(&self) -> Outcome {
-        Err(RestError::new("rest_forbidden", "Sorry, you are not allowed to make proxied oEmbed requests.", 401))
+        Err(RestError::new(
+            "rest_forbidden",
+            "Sorry, you are not allowed to make proxied oEmbed requests.",
+            401,
+        ))
     }
 }

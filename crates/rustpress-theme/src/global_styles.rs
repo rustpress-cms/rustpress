@@ -2,8 +2,8 @@
 //! prints as `global-styles-inline-css` (a port of the relevant parts of
 //! `WP_Theme_JSON::get_stylesheet`).
 
-use rustpress_blocks::custom_css::process_custom_css;
 use rustpress_blocks::Registry;
+use rustpress_blocks::custom_css::process_custom_css;
 use rustpress_blocks::fluid::fluid_font_size;
 use rustpress_blocks::style_engine::to_kebab_case;
 use serde_json::{Map, Value};
@@ -19,12 +19,21 @@ const PROPERTIES: &[(&str, &[&str])] = &[
     ("background-position", &["background", "backgroundPosition"]),
     ("background-repeat", &["background", "backgroundRepeat"]),
     ("background-size", &["background", "backgroundSize"]),
-    ("background-attachment", &["background", "backgroundAttachment"]),
+    (
+        "background-attachment",
+        &["background", "backgroundAttachment"],
+    ),
     ("border-radius", &["border", "radius"]),
     ("border-top-left-radius", &["border", "radius", "topLeft"]),
     ("border-top-right-radius", &["border", "radius", "topRight"]),
-    ("border-bottom-left-radius", &["border", "radius", "bottomLeft"]),
-    ("border-bottom-right-radius", &["border", "radius", "bottomRight"]),
+    (
+        "border-bottom-left-radius",
+        &["border", "radius", "bottomLeft"],
+    ),
+    (
+        "border-bottom-right-radius",
+        &["border", "radius", "bottomRight"],
+    ),
     ("border-color", &["border", "color"]),
     ("border-width", &["border", "width"]),
     ("border-style", &["border", "style"]),
@@ -85,20 +94,64 @@ struct Preset {
 }
 
 const PRESETS: &[Preset] = &[
-    Preset { path: &["dimensions", "aspectRatios"], value_key: "ratio", var: "aspect-ratio", classes: &[] },
+    Preset {
+        path: &["dimensions", "aspectRatios"],
+        value_key: "ratio",
+        var: "aspect-ratio",
+        classes: &[],
+    },
     Preset {
         path: &["color", "palette"],
         value_key: "color",
         var: "color",
-        classes: &[("color", "color"), ("background-color", "background-color"), ("border-color", "border-color")],
+        classes: &[
+            ("color", "color"),
+            ("background-color", "background-color"),
+            ("border-color", "border-color"),
+        ],
     },
-    Preset { path: &["color", "gradients"], value_key: "gradient", var: "gradient", classes: &[("gradient-background", "background")] },
-    Preset { path: &["typography", "fontSizes"], value_key: "size", var: "font-size", classes: &[("font-size", "font-size")] },
-    Preset { path: &["typography", "fontFamilies"], value_key: "fontFamily", var: "font-family", classes: &[("font-family", "font-family")] },
-    Preset { path: &["spacing", "spacingSizes"], value_key: "size", var: "spacing", classes: &[] },
-    Preset { path: &["shadow", "presets"], value_key: "shadow", var: "shadow", classes: &[] },
-    Preset { path: &["border", "radiusSizes"], value_key: "size", var: "border-radius", classes: &[] },
-    Preset { path: &["dimensions", "dimensionSizes"], value_key: "size", var: "dimension", classes: &[] },
+    Preset {
+        path: &["color", "gradients"],
+        value_key: "gradient",
+        var: "gradient",
+        classes: &[("gradient-background", "background")],
+    },
+    Preset {
+        path: &["typography", "fontSizes"],
+        value_key: "size",
+        var: "font-size",
+        classes: &[("font-size", "font-size")],
+    },
+    Preset {
+        path: &["typography", "fontFamilies"],
+        value_key: "fontFamily",
+        var: "font-family",
+        classes: &[("font-family", "font-family")],
+    },
+    Preset {
+        path: &["spacing", "spacingSizes"],
+        value_key: "size",
+        var: "spacing",
+        classes: &[],
+    },
+    Preset {
+        path: &["shadow", "presets"],
+        value_key: "shadow",
+        var: "shadow",
+        classes: &[],
+    },
+    Preset {
+        path: &["border", "radiusSizes"],
+        value_key: "size",
+        var: "border-radius",
+        classes: &[],
+    },
+    Preset {
+        path: &["dimensions", "dimensionSizes"],
+        value_key: "size",
+        var: "dimension",
+        classes: &[],
+    },
 ];
 
 /// Element selectors (`WP_Theme_JSON::ELEMENTS`) in output order.
@@ -117,19 +170,37 @@ const ELEMENTS: &[(&str, &str)] = &[
         ".wp-element-caption, .wp-block-audio figcaption, .wp-block-embed figcaption, .wp-block-gallery figcaption, .wp-block-image figcaption, .wp-block-table figcaption, .wp-block-video figcaption",
     ),
     ("cite", "cite"),
-    ("textInput", "textarea, input:where([type=email],[type=number],[type=password],[type=search],[type=text],[type=tel],[type=url])"),
+    (
+        "textInput",
+        "textarea, input:where([type=email],[type=number],[type=password],[type=search],[type=text],[type=tel],[type=url])",
+    ),
     ("select", "select"),
 ];
 
-const PSEUDO_ORDER: &[&str] = &[":link", ":any-link", ":visited", ":hover", ":focus", ":focus-visible", ":active"];
+const PSEUDO_ORDER: &[&str] = &[
+    ":link",
+    ":any-link",
+    ":visited",
+    ":hover",
+    ":focus",
+    ":focus-visible",
+    ":active",
+];
 
-const LAYOUT_TYPES: &[(&str, &str)] = &[("default", "is-layout-flow"), ("constrained", "is-layout-constrained"), ("flex", "is-layout-flex"), ("grid", "is-layout-grid")];
+const LAYOUT_TYPES: &[(&str, &str)] = &[
+    ("default", "is-layout-flow"),
+    ("constrained", "is-layout-constrained"),
+    ("flex", "is-layout-flex"),
+    ("grid", "is-layout-grid"),
+];
 
 /// Whether the rules of block `name` belong on a page whose block style handles are `handles` (all without a list;
 /// blocks outside `core/` always).
 fn block_on_page(name: &str, handles: Option<&[String]>) -> bool {
     match (handles, name.strip_prefix("core/")) {
-        (Some(handles), Some(short)) => handles.iter().any(|h| h.strip_prefix("wp-block-") == Some(short)),
+        (Some(handles), Some(short)) => handles
+            .iter()
+            .any(|h| h.strip_prefix("wp-block-") == Some(short)),
         _ => true,
     }
 }
@@ -179,7 +250,11 @@ pub struct GlobalStyles<'a> {
 
 impl<'a> GlobalStyles<'a> {
     pub fn new(json: &'a ThemeJson, registry: &'a Registry) -> Self {
-        Self { json, registry, other_blocks: Vec::new() }
+        Self {
+            json,
+            registry,
+            other_blocks: Vec::new(),
+        }
     }
 
     /// The registered blocks outside `core/`.
@@ -196,9 +271,16 @@ impl<'a> GlobalStyles<'a> {
     /// Block rules are limited to `used_blocks` when given (WordPress only
     /// prints rules for blocks that appear on the page).
     pub fn stylesheet(&self, used_blocks: Option<&[String]>) -> String {
-        let handles: Option<Vec<String>> = used_blocks.map(|names| names.iter().map(|n| format!("wp-block-{}", n.trim_start_matches("core/"))).collect());
-        self.stylesheet_chunks(handles.as_deref()).join("
-")
+        let handles: Option<Vec<String>> = used_blocks.map(|names| {
+            names
+                .iter()
+                .map(|n| format!("wp-block-{}", n.trim_start_matches("core/")))
+                .collect()
+        });
+        self.stylesheet_chunks(handles.as_deref()).join(
+            "
+",
+        )
     }
 
     /// The inline styles of the `global-styles` handle, in order: the main sheet, then one chunk
@@ -220,8 +302,16 @@ impl<'a> GlobalStyles<'a> {
         main.push_str(&self.root_styles(&settings, &styles));
         main.push_str(&self.preset_classes(&settings));
         // The theme's custom CSS comes last.
-        let custom = styles.get("css").and_then(Value::as_str).unwrap_or_default().to_owned();
-        PreparedStyles { main, custom, blocks: self.block_chunk_groups(&settings, &styles) }
+        let custom = styles
+            .get("css")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        PreparedStyles {
+            main,
+            custom,
+            blocks: self.block_chunk_groups(&settings, &styles),
+        }
     }
 
     /// The stylesheets of the block editor settings: `wp_get_global_stylesheet( [ 'variables' ] )`,
@@ -251,14 +341,30 @@ impl<'a> GlobalStyles<'a> {
         let mut sheet = String::from(":where(body) { margin: 0; }");
         sheet.push_str(":where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}");
         sheet.push_str("body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}");
-        sheet.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
+        sheet.push_str(
+            "body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}",
+        );
         sheet.push_str(&self.root_styles(&settings, &styles));
         // Blocks with a default block gap of their own get layout rules for it, in the order of
         // `get_blocks_metadata()`: before the pull quote, whose rule comes from `theme.json`.
         let mut gaps = String::new();
-        for short in ["gallery", "latest-posts", "post-template", "term-template", "columns"] {
-            let Some(block) = self.registry.get(&format!("core/{short}")) else { continue };
-            if let Some(gap) = block.supports.get("spacing").and_then(|s| s.get("blockGap")).and_then(|g| g.get("__experimentalDefault")).and_then(Value::as_str) {
+        for short in [
+            "gallery",
+            "latest-posts",
+            "post-template",
+            "term-template",
+            "columns",
+        ] {
+            let Some(block) = self.registry.get(&format!("core/{short}")) else {
+                continue;
+            };
+            if let Some(gap) = block
+                .supports
+                .get("spacing")
+                .and_then(|s| s.get("blockGap"))
+                .and_then(|g| g.get("__experimentalDefault"))
+                .and_then(Value::as_str)
+            {
                 gaps.push_str(&format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}"));
             }
         }
@@ -289,22 +395,42 @@ impl<'a> GlobalStyles<'a> {
         main.push_str(":where(body) { margin: 0; }");
         main.push_str(":where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}");
         main.push_str("body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}");
-        main.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
+        main.push_str(
+            "body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}",
+        );
         main.push_str(&self.root_styles(&settings, &styles));
         main.push_str(&self.preset_classes(&settings));
-        let mut groups: Vec<(String, Vec<String>)> = self.block_chunk_groups(&settings, &styles).into_iter().filter(|(name, _)| block_on_page(name, handles)).collect();
+        let mut groups: Vec<(String, Vec<String>)> = self
+            .block_chunk_groups(&settings, &styles)
+            .into_iter()
+            .filter(|(name, _)| block_on_page(name, handles))
+            .collect();
         // Blocks with a default block gap of their own (the gallery, the latest posts) get layout rules for it, in
         // their place among the block nodes (the order the blocks were registered in).
         let order = self.registry.registration_order();
         let position = |name: &str| order.iter().position(|n| n == name).unwrap_or(usize::MAX);
         for handle in handles.unwrap_or_default() {
-            let Some(short) = handle.strip_prefix("wp-block-") else { continue };
+            let Some(short) = handle.strip_prefix("wp-block-") else {
+                continue;
+            };
             let name = format!("core/{short}");
-            let Some(block) = self.registry.get(&name) else { continue };
-            let gap = block.supports.get("spacing").and_then(|s| s.get("blockGap")).and_then(|g| g.get("__experimentalDefault")).and_then(Value::as_str);
+            let Some(block) = self.registry.get(&name) else {
+                continue;
+            };
+            let gap = block
+                .supports
+                .get("spacing")
+                .and_then(|s| s.get("blockGap"))
+                .and_then(|g| g.get("__experimentalDefault"))
+                .and_then(Value::as_str);
             if let Some(gap) = gap {
-                let chunk = format!(":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}");
-                let at = groups.iter().position(|(other, _)| position(other) > position(&name)).unwrap_or(groups.len());
+                let chunk = format!(
+                    ":where(.wp-block-{short}.is-layout-flex){{gap: {gap};}}:where(.wp-block-{short}.is-layout-grid){{gap: {gap};}}"
+                );
+                let at = groups
+                    .iter()
+                    .position(|(other, _)| position(other) > position(&name))
+                    .unwrap_or(groups.len());
                 groups.insert(at, (name, vec![chunk]));
             }
         }
@@ -322,7 +448,9 @@ impl<'a> GlobalStyles<'a> {
         for layer in [&self.json.core, &self.json.theme, &self.json.user] {
             let mut node = layer.get("settings");
             if let Some(block) = block {
-                node = node.and_then(|s| s.get("blocks")).and_then(|b| b.get(block));
+                node = node
+                    .and_then(|s| s.get("blocks"))
+                    .and_then(|b| b.get(block));
             }
             for key in settings_path {
                 node = node.and_then(|n| n.get(*key));
@@ -331,12 +459,19 @@ impl<'a> GlobalStyles<'a> {
                 Some(Value::Array(items)) => items.clone(),
                 Some(Value::Object(map)) => {
                     // Origin-keyed form: {"theme": [...], "default": [...]}.
-                    ["default", "theme", "custom"].iter().filter_map(|o| map.get(*o).and_then(Value::as_array)).flatten().cloned().collect()
+                    ["default", "theme", "custom"]
+                        .iter()
+                        .filter_map(|o| map.get(*o).and_then(Value::as_array))
+                        .flatten()
+                        .cloned()
+                        .collect()
                 }
                 _ => continue,
             };
             for item in items {
-                let Some(slug) = item.get("slug").and_then(Value::as_str) else { continue };
+                let Some(slug) = item.get("slug").and_then(Value::as_str) else {
+                    continue;
+                };
                 match merged.iter_mut().find(|(s, _)| s == slug) {
                     Some(slot) => slot.1 = item.clone(),
                     None => merged.push((slug.to_owned(), item.clone())),
@@ -364,14 +499,23 @@ impl<'a> GlobalStyles<'a> {
         for preset in PRESETS {
             for (slug, item) in self.presets(preset.path, None) {
                 if let Some(value) = self.preset_value(preset, &item, settings) {
-                    vars.push_str(&format!("--wp--preset--{}--{}: {};", preset.var, to_kebab_case(&slug), value));
+                    vars.push_str(&format!(
+                        "--wp--preset--{}--{}: {};",
+                        preset.var,
+                        to_kebab_case(&slug),
+                        value
+                    ));
                 }
             }
         }
         if let Some(custom) = settings.get("custom").and_then(Value::as_object) {
             flatten_custom(custom, "--wp--custom", &mut vars);
         }
-        if vars.is_empty() { String::new() } else { format!(":root{{{vars}}}") }
+        if vars.is_empty() {
+            String::new()
+        } else {
+            format!(":root{{{vars}}}")
+        }
     }
 
     /// The block nodes of `get_css_variables()`: per block of `settings.blocks`, the presets under the block's root
@@ -379,7 +523,15 @@ impl<'a> GlobalStyles<'a> {
     /// one, then the block's `custom` values under the root selector; one ruleset per selector, the root selector first.
     fn block_variables(&self, settings: &Value) -> String {
         let mut out = String::new();
-        let Some(blocks) = self.json.merged.get("settings").and_then(|s| s.get("blocks")).and_then(Value::as_object) else { return out };
+        let Some(blocks) = self
+            .json
+            .merged
+            .get("settings")
+            .and_then(|s| s.get("blocks"))
+            .and_then(Value::as_object)
+        else {
+            return out;
+        };
         for (name, node) in blocks {
             let (root, selectors) = self.block_selector(name);
             let mut by_selector: Vec<(String, String)> = vec![(root.clone(), String::new())];
@@ -390,7 +542,10 @@ impl<'a> GlobalStyles<'a> {
                 }
                 let target = match selectors.get(preset.path[0]) {
                     Some(Value::String(feature)) => feature.clone(),
-                    Some(Value::Object(feature)) => feature.get("root").and_then(Value::as_str).map_or_else(|| root.clone(), str::to_owned),
+                    Some(Value::Object(feature)) => feature
+                        .get("root")
+                        .and_then(Value::as_str)
+                        .map_or_else(|| root.clone(), str::to_owned),
                     _ => root.clone(),
                 };
                 let index = match by_selector.iter().position(|(s, _)| *s == target) {
@@ -402,7 +557,12 @@ impl<'a> GlobalStyles<'a> {
                 };
                 for (slug, item) in items {
                     if let Some(value) = self.preset_value(preset, &item, settings) {
-                        by_selector[index].1.push_str(&format!("--wp--preset--{}--{}: {};", preset.var, to_kebab_case(&slug), value));
+                        by_selector[index].1.push_str(&format!(
+                            "--wp--preset--{}--{}: {};",
+                            preset.var,
+                            to_kebab_case(&slug),
+                            value
+                        ));
                     }
                 }
             }
@@ -422,10 +582,21 @@ impl<'a> GlobalStyles<'a> {
     /// whose classes are prefixed with `:where(<block selector>)`.
     fn preset_classes(&self, settings: &Value) -> String {
         let mut out = String::new();
-        let blocks = self.json.merged.get("settings").and_then(|s| s.get("blocks")).and_then(Value::as_object);
-        let nodes = std::iter::once(None).chain(blocks.into_iter().flat_map(|b| b.keys().map(|k| Some(k.as_str()))));
+        let blocks = self
+            .json
+            .merged
+            .get("settings")
+            .and_then(|s| s.get("blocks"))
+            .and_then(Value::as_object);
+        let nodes = std::iter::once(None).chain(
+            blocks
+                .into_iter()
+                .flat_map(|b| b.keys().map(|k| Some(k.as_str()))),
+        );
         for block in nodes {
-            let prefix = block.map(|name| format!(":where({})", self.block_selector(name).0)).unwrap_or_default();
+            let prefix = block
+                .map(|name| format!(":where({})", self.block_selector(name).0))
+                .unwrap_or_default();
             for preset in PRESETS {
                 for (suffix, property) in preset.classes {
                     for (slug, item) in self.presets(preset.path, block) {
@@ -446,8 +617,14 @@ impl<'a> GlobalStyles<'a> {
     fn root_rules(&self, settings: &Value, styles: &Value) -> String {
         let mut css = String::new();
         let layout = settings.get("layout");
-        let content = layout.and_then(|l| l.get("contentSize")).and_then(Value::as_str).filter(|s| !s.is_empty());
-        let wide = layout.and_then(|l| l.get("wideSize")).and_then(Value::as_str).filter(|s| !s.is_empty());
+        let content = layout
+            .and_then(|l| l.get("contentSize"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let wide = layout
+            .and_then(|l| l.get("wideSize"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
         if content.is_some() || wide.is_some() {
             css.push_str(":root {");
             if let Some(c) = content {
@@ -460,7 +637,10 @@ impl<'a> GlobalStyles<'a> {
         }
         css.push_str(":where(body) { margin: 0; }");
 
-        let aware = settings.get("useRootPaddingAwareAlignments").and_then(Value::as_bool).unwrap_or(false);
+        let aware = settings
+            .get("useRootPaddingAwareAlignments")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if aware {
             css.push_str(".wp-site-blocks { padding-top: var(--wp--style--root--padding-top); padding-bottom: var(--wp--style--root--padding-bottom); }");
             css.push_str(".has-global-padding { padding-right: var(--wp--style--root--padding-right); padding-left: var(--wp--style--root--padding-left); }");
@@ -472,10 +652,18 @@ impl<'a> GlobalStyles<'a> {
         css.push_str(".wp-site-blocks > .alignright { float: right; margin-left: 2em; }");
         css.push_str(".wp-site-blocks > .aligncenter { justify-content: center; margin-left: auto; margin-right: auto; }");
 
-        let has_gap_support = settings.get("spacing").and_then(|s| s.get("blockGap")).is_some_and(|v| !v.is_null());
-        let gap = styles.get("spacing").and_then(|s| s.get("blockGap")).and_then(Value::as_str);
+        let has_gap_support = settings
+            .get("spacing")
+            .and_then(|s| s.get("blockGap"))
+            .is_some_and(|v| !v.is_null());
+        let gap = styles
+            .get("spacing")
+            .and_then(|s| s.get("blockGap"))
+            .and_then(Value::as_str);
         if let (true, Some(gap)) = (has_gap_support, gap) {
-            css.push_str(&format!(":where(.wp-site-blocks) > * {{ margin-block-start: {gap}; margin-block-end: 0; }}"));
+            css.push_str(&format!(
+                ":where(.wp-site-blocks) > * {{ margin-block-start: {gap}; margin-block-end: 0; }}"
+            ));
             css.push_str(":where(.wp-site-blocks) > :first-child { margin-block-start: 0; }");
             css.push_str(":where(.wp-site-blocks) > :last-child { margin-block-end: 0; }");
             css.push_str(&format!(":root {{ --wp--style--block-gap: {gap}; }}"));
@@ -492,17 +680,43 @@ impl<'a> GlobalStyles<'a> {
 
     fn root_styles(&self, settings: &Value, styles: &Value) -> String {
         let mut css = String::new();
-        let aware = settings.get("useRootPaddingAwareAlignments").and_then(Value::as_bool).unwrap_or(false);
+        let aware = settings
+            .get("useRootPaddingAwareAlignments")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         // The root node (`body`) without elements/blocks.
         let mut declarations = self.declarations(styles, settings, aware);
         if aware {
-            let padding = styles.get("spacing").and_then(|s| s.get("padding")).and_then(Value::as_object);
-            let side = |name: &str| padding.and_then(|p| p.get(name)).and_then(Value::as_str).unwrap_or("0px").to_owned();
+            let padding = styles
+                .get("spacing")
+                .and_then(|s| s.get("padding"))
+                .and_then(Value::as_object);
+            let side = |name: &str| {
+                padding
+                    .and_then(|p| p.get(name))
+                    .and_then(Value::as_str)
+                    .unwrap_or("0px")
+                    .to_owned()
+            };
             // In `PROPERTIES_METADATA` the variables come right after `padding-left`.
-            let after_padding = PROPERTIES.iter().position(|(p, _)| *p == "padding-left").map_or(PROPERTIES.len(), |i| i + 1);
-            let at = declarations.iter().position(|(p, _)| PROPERTIES.iter().position(|(q, _)| q == p).is_some_and(|i| i >= after_padding)).unwrap_or(declarations.len());
-            let vars: Vec<(String, String)> = ["top", "right", "bottom", "left"].iter().map(|name| (format!("--wp--style--root--padding-{name}"), side(name))).collect();
+            let after_padding = PROPERTIES
+                .iter()
+                .position(|(p, _)| *p == "padding-left")
+                .map_or(PROPERTIES.len(), |i| i + 1);
+            let at = declarations
+                .iter()
+                .position(|(p, _)| {
+                    PROPERTIES
+                        .iter()
+                        .position(|(q, _)| q == p)
+                        .is_some_and(|i| i >= after_padding)
+                })
+                .unwrap_or(declarations.len());
+            let vars: Vec<(String, String)> = ["top", "right", "bottom", "left"]
+                .iter()
+                .map(|name| (format!("--wp--style--root--padding-{name}"), side(name)))
+                .collect();
             declarations.splice(at..at, vars);
         }
         if !declarations.is_empty() {
@@ -512,33 +726,71 @@ impl<'a> GlobalStyles<'a> {
         // Root elements.
         if let Some(elements) = styles.get("elements").and_then(Value::as_object) {
             for (name, selector) in ELEMENTS {
-                let Some(node) = elements.get(*name).filter(|n| n.is_object()) else { continue };
-                css.push_str(&self.element_rules(node, selector, settings, name_is_plain(name), None));
+                let Some(node) = elements.get(*name).filter(|n| n.is_object()) else {
+                    continue;
+                };
+                css.push_str(&self.element_rules(
+                    node,
+                    selector,
+                    settings,
+                    name_is_plain(name),
+                    None,
+                ));
             }
         }
         css
     }
 
     /// Rules for one element node: its own declarations, pseudo-classes and nested `css`.
-    fn element_rules(&self, node: &Value, selector: &str, settings: &Value, plain: bool, scope: Option<&str>) -> String {
+    fn element_rules(
+        &self,
+        node: &Value,
+        selector: &str,
+        settings: &Value,
+        plain: bool,
+        scope: Option<&str>,
+    ) -> String {
         let scoped = |sel: &str| match scope {
-            Some(scope) => sel.split(',').map(|s| format!("{scope} {}", s.trim())).collect::<Vec<_>>().join(", "),
+            Some(scope) => sel
+                .split(',')
+                .map(|s| format!("{scope} {}", s.trim()))
+                .collect::<Vec<_>>()
+                .join(", "),
             None => sel.to_owned(),
         };
-        let wrap = |sel: String| if plain && scope.is_none() { sel } else { format!(":root :where({sel})") };
+        let wrap = |sel: String| {
+            if plain && scope.is_none() {
+                sel
+            } else {
+                format!(":root :where({sel})")
+            }
+        };
         let mut css = String::new();
         let declarations = self.declarations(node, settings, false);
         if !declarations.is_empty() {
-            css.push_str(&format!("{}{{{}}}", wrap(scoped(selector)), ruleset(&declarations)));
+            css.push_str(&format!(
+                "{}{{{}}}",
+                wrap(scoped(selector)),
+                ruleset(&declarations)
+            ));
         }
         for pseudo in PSEUDO_ORDER {
-            let Some(pseudo_node) = node.get(*pseudo) else { continue };
+            let Some(pseudo_node) = node.get(*pseudo) else {
+                continue;
+            };
             let declarations = self.declarations(pseudo_node, settings, false);
             if declarations.is_empty() {
                 continue;
             }
-            let with_pseudo = scoped(selector).split(',').map(|s| format!("{}{pseudo}", s.trim())).collect::<Vec<_>>().join(", ");
-            css.push_str(&format!(":root :where({with_pseudo}){{{}}}", ruleset(&declarations)));
+            let with_pseudo = scoped(selector)
+                .split(',')
+                .map(|s| format!("{}{pseudo}", s.trim()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            css.push_str(&format!(
+                ":root :where({with_pseudo}){{{}}}",
+                ruleset(&declarations)
+            ));
         }
         if let Some(extra) = node.get("css").and_then(Value::as_str) {
             css.push_str(&process_custom_css(extra, &scoped(selector)));
@@ -548,12 +800,20 @@ impl<'a> GlobalStyles<'a> {
 
     fn block_selector(&self, name: &str) -> (String, Map<String, Value>) {
         let bt = self.registry.get(name);
-        let selectors = bt.as_ref().and_then(|b| b.selectors.as_object().cloned()).unwrap_or_default();
+        let selectors = bt
+            .as_ref()
+            .and_then(|b| b.selectors.as_object().cloned())
+            .unwrap_or_default();
         let root = selectors
             .get("root")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .or_else(|| bt.as_ref().and_then(|b| b.support(&["__experimentalSelector"])).and_then(Value::as_str).map(str::to_owned))
+            .or_else(|| {
+                bt.as_ref()
+                    .and_then(|b| b.support(&["__experimentalSelector"]))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
             .unwrap_or_else(|| block_class(name));
         // `supports.<feature>.__experimentalSelector` is a selector relative to the block (calendar: `table, th`).
         // Blocks that declare `selectors` (API version 2) use those only.
@@ -564,9 +824,16 @@ impl<'a> GlobalStyles<'a> {
                 if selectors.contains_key(feature) {
                     continue;
                 }
-                if let Some(relative) = bt.support(&[feature, "__experimentalSelector"]).and_then(Value::as_str) {
+                if let Some(relative) = bt
+                    .support(&[feature, "__experimentalSelector"])
+                    .and_then(Value::as_str)
+                {
                     let block = block_class(name);
-                    let scoped = relative.split(',').map(|part| format!("{block} {}", part.trim())).collect::<Vec<_>>().join(", ");
+                    let scoped = relative
+                        .split(',')
+                        .map(|part| format!("{block} {}", part.trim()))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     selectors.insert(feature.to_owned(), Value::from(scoped));
                 }
             }
@@ -576,27 +843,47 @@ impl<'a> GlobalStyles<'a> {
 
     /// The block nodes of `styles.blocks` as separate chunks: the block itself, then each element
     /// and each pseudo-class of an element (`get_styles_block_nodes()`).
-    fn block_chunks(&self, settings: &Value, styles: &Value, handles: Option<&[String]>) -> Vec<String> {
-        self.block_chunk_groups(settings, styles).into_iter().filter(|(name, _)| block_on_page(name, handles)).flat_map(|(_, chunks)| chunks).collect()
+    fn block_chunks(
+        &self,
+        settings: &Value,
+        styles: &Value,
+        handles: Option<&[String]>,
+    ) -> Vec<String> {
+        self.block_chunk_groups(settings, styles)
+            .into_iter()
+            .filter(|(name, _)| block_on_page(name, handles))
+            .flat_map(|(_, chunks)| chunks)
+            .collect()
     }
 
     /// The chunks of every styled block, grouped by block name in the order of `styles.blocks`.
     fn block_chunk_groups(&self, settings: &Value, styles: &Value) -> Vec<(String, Vec<String>)> {
         let mut groups = Vec::new();
-        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else { return groups };
+        let Some(blocks) = styles.get("blocks").and_then(Value::as_object) else {
+            return groups;
+        };
         for (name, node) in blocks {
-            if !node.is_object() || (!name.starts_with("core/") && !self.other_blocks.contains(name)) {
+            if !node.is_object()
+                || (!name.starts_with("core/") && !self.other_blocks.contains(name))
+            {
                 continue;
             }
             let (selector, _) = self.block_selector(name);
             let mut chunks = vec![self.block_rules(name, node, settings, None)];
             if let Some(elements) = node.get("elements").and_then(Value::as_object) {
                 for (element, element_node) in elements {
-                    let Some((_, element_selector)) = ELEMENTS.iter().find(|(n, _)| n == element) else { continue };
+                    let Some((_, element_selector)) = ELEMENTS.iter().find(|(n, _)| n == element)
+                    else {
+                        continue;
+                    };
                     if !element_node.is_object() {
                         continue;
                     }
-                    let combined = element_selector.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ");
+                    let combined = element_selector
+                        .split(',')
+                        .map(|s| format!("{selector} {}", s.trim()))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     chunks.extend(self.element_chunks(element_node, &combined, settings));
                 }
             }
@@ -611,36 +898,60 @@ impl<'a> GlobalStyles<'a> {
         let mut base = String::new();
         let declarations = self.declarations(node, settings, false);
         if !declarations.is_empty() {
-            base.push_str(&format!(":root :where({selector}){{{}}}", ruleset(&declarations)));
+            base.push_str(&format!(
+                ":root :where({selector}){{{}}}",
+                ruleset(&declarations)
+            ));
         }
         if let Some(extra) = node.get("css").and_then(Value::as_str) {
             base.push_str(&process_custom_css(extra, selector));
         }
         chunks.push(base);
         for pseudo in PSEUDO_ORDER {
-            let Some(pseudo_node) = node.get(*pseudo) else { continue };
+            let Some(pseudo_node) = node.get(*pseudo) else {
+                continue;
+            };
             let declarations = self.declarations(pseudo_node, settings, false);
             if declarations.is_empty() {
                 continue;
             }
-            let with_pseudo = selector.split(',').map(|s| format!("{}{pseudo}", s.trim())).collect::<Vec<_>>().join(", ");
-            chunks.push(format!(":root :where({with_pseudo}){{{}}}", ruleset(&declarations)));
+            let with_pseudo = selector
+                .split(',')
+                .map(|s| format!("{}{pseudo}", s.trim()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            chunks.push(format!(
+                ":root :where({with_pseudo}){{{}}}",
+                ruleset(&declarations)
+            ));
         }
         chunks
     }
 
     /// The rules of the block itself: declarations by feature selector, block gap layouts and custom CSS.
-    fn block_rules(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
+    fn block_rules(
+        &self,
+        name: &str,
+        node: &Value,
+        settings: &Value,
+        scope: Option<&str>,
+    ) -> String {
         let mut css = String::new();
         let (root_selector, feature_selectors) = self.block_selector(name);
         let selector_root = root_selector.clone();
-        let selector = scope.map(|s| scoped_selector(s, &root_selector)).unwrap_or(root_selector);
+        let selector = scope
+            .map(|s| scoped_selector(s, &root_selector))
+            .unwrap_or(root_selector);
 
         // Declarations grouped by the selector of their feature.
         let declarations = self.declarations_with_features(node, settings);
         let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
         for (feature, property, value) in declarations {
-            let own = feature_selectors.get(&feature).and_then(|s| s.as_str().map(str::to_owned).or_else(|| s.get("root").and_then(Value::as_str).map(str::to_owned)));
+            let own = feature_selectors.get(&feature).and_then(|s| {
+                s.as_str()
+                    .map(str::to_owned)
+                    .or_else(|| s.get("root").and_then(Value::as_str).map(str::to_owned))
+            });
             let target = match (scope, own) {
                 // A variation's instance class goes right behind the first compound of each feature selector.
                 (Some(scope), Some(own)) => variation_selector(scope, &own),
@@ -657,26 +968,42 @@ impl<'a> GlobalStyles<'a> {
         // `get_styles_for_block()`: the rules of the general selector, then the block gap layouts, then the feature
         // selectors' rules. (A variation's rules keep the order of their first declaration.)
         let feature_rules: Vec<(String, Vec<(String, String)>)> = if scope.is_none() {
-            let (general, features): (Vec<_>, Vec<_>) = groups.into_iter().partition(|(target, _)| *target == selector);
+            let (general, features): (Vec<_>, Vec<_>) = groups
+                .into_iter()
+                .partition(|(target, _)| *target == selector);
             groups = general;
             features
         } else {
             Vec::new()
         };
         for (target, declarations) in groups {
-            css.push_str(&format!(":root :where({target}){{{}}}", ruleset(&declarations)));
+            css.push_str(&format!(
+                ":root :where({target}){{{}}}",
+                ruleset(&declarations)
+            ));
         }
 
         // Block gap becomes layout rules for the block's layout classes.
-        if let Some(gap) = node.get("spacing").and_then(|s| s.get("blockGap")).and_then(Value::as_str) {
+        if let Some(gap) = node
+            .get("spacing")
+            .and_then(|s| s.get("blockGap"))
+            .and_then(Value::as_str)
+        {
             let class_base = block_class(name);
             let base = class_base.trim_start_matches('.');
             for (kind, class) in LAYOUT_TYPES {
-                css.push_str(&layout_spacing_rules(kind, &format!(".{base}-{class}"), gap));
+                css.push_str(&layout_spacing_rules(
+                    kind,
+                    &format!(".{base}-{class}"),
+                    gap,
+                ));
             }
         }
         for (target, declarations) in feature_rules {
-            css.push_str(&format!(":root :where({target}){{{}}}", ruleset(&declarations)));
+            css.push_str(&format!(
+                ":root :where({target}){{{}}}",
+                ruleset(&declarations)
+            ));
         }
         if let Some(extra) = node.get("css").and_then(Value::as_str) {
             css.push_str(&process_custom_css(extra, &selector));
@@ -686,14 +1013,28 @@ impl<'a> GlobalStyles<'a> {
 
     /// All rules for one block node of `styles.blocks`: the block and its elements. `scope` replaces the
     /// block selector (used for style variations).
-    pub fn block_node(&self, name: &str, node: &Value, settings: &Value, scope: Option<&str>) -> String {
+    pub fn block_node(
+        &self,
+        name: &str,
+        node: &Value,
+        settings: &Value,
+        scope: Option<&str>,
+    ) -> String {
         let mut css = self.block_rules(name, node, settings, scope);
         let (root_selector, _) = self.block_selector(name);
-        let selector = scope.map(|s| scoped_selector(s, &root_selector)).unwrap_or(root_selector);
+        let selector = scope
+            .map(|s| scoped_selector(s, &root_selector))
+            .unwrap_or(root_selector);
         if let Some(elements) = node.get("elements").and_then(Value::as_object) {
             for (element, element_selector) in ELEMENTS {
-                let Some(element_node) = elements.get(*element).filter(|n| n.is_object()) else { continue };
-                let combined = element_selector.split(',').map(|s| format!("{selector} {}", s.trim())).collect::<Vec<_>>().join(", ");
+                let Some(element_node) = elements.get(*element).filter(|n| n.is_object()) else {
+                    continue;
+                };
+                let combined = element_selector
+                    .split(',')
+                    .map(|s| format!("{selector} {}", s.trim()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 css.push_str(&self.element_rules(element_node, &combined, settings, false, None));
             }
         }
@@ -709,7 +1050,9 @@ impl<'a> GlobalStyles<'a> {
         let blocks = data.as_object_mut().and_then(|o| o.remove("blocks"));
         if let Some(Value::Object(elements)) = elements {
             for (name, selector) in ELEMENTS {
-                let Some(node) = elements.get(*name).filter(|n| n.is_object()) else { continue };
+                let Some(node) = elements.get(*name).filter(|n| n.is_object()) else {
+                    continue;
+                };
                 css.push_str(&self.element_rules(node, selector, &settings, false, Some(scope)));
             }
         }
@@ -728,16 +1071,31 @@ impl<'a> GlobalStyles<'a> {
 
     // ------------------------------------------------------- declarations
 
-    fn declarations(&self, node: &Value, settings: &Value, aware_root: bool) -> Vec<(String, String)> {
+    fn declarations(
+        &self,
+        node: &Value,
+        settings: &Value,
+        aware_root: bool,
+    ) -> Vec<(String, String)> {
         self.declarations_with_features(node, settings)
             .into_iter()
-            .filter(|(_, property, _)| !(aware_root && matches!(property.as_str(), "padding-top" | "padding-right" | "padding-bottom" | "padding-left")))
+            .filter(|(_, property, _)| {
+                !(aware_root
+                    && matches!(
+                        property.as_str(),
+                        "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
+                    ))
+            })
             .map(|(_, p, v)| (p, v))
             .collect()
     }
 
     /// `(feature, property, value)` for every property set on the node.
-    fn declarations_with_features(&self, node: &Value, settings: &Value) -> Vec<(String, String, String)> {
+    fn declarations_with_features(
+        &self,
+        node: &Value,
+        settings: &Value,
+    ) -> Vec<(String, String, String)> {
         let mut out = Vec::new();
         for (property, path) in PROPERTIES {
             let mut current = Some(node);
@@ -750,7 +1108,11 @@ impl<'a> GlobalStyles<'a> {
                 Value::Number(n) => n.to_string(),
                 _ => continue,
             };
-            let text = if *property == "font-size" && !text.starts_with("var(") && !text.starts_with("calc(") && !text.starts_with("clamp(") {
+            let text = if *property == "font-size"
+                && !text.starts_with("var(")
+                && !text.starts_with("calc(")
+                && !text.starts_with("clamp(")
+            {
                 fluid_font_size(&text, None, settings)
             } else {
                 text
@@ -784,8 +1146,12 @@ fn variation_selector(class: &str, selector: &str) -> String {
         .split(',')
         .map(|part| {
             let part = part.trim();
-            let start = part.find(|c: char| !(c.is_whitespace() || c == ':')).unwrap_or(part.len());
-            let end = part[start..].find(|c: char| c.is_whitespace() || c == ':').map_or(part.len(), |i| start + i);
+            let start = part
+                .find(|c: char| !(c.is_whitespace() || c == ':'))
+                .unwrap_or(part.len());
+            let end = part[start..]
+                .find(|c: char| c.is_whitespace() || c == ':')
+                .map_or(part.len(), |i| start + i);
             format!("{}{class}{}", &part[..end], &part[end..])
         })
         .collect::<Vec<_>>()
@@ -794,12 +1160,19 @@ fn variation_selector(class: &str, selector: &str) -> String {
 /// The selector of a block's own rules inside a variation: the instance class joins the first compound of the
 /// block selector (`.wp-block-group.is-style-x`); nested blocks are scoped by a complete selector already.
 fn scoped_selector(scope: &str, root_selector: &str) -> String {
-    if scope.starts_with(".is-style-") && !scope.contains(' ') { variation_selector(scope, root_selector) } else { scope.to_owned() }
+    if scope.starts_with(".is-style-") && !scope.contains(' ') {
+        variation_selector(scope, root_selector)
+    } else {
+        scope.to_owned()
+    }
 }
 
 /// `prop: value;prop: value;`
 fn ruleset(declarations: &[(String, String)]) -> String {
-    declarations.iter().map(|(p, v)| format!("{p}: {v};")).collect()
+    declarations
+        .iter()
+        .map(|(p, v)| format!("{p}: {v};"))
+        .collect()
 }
 
 fn flatten_custom(map: &Map<String, Value>, prefix: &str, out: &mut String) {
@@ -831,9 +1204,15 @@ fn layout_spacing_rules(kind: &str, selector: &str, gap: &str) -> String {
 fn base_layout_styles() -> String {
     let mut css = String::new();
     for class in ["is-layout-flow", "is-layout-constrained"] {
-        css.push_str(&format!(".{class} > .alignleft{{float: left;margin-inline-start: 0;margin-inline-end: 2em;}}"));
-        css.push_str(&format!(".{class} > .alignright{{float: right;margin-inline-start: 2em;margin-inline-end: 0;}}"));
-        css.push_str(&format!(".{class} > .aligncenter{{margin-left: auto !important;margin-right: auto !important;}}"));
+        css.push_str(&format!(
+            ".{class} > .alignleft{{float: left;margin-inline-start: 0;margin-inline-end: 2em;}}"
+        ));
+        css.push_str(&format!(
+            ".{class} > .alignright{{float: right;margin-inline-start: 2em;margin-inline-end: 0;}}"
+        ));
+        css.push_str(&format!(
+            ".{class} > .aligncenter{{margin-left: auto !important;margin-right: auto !important;}}"
+        ));
         if class == "is-layout-constrained" {
             css.push_str(".is-layout-constrained > :where(:not(.alignleft):not(.alignright):not(.alignfull)){max-width: var(--wp--style--global--content-size);margin-left: auto !important;margin-right: auto !important;}");
             css.push_str(".is-layout-constrained > .alignwide{max-width: var(--wp--style--global--wide-size);}");
@@ -843,7 +1222,6 @@ fn base_layout_styles() -> String {
     css.push_str("body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}");
     css
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -855,18 +1233,33 @@ mod tests {
     fn fluid_sizes_use_the_wide_size_as_maximum_viewport() {
         let settings = json!({"typography": {"fluid": true}, "layout": {"wideSize": "1340px"}});
         let fluid = json!({"min": "1rem", "max": "1.125rem"});
-        assert_eq!(fluid_font_size("1rem", Some(&fluid), &settings), "clamp(1rem, 1rem + ((1vw - 0.2rem) * 0.196), 1.125rem)");
+        assert_eq!(
+            fluid_font_size("1rem", Some(&fluid), &settings),
+            "clamp(1rem, 1rem + ((1vw - 0.2rem) * 0.196), 1.125rem)"
+        );
         let fluid = json!({"min": "1.125rem", "max": "1.375rem"});
-        assert_eq!(fluid_font_size("1.38rem", Some(&fluid), &settings), "clamp(1.125rem, 1.125rem + ((1vw - 0.2rem) * 0.392), 1.375rem)");
+        assert_eq!(
+            fluid_font_size("1.38rem", Some(&fluid), &settings),
+            "clamp(1.125rem, 1.125rem + ((1vw - 0.2rem) * 0.392), 1.375rem)"
+        );
         let fluid = json!({"min": "2.15rem", "max": "3rem"});
-        assert_eq!(fluid_font_size("2.15rem", Some(&fluid), &settings), "clamp(2.15rem, 2.15rem + ((1vw - 0.2rem) * 1.333), 3rem)");
+        assert_eq!(
+            fluid_font_size("2.15rem", Some(&fluid), &settings),
+            "clamp(2.15rem, 2.15rem + ((1vw - 0.2rem) * 1.333), 3rem)"
+        );
     }
 
     #[test]
     fn fluid_can_be_switched_off_per_size() {
         let settings = json!({"typography": {"fluid": true}});
-        assert_eq!(fluid_font_size("0.875rem", Some(&json!(false)), &settings), "0.875rem");
-        assert_eq!(fluid_font_size("1rem", None, &json!({"typography": {}})), "1rem");
+        assert_eq!(
+            fluid_font_size("0.875rem", Some(&json!(false)), &settings),
+            "0.875rem"
+        );
+        assert_eq!(
+            fluid_font_size("1rem", None, &json!({"typography": {}})),
+            "1rem"
+        );
     }
 
     #[test]
@@ -878,13 +1271,22 @@ mod tests {
 
     #[test]
     fn custom_css_is_scoped_like_wordpress() {
-        assert_eq!(process_custom_css("& li{margin-top: 0.5rem;}", ".wp-block-list"), ":root :where(.wp-block-list li){margin-top: 0.5rem;}");
         assert_eq!(
-            process_custom_css("&.has-text-align-right { border-width: 0 2px 0 0; } &.has-text-align-center { border-width: 0; }", ".q"),
+            process_custom_css("& li{margin-top: 0.5rem;}", ".wp-block-list"),
+            ":root :where(.wp-block-list li){margin-top: 0.5rem;}"
+        );
+        assert_eq!(
+            process_custom_css(
+                "&.has-text-align-right { border-width: 0 2px 0 0; } &.has-text-align-center { border-width: 0; }",
+                ".q"
+            ),
             ":root :where(.q.has-text-align-right ){border-width: 0 2px 0 0;}:root :where(.q.has-text-align-center ){border-width: 0;}"
         );
         assert_eq!(
-            process_custom_css("& textarea, input:not([type=submit]){a:b;} & label {c:d; }", ".f"),
+            process_custom_css(
+                "& textarea, input:not([type=submit]){a:b;} & label {c:d; }",
+                ".f"
+            ),
             ":root :where(.f textarea, .f input:not([type=submit])){a:b;}:root :where(.f label){c:d;}"
         );
     }
@@ -895,7 +1297,10 @@ mod tests {
             layout_spacing_rules("default", ".is-layout-flow", "1.2rem"),
             ":root :where(.is-layout-flow) > :first-child{margin-block-start: 0;}:root :where(.is-layout-flow) > :last-child{margin-block-end: 0;}:root :where(.is-layout-flow) > *{margin-block-start: 1.2rem;margin-block-end: 0;}"
         );
-        assert_eq!(layout_spacing_rules("flex", ".is-layout-flex", "1rem"), ":root :where(.is-layout-flex){gap: 1rem;}");
+        assert_eq!(
+            layout_spacing_rules("flex", ".is-layout-flex", "1rem"),
+            ":root :where(.is-layout-flex){gap: 1rem;}"
+        );
     }
 
     #[test]
@@ -906,8 +1311,17 @@ mod tests {
 
     #[test]
     fn variation_classes_follow_the_first_compound_selector() {
-        assert_eq!(variation_selector(".is-style-r--2", ".wp-block-image img, .wp-block-image .crop"), ".wp-block-image.is-style-r--2 img, .wp-block-image.is-style-r--2 .crop");
-        assert_eq!(variation_selector(".is-style-x", ".wp-block-button:hover"), ".wp-block-button.is-style-x:hover");
+        assert_eq!(
+            variation_selector(
+                ".is-style-r--2",
+                ".wp-block-image img, .wp-block-image .crop"
+            ),
+            ".wp-block-image.is-style-r--2 img, .wp-block-image.is-style-r--2 .crop"
+        );
+        assert_eq!(
+            variation_selector(".is-style-x", ".wp-block-button:hover"),
+            ".wp-block-button.is-style-x:hover"
+        );
     }
 
     #[test]
@@ -917,7 +1331,14 @@ mod tests {
             process_custom_css("&.a, .b .c{x:y;}", ".q"),
             ":root :where(.q.a, .b .c){x:y;}"
         );
-        assert_eq!(process_custom_css("& li::before{a:b;}", ".l"), ":root :where(.l li)::before{a:b;}");
+        assert_eq!(
+            process_custom_css("& li::before{a:b;}", ".l"),
+            ":root :where(.l li)::before{a:b;}"
+        );
         // Text without braces applies to the block itself, even when it is only whitespace.
-        assert_eq!(process_custom_css(" &:not(.w){width:1px}", ".s"), ":root :where(.s){}:root :where(.s:not(.w)){width:1px}");
-    }}
+        assert_eq!(
+            process_custom_css(" &:not(.w){width:1px}", ".s"),
+            ":root :where(.s){}:root :where(.s:not(.w)){width:1px}"
+        );
+    }
+}

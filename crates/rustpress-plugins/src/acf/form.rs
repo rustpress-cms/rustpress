@@ -41,22 +41,55 @@ fn texts(site: &Site) -> Vec<(&'static str, String)> {
         Some(slot) => slot.1 = value,
         None => out.push((key, value)),
     };
-    for text in ["Are you sure?", "Yes", "No", "Remove", "Cancel", "Close modal", "The changes you made will be lost if you navigate away from this page"] {
+    for text in [
+        "Are you sure?",
+        "Yes",
+        "No",
+        "Remove",
+        "Cancel",
+        "Close modal",
+        "The changes you made will be lost if you navigate away from this page",
+    ] {
         add(text, esc_tr(site, text));
     }
     add("Toggle panel", tr(site, "Toggle panel"));
-    for text in ["Validation successful", "Validation failed", "1 field requires attention", "%d fields require attention", "An ACF Block on this page requires attention before you can save.", "Edit field group"] {
+    for text in [
+        "Validation successful",
+        "Validation failed",
+        "1 field requires attention",
+        "%d fields require attention",
+        "An ACF Block on this page requires attention before you can save.",
+        "Edit field group",
+    ] {
         add(text, esc_tr(site, text));
     }
     // The field types (`acf/input/admin_enqueue_scripts`): image, file, relationship, Google Map.
-    for text in ["Select Image", "Edit Image", "Update Image", "All images", "Select File", "Edit File", "Update File", "Maximum values reached ( {max} values )", "Loading", "No matches found", "Sorry, this browser does not support geolocation"] {
+    for text in [
+        "Select Image",
+        "Edit Image",
+        "Update Image",
+        "All images",
+        "Select File",
+        "Edit File",
+        "Update File",
+        "Maximum values reached ( {max} values )",
+        "Loading",
+        "No matches found",
+        "Sorry, this browser does not support geolocation",
+    ] {
         add(text, tr(site, text));
     }
     // `ACF_Media::enqueue_scripts()` on `acf/enqueue_scripts`.
     add("Select.verb", trx(site, "Select", "verb"));
     add("Edit.verb", trx(site, "Edit", "verb"));
     add("Update.verb", trx(site, "Update", "verb"));
-    for text in ["Uploaded to this post", "Expand Details", "Collapse Details", "Restricted", "All images"] {
+    for text in [
+        "Uploaded to this post",
+        "Expand Details",
+        "Collapse Details",
+        "Restricted",
+        "All images",
+    ] {
         add(text, tr(site, text));
     }
     out
@@ -74,13 +107,24 @@ fn localized_texts(site: &Site, extra: &[(&'static str, String)]) -> Option<Stri
     let mut map = Map::new();
     for (key, value) in all {
         if key.replace(".verb", "") != value {
-            map.insert(key.to_owned(), Json::String(rustpress_core::formatting::html_entity_decode(&value)));
+            map.insert(
+                key.to_owned(),
+                Json::String(rustpress_core::formatting::html_entity_decode(&value)),
+            );
         }
     }
     if map.is_empty() {
         return None;
     }
-    let json = rustpress_blocks::php_json::encode_with(&Json::Object(map), rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false }).replace('<', "\\u003C").replace('>', "\\u003E");
+    let json = rustpress_blocks::php_json::encode_with(
+        &Json::Object(map),
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    )
+    .replace('<', "\\u003C")
+    .replace('>', "\\u003E");
     Some(format!("var acfL10n = {json};"))
 }
 
@@ -91,34 +135,135 @@ pub(super) fn enqueue(site: &Site, wp_version: &str, assets: &mut Assets, admin:
 }
 
 /// [`enqueue`] with the texts a screen adds (`acf_localize_text()` before the scripts print).
-pub(super) fn enqueue_with_texts(site: &Site, wp_version: &str, assets: &mut Assets, admin: bool, extra: &[(&'static str, String)]) {
+pub(super) fn enqueue_with_texts(
+    site: &Site,
+    wp_version: &str,
+    assets: &mut Assets,
+    admin: bool,
+    extra: &[(&'static str, String)],
+) {
     let ver = super::VERSION;
     let mut scripts = Assets::default();
-    let acf = scripts.script("acf", acf_url(site, "assets/build/js/acf.min.js"), &["jquery"], ver, false);
+    let acf = scripts.script(
+        "acf",
+        acf_url(site, "assets/build/js/acf.min.js"),
+        &["jquery"],
+        ver,
+        false,
+    );
     acf.registered_only = true;
     acf.extra = localized_texts(site, extra);
-    scripts.script("acf-input", acf_url(site, "assets/build/js/acf-input.min.js"), &["jquery", "jquery-ui-sortable", "jquery-ui-resizable", "acf", "wp-a11y"], ver, false);
-    scripts.style("acf-global", acf_url(site, "assets/build/css/acf-global.min.css"), &["dashicons"], ver, "all").registered_only = true;
-    scripts.style("acf-input", acf_url(site, "assets/build/css/acf-input.min.css"), &["acf-global"], ver, "all");
+    scripts.script(
+        "acf-input",
+        acf_url(site, "assets/build/js/acf-input.min.js"),
+        &[
+            "jquery",
+            "jquery-ui-sortable",
+            "jquery-ui-resizable",
+            "acf",
+            "wp-a11y",
+        ],
+        ver,
+        false,
+    );
+    scripts
+        .style(
+            "acf-global",
+            acf_url(site, "assets/build/css/acf-global.min.css"),
+            &["dashicons"],
+            ver,
+            "all",
+        )
+        .registered_only = true;
+    scripts.style(
+        "acf-input",
+        acf_url(site, "assets/build/css/acf-input.min.css"),
+        &["acf-global"],
+        ver,
+        "all",
+    );
     // `acf_field_select`.
-    scripts.script("select2", acf_url(site, "assets/inc/select2/4/select2.full.min.js"), &["jquery"], "4.0.13", false);
-    scripts.style("select2", acf_url(site, "assets/inc/select2/4/select2.min.css"), &[], "4.0.13", "all");
+    scripts.script(
+        "select2",
+        acf_url(site, "assets/inc/select2/4/select2.full.min.js"),
+        &["jquery"],
+        "4.0.13",
+        false,
+    );
+    scripts.style(
+        "select2",
+        acf_url(site, "assets/inc/select2/4/select2.min.css"),
+        &[],
+        "4.0.13",
+        "all",
+    );
     // `acf_field_date_picker`: the date picker of WordPress; the time picker's script needs it in the head.
     scripts.core_script("jquery-ui-datepicker", false);
-    scripts.style("acf-datepicker", acf_url(site, "assets/inc/datepicker/jquery-ui.min.css"), &[], "1.11.4", "all");
+    scripts.style(
+        "acf-datepicker",
+        acf_url(site, "assets/inc/datepicker/jquery-ui.min.css"),
+        &[],
+        "1.11.4",
+        "all",
+    );
     // `acf_field_date_and_time_picker`.
-    scripts.script("acf-timepicker", acf_url(site, "assets/inc/timepicker/jquery-ui-timepicker-addon.min.js"), &["jquery-ui-datepicker"], "1.6.1", false);
-    scripts.style("acf-timepicker", acf_url(site, "assets/inc/timepicker/jquery-ui-timepicker-addon.min.css"), &[], "1.6.1", "all");
+    scripts.script(
+        "acf-timepicker",
+        acf_url(
+            site,
+            "assets/inc/timepicker/jquery-ui-timepicker-addon.min.js",
+        ),
+        &["jquery-ui-datepicker"],
+        "1.6.1",
+        false,
+    );
+    scripts.style(
+        "acf-timepicker",
+        acf_url(
+            site,
+            "assets/inc/timepicker/jquery-ui-timepicker-addon.min.css",
+        ),
+        &[],
+        "1.6.1",
+        "all",
+    );
     // `acf_field_color_picker`: outside the administration it registers Iris and the color picker itself.
     if !admin {
-        scripts.script("iris", site.site_url("wp-admin/js/iris.min.js"), &["jquery-ui-draggable", "jquery-ui-slider", "jquery-touch-punch"], "1.0.7", false).registered_only = true;
+        scripts
+            .script(
+                "iris",
+                site.site_url("wp-admin/js/iris.min.js"),
+                &[
+                    "jquery-ui-draggable",
+                    "jquery-ui-slider",
+                    "jquery-touch-punch",
+                ],
+                "1.0.7",
+                false,
+            )
+            .registered_only = true;
     }
-    scripts.script("acf-color-picker-alpha", acf_url(site, "assets/inc/color-picker-alpha/wp-color-picker-alpha.js"), &["jquery", "wp-color-picker"], "3.0.0", false);
+    scripts.script(
+        "acf-color-picker-alpha",
+        acf_url(
+            site,
+            "assets/inc/color-picker-alpha/wp-color-picker-alpha.js",
+        ),
+        &["jquery", "wp-color-picker"],
+        "3.0.0",
+        false,
+    );
     scripts.core_style("wp-color-picker");
     if admin {
         scripts.core_script("wp-color-picker", false);
     } else {
-        scripts.script("wp-color-picker", site.site_url("wp-admin/js/color-picker.min.js"), &["iris"], wp_version, false);
+        scripts.script(
+            "wp-color-picker",
+            site.site_url("wp-admin/js/color-picker.min.js"),
+            &["iris"],
+            wp_version,
+            false,
+        );
     }
     for mut asset in scripts.styles {
         asset.priority = 20;
@@ -133,7 +278,17 @@ pub(super) fn enqueue_with_texts(site: &Site, wp_version: &str, assets: &mut Ass
 /// `acf_get_browser()`.
 pub(super) fn browser(user_agent: Option<&str>) -> &'static str {
     let Some(agent) = user_agent else { return "" };
-    [("Firefox", "firefox"), ("Trident", "msie"), ("MSIE", "msie"), ("Edge", "edge"), ("Chrome", "chrome"), ("Safari", "safari")].iter().find(|(k, _)| agent.contains(k)).map_or("", |(_, v)| v)
+    [
+        ("Firefox", "firefox"),
+        ("Trident", "msie"),
+        ("MSIE", "msie"),
+        ("Edge", "edge"),
+        ("Chrome", "chrome"),
+        ("Safari", "safari"),
+    ]
+    .iter()
+    .find(|(k, _)| agent.contains(k))
+    .map_or("", |(_, v)| v)
 }
 
 /// `acf_get_locale()`.
@@ -189,13 +344,30 @@ fn toolbars() -> Json {
 
 /// `ACF_Assets::print_footer_scripts()`: `acf.data` with what the field types localized, and `acf.doAction(
 /// 'prepare' )`.
-pub(super) fn footer(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader) -> String {
+pub(super) fn footer(
+    site: &Site,
+    form: &FormData,
+    wp_version: &str,
+    nonce: &str,
+    user_agent: Option<&str>,
+    can: &(dyn Fn(&str) -> bool + Send + Sync),
+    uploader: Uploader,
+) -> String {
     footer_with(site, form, wp_version, nonce, user_agent, can, uploader, "")
 }
 
 /// [`footer`] with what `acf/input/admin_footer` prints between `acf.data` and `acf.doAction( 'prepare' )`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce: &str, user_agent: Option<&str>, can: &(dyn Fn(&str) -> bool + Send + Sync), uploader: Uploader, input_footer: &str) -> String {
+pub(super) fn footer_with(
+    site: &Site,
+    form: &FormData,
+    wp_version: &str,
+    nonce: &str,
+    user_agent: Option<&str>,
+    can: &(dyn Fn(&str) -> bool + Send + Sync),
+    uploader: Uploader,
+    input_footer: &str,
+) -> String {
     let mut data = Map::new();
     if let Some(postboxes) = &form.postboxes {
         data.insert("postboxes".into(), postboxes.clone());
@@ -210,32 +382,73 @@ pub(super) fn footer_with(site: &Site, form: &FormData, wp_version: &str, nonce:
     if uploader == Uploader::Render {
         data.insert("toolbars".into(), toolbars());
     }
-    data.insert("admin_url".into(), Json::String(format!("{}/", site.site_url("wp-admin"))));
-    data.insert("ajaxurl".into(), Json::String(site.site_url("wp-admin/admin-ajax.php")));
+    data.insert(
+        "admin_url".into(),
+        Json::String(format!("{}/", site.site_url("wp-admin"))),
+    );
+    data.insert(
+        "ajaxurl".into(),
+        Json::String(site.site_url("wp-admin/admin-ajax.php")),
+    );
     data.insert("nonce".into(), Json::String(nonce.to_owned()));
-    data.insert("acf_version".into(), Json::String(super::VERSION.to_owned()));
+    data.insert(
+        "acf_version".into(),
+        Json::String(super::VERSION.to_owned()),
+    );
     data.insert("wp_version".into(), Json::String(wp_version.to_owned()));
-    data.insert("browser".into(), Json::String(browser(user_agent).to_owned()));
+    data.insert(
+        "browser".into(),
+        Json::String(browser(user_agent).to_owned()),
+    );
     data.insert("locale".into(), Json::String(acf_locale(site)));
     data.insert("rtl".into(), Json::Bool(site.is_rtl()));
     data.insert("screen".into(), form.screen.clone());
     data.insert("post_id".into(), form.post_id.clone());
     data.insert("validation".into(), form.validation.clone());
-    data.insert("editor".into(), Json::String(if form.block_editor { "block" } else { "classic" }.into()));
+    data.insert(
+        "editor".into(),
+        Json::String(
+            if form.block_editor {
+                "block"
+            } else {
+                "classic"
+            }
+            .into(),
+        ),
+    );
     data.insert("is_pro".into(), Json::Bool(false));
     data.insert("debug".into(), Json::Bool(false));
     data.insert("StrictMode".into(), Json::Bool(false));
-    let json = rustpress_blocks::php_json::encode_with(&Json::Object(data), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
-    format!("<script>\nacf.data = {json};\n</script>\n{input_footer}<script>\nacf.doAction( 'prepare' );\n</script>\n")
+    let json = rustpress_blocks::php_json::encode_with(
+        &Json::Object(data),
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: false,
+            unescaped_unicode: false,
+        },
+    );
+    format!(
+        "<script>\nacf.data = {json};\n</script>\n{input_footer}<script>\nacf.doAction( 'prepare' );\n</script>\n"
+    )
 }
 
 /// What the field types localize on `acf/input/admin_enqueue_scripts`: the texts of Select2, the pickers and the
 /// Google Map, the icons and the MIME types.
-fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data: &mut Map<String, Json>, field_group: &[(String, Json)]) {
+fn field_type_data(
+    site: &Site,
+    can: &(dyn Fn(&str) -> bool + Send + Sync),
+    data: &mut Map<String, Json>,
+    field_group: &[(String, Json)],
+) {
     let locale = site.locale_data();
     let select2 = [
-        ("matches_1", "One result is available, press enter to select it."),
-        ("matches_n", "%d results are available, use up and down arrow keys to navigate."),
+        (
+            "matches_1",
+            "One result is available, press enter to select it.",
+        ),
+        (
+            "matches_n",
+            "%d results are available, use up and down arrow keys to navigate.",
+        ),
         ("matches_0", "No matches found"),
         ("input_too_short_1", "Please enter 1 or more characters"),
         ("input_too_short_n", "Please enter %d or more characters"),
@@ -247,11 +460,28 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
         ("searching", "Searching&hellip;"),
         ("load_fail", "Loading failed"),
     ];
-    data.insert("select2L10n".into(), Json::Object(select2.iter().map(|(k, text)| ((*k).to_owned(), Json::String(trx(site, text, &format!("Select2 JS {k}"))))).collect()));
+    data.insert(
+        "select2L10n".into(),
+        Json::Object(
+            select2
+                .iter()
+                .map(|(k, text)| {
+                    (
+                        (*k).to_owned(),
+                        Json::String(trx(site, text, &format!("Select2 JS {k}"))),
+                    )
+                })
+                .collect(),
+        ),
+    );
     // `add_query_arg()` of the API's arguments (no key, no client).
-    let maps = format!("https://maps.googleapis.com/maps/api/js?libraries=places&ver=3&callback=Function.prototype&language={}", acf_locale(site));
+    let maps = format!(
+        "https://maps.googleapis.com/maps/api/js?libraries=places&ver=3&callback=Function.prototype&language={}",
+        acf_locale(site)
+    );
     data.insert("google_map_api".into(), Json::String(maps));
-    let date = |key: &str, text: &str| Json::String(trx(site, text, &format!("Date Picker JS {key}")));
+    let date =
+        |key: &str, text: &str| Json::String(trx(site, text, &format!("Date Picker JS {key}")));
     data.insert(
         "datePickerL10n".into(),
         json!({
@@ -267,7 +497,9 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
             "dayNamesShort": locale.weekday_abbrev,
         }),
     );
-    let dt = |key: &str, text: &str| Json::String(trx(site, text, &format!("Date Time Picker JS {key}")));
+    let dt = |key: &str, text: &str| {
+        Json::String(trx(site, text, &format!("Date Time Picker JS {key}")))
+    };
     data.insert(
         "dateTimePickerL10n".into(),
         json!({
@@ -286,7 +518,10 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
             "pmNames": [dt("pmText", "PM"), dt("pmTextShort", "P")],
         }),
     );
-    data.insert("colorPickerL10n".into(), json!({"hex_string": tr(site, "Hex String"), "rgba_string": tr(site, "RGBA String")}));
+    data.insert(
+        "colorPickerL10n".into(),
+        json!({"hex_string": tr(site, "Hex String"), "rgba_string": tr(site, "RGBA String")}),
+    );
     data.insert(
         "iconPickerA11yStrings".into(),
         json!({
@@ -294,13 +529,32 @@ fn field_type_data(site: &Site, can: &(dyn Fn(&str) -> bool + Send + Sync), data
             "newResultsFoundForSearchTerm": esc_tr(site, "The available icons matching your search query have been updated in the icon picker below."),
         }),
     );
-    data.insert("iconPickeri10n".into(), Json::Object(super::dashicons::DASHICONS.iter().map(|(name, label)| ((*name).to_owned(), Json::String(esc_tr(site, label)))).collect()));
+    data.insert(
+        "iconPickeri10n".into(),
+        Json::Object(
+            super::dashicons::DASHICONS
+                .iter()
+                .map(|(name, label)| ((*name).to_owned(), Json::String(esc_tr(site, label))))
+                .collect(),
+        ),
+    );
     for (name, value) in field_group {
         data.insert(name.clone(), value.clone());
     }
-    data.insert("mimeTypeIcon".into(), Json::String(site.site_url("wp-includes/images/media/default.png")));
+    data.insert(
+        "mimeTypeIcon".into(),
+        Json::String(site.site_url("wp-includes/images/media/default.png")),
+    );
     let mimes = rustpress_content::media::allowed_mime_types_for(site, &[], can, false, false);
-    data.insert("mimeTypes".into(), Json::Object(mimes.into_iter().map(|(k, v)| (k, Json::String(v))).collect()));
+    data.insert(
+        "mimeTypes".into(),
+        Json::Object(
+            mimes
+                .into_iter()
+                .map(|(k, v)| (k, Json::String(v)))
+                .collect(),
+        ),
+    );
 }
 
 /// `acf_form_data()`: the hidden inputs ACF reads when the form is sent.
@@ -310,7 +564,11 @@ pub fn form_data(screen: &str, post_id: Value, nonce: &str) -> String {
 
 /// `acf_form_data( $args )` with more arguments: `validation` replaces the default, others come after it.
 pub fn form_data_with(screen: &str, post_id: Value, args: &[(&str, Value)], nonce: &str) -> String {
-    let mut inputs: Vec<(&str, Value)> = vec![("screen", super::php::string(screen)), ("post_id", post_id), ("validation", Value::Bool(true))];
+    let mut inputs: Vec<(&str, Value)> = vec![
+        ("screen", super::php::string(screen)),
+        ("post_id", post_id),
+        ("validation", Value::Bool(true)),
+    ];
     for (name, value) in args {
         match inputs.iter_mut().find(|(k, _)| k == name) {
             Some(slot) => slot.1 = value.clone(),
@@ -321,17 +579,31 @@ pub fn form_data_with(screen: &str, post_id: Value, args: &[(&str, Value)], nonc
     inputs.push(("changed", Value::Int(0)));
     let mut out = "\t<div id=\"acf-form-data\" class=\"acf-hidden\">\n\t\t".to_owned();
     for (name, value) in inputs {
-        out.push_str(&hidden_input(&Attrs::new(&[("id", super::php::string(&format!("_acf_{name}"))), ("name", super::php::string(&format!("_acf_{name}"))), ("value", value)])));
+        out.push_str(&hidden_input(&Attrs::new(&[
+            ("id", super::php::string(&format!("_acf_{name}"))),
+            ("name", super::php::string(&format!("_acf_{name}"))),
+            ("value", value),
+        ])));
     }
     out.push_str("\t</div>\n\t");
     out
 }
 
 /// `acf_form_comment::comment_form_field_comment()`.
-pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentFormContext<'_>, html: String) -> Result<String> {
+pub async fn comment_form_field_comment(
+    groups: &[FieldGroup],
+    ctx: &CommentFormContext<'_>,
+    html: String,
+) -> Result<String> {
     let site = ctx.site;
-    let matcher = MatchContext { site, user: super::fields::MatchUser::of(ctx.query.viewer.as_ref()), admin: false };
-    let screen = Screen::Comment { post_type: ctx.post.post_type.clone() };
+    let matcher = MatchContext {
+        site,
+        user: super::fields::MatchUser::of(ctx.query.viewer.as_ref()),
+        admin: false,
+    };
+    let screen = Screen::Comment {
+        post_type: ctx.post.post_type.clone(),
+    };
     let mut visible = Vec::new();
     for group in groups {
         if group.visible(&screen, &matcher).await? {
@@ -342,7 +614,12 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
         return Ok(html);
     }
     let wp_version = wp_version(ctx.services.wp_root());
-    let form = FormData { screen: Json::String("comment".into()), post_id: Json::Bool(false), validation: Json::Bool(true), ..Default::default() };
+    let form = FormData {
+        screen: Json::String("comment".into()),
+        post_id: Json::Bool(false),
+        validation: Json::Bool(true),
+        ..Default::default()
+    };
     let first = {
         let mut state = ctx.state.lock().expect("plugin state");
         let first = state.flags.insert("acf_enqueue_scripts");
@@ -353,28 +630,66 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
     };
     if first {
         let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
-        let footer = footer(site, &form, &wp_version, &ctx.query.create_nonce("acf_nonce"), ctx.query.user_agent.as_deref(), &can, Uploader::No);
-        ctx.state.lock().expect("plugin state").footer_scripts.push(footer);
+        let footer = footer(
+            site,
+            &form,
+            &wp_version,
+            &ctx.query.create_nonce("acf_nonce"),
+            ctx.query.user_agent.as_deref(),
+            &can,
+            Uploader::No,
+        );
+        ctx.state
+            .lock()
+            .expect("plugin state")
+            .footer_scripts
+            .push(footer);
     }
     let nonce = |action: &str| ctx.query.create_nonce(action);
     let can = |capability: &str| ctx.query.viewer.as_ref().is_some_and(|v| v.can(capability));
     // `user_can_richedit()` for a visitor: the browser decides.
     let rich_edit = rich_edit_browser(ctx.query.user_agent.as_deref().unwrap_or_default());
     // `_acf_settings_uploader()`: the media library only for who may upload files.
-    let uploader = if ctx.query.viewer.as_ref().is_some_and(|v| v.can("upload_files")) { "wp" } else { "basic" };
-    let render = Ctx { site, nonce: &nonce, services: ctx.services, admin: false, uploader, wants_uploader: Default::default(), can: &can, rich_edit, default_editor: if rich_edit { "tinymce" } else { "html" }, wysiwyg_height: 300 };
+    let uploader = if ctx
+        .query
+        .viewer
+        .as_ref()
+        .is_some_and(|v| v.can("upload_files"))
+    {
+        "wp"
+    } else {
+        "basic"
+    };
+    let render = Ctx {
+        site,
+        nonce: &nonce,
+        services: ctx.services,
+        admin: false,
+        uploader,
+        wants_uploader: Default::default(),
+        can: &can,
+        rich_edit,
+        default_editor: if rich_edit { "tinymce" } else { "html" },
+        wysiwyg_height: 300,
+    };
     let mut out = html;
     out.push_str(&form_data("comment", Value::Bool(false), &nonce("comment")));
     out.push_str("<div class=\"acf-comment-fields acf-fields -clear\">");
     // `acf_get_value( false, $field )`: `acf_decode_post_id( false )` names no object, so the fields show their
     // defaults (after the types' `load_value()`).
-    let object = Object { kind: MetaKind::Post, id: 0 };
+    let object = Object {
+        kind: MetaKind::Post,
+        id: 0,
+    };
     for group in visible {
         let instruction = group.setting("instruction_placement", "label");
         for field in &group.fields {
             let mut f = RenderField::load(field, &render);
             if matches!(f.get("value"), None | Some(Value::Null)) {
-                f.set("value", get_value(&site.db, object, field, &field.name).await?);
+                f.set(
+                    "value",
+                    get_value(&site.db, object, field, &field.name).await?,
+                );
             }
             out.push_str(&render_field_wrap(&render, f, "p", &instruction).await?);
         }
@@ -385,19 +700,44 @@ pub async fn comment_form_field_comment(groups: &[FieldGroup], ctx: &CommentForm
 
 /// The browser part of `user_can_richedit()`.
 pub(super) fn rich_edit_browser(agent: &str) -> bool {
-    let mobile = ["Mobile", "Android", "Silk/", "Kindle", "BlackBerry", "Opera Mini", "Opera Mobi"].iter().any(|m| agent.contains(m));
+    let mobile = [
+        "Mobile",
+        "Android",
+        "Silk/",
+        "Kindle",
+        "BlackBerry",
+        "Opera Mini",
+        "Opera Mobi",
+    ]
+    .iter()
+    .any(|m| agent.contains(m));
     let ie = agent.contains("MSIE") || agent.contains("Trident/");
-    let safari = agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
+    let safari =
+        agent.contains("Safari") && !agent.contains("Chrome") && !agent.contains("Chromium");
     if safari {
-        return !mobile || agent.split("AppleWebKit/").nth(1).and_then(|r| r.split('.').next()).and_then(|v| v.parse::<u32>().ok()).is_some_and(|v| v >= 534);
+        return !mobile
+            || agent
+                .split("AppleWebKit/")
+                .nth(1)
+                .and_then(|r| r.split('.').next())
+                .and_then(|v| v.parse::<u32>().ok())
+                .is_some_and(|v| v >= 534);
     }
-    !ie && (agent.contains("Gecko") || agent.contains("Chrome") || agent.contains("Edg/") || (agent.contains("Opera") && !mobile))
+    !ie && (agent.contains("Gecko")
+        || agent.contains("Chrome")
+        || agent.contains("Edg/")
+        || (agent.contains("Opera") && !mobile))
 }
 
 /// `$wp_version` of the WordPress files.
 fn wp_version(wp_root: &std::path::Path) -> String {
     std::fs::read_to_string(wp_root.join("wp-includes").join("version.php"))
         .ok()
-        .and_then(|t| t.lines().find_map(|l| l.strip_prefix("$wp_version = '").and_then(|r| r.split('\'').next().map(str::to_owned))))
+        .and_then(|t| {
+            t.lines().find_map(|l| {
+                l.strip_prefix("$wp_version = '")
+                    .and_then(|r| r.split('\'').next().map(str::to_owned))
+            })
+        })
         .unwrap_or_default()
 }

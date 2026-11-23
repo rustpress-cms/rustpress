@@ -18,7 +18,10 @@ pub fn urldecode(input: &[u8]) -> Vec<u8> {
     while i < input.len() {
         match input[i] {
             b'+' => out.push(b' '),
-            b'%' if i + 2 < input.len() && hex(input[i + 1]).is_some() && hex(input[i + 2]).is_some() => {
+            b'%' if i + 2 < input.len()
+                && hex(input[i + 1]).is_some()
+                && hex(input[i + 2]).is_some() =>
+            {
                 out.push(hex(input[i + 1]).unwrap() << 4 | hex(input[i + 2]).unwrap());
                 i += 2;
             }
@@ -67,7 +70,10 @@ impl QueryVars {
 
     /// The value, or `None` if unset or empty.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.0.get(key).map(String::as_str).filter(|v| !v.is_empty())
+        self.0
+            .get(key)
+            .map(String::as_str)
+            .filter(|v| !v.is_empty())
     }
 
     /// True if the key is present, even with an empty value (`?s=`).
@@ -80,7 +86,9 @@ impl QueryVars {
     pub fn u64(&self, key: &str) -> Option<u64> {
         let value = self.get(key)?.trim_start();
         let value = value.strip_prefix('+').unwrap_or(value);
-        let end = value.find(|c: char| !c.is_ascii_digit()).unwrap_or(value.len());
+        let end = value
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(value.len());
         let digits = &value[..end];
         if digits.is_empty() {
             return None;
@@ -187,11 +195,23 @@ impl RewriteRules {
         let mut rules = Vec::new();
         let mut skipped = Vec::new();
         for (key, query) in value.as_array().unwrap_or_default() {
-            let (Key::Str(pattern), Some(query)) = (key, query.as_str()) else { continue };
+            let (Key::Str(pattern), Some(query)) = (key, query.as_str()) else {
+                continue;
+            };
             let pattern = String::from_utf8_lossy(pattern).into_owned();
             // Only parsed here (cheap); [`Rule::regex`] compiles it when a request needs it.
-            match regex_syntax::ParserBuilder::new().unicode(false).utf8(false).build().parse(&format!("^{pattern}")) {
-                Ok(_) => rules.push(Rule { prefix: literal_prefix(&pattern), pattern, query: query.to_owned(), regex: OnceLock::new() }),
+            match regex_syntax::ParserBuilder::new()
+                .unicode(false)
+                .utf8(false)
+                .build()
+                .parse(&format!("^{pattern}"))
+            {
+                Ok(_) => rules.push(Rule {
+                    prefix: literal_prefix(&pattern),
+                    pattern,
+                    query: query.to_owned(),
+                    regex: OnceLock::new(),
+                }),
                 Err(_) => skipped.push(pattern),
             }
         }
@@ -200,7 +220,9 @@ impl RewriteRules {
 
     /// `(pattern, query)` of every rule, in stored order.
     pub fn patterns(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.rules.iter().map(|r| (r.pattern.as_str(), r.query.as_str()))
+        self.rules
+            .iter()
+            .map(|r| (r.pattern.as_str(), r.query.as_str()))
     }
 
     pub fn len(&self) -> usize {
@@ -220,7 +242,11 @@ impl RewriteRules {
 
     /// [Self::matches] for a request that named the script (`/index.php/post/`): rules that start with
     /// the script, as path info permalinks do, are matched against `index.php/<request>`.
-    pub fn matches_in_file<'a>(&'a self, request: &'a str, file: &'a str) -> impl Iterator<Item = Match<'a>> + 'a {
+    pub fn matches_in_file<'a>(
+        &'a self,
+        request: &'a str,
+        file: &'a str,
+    ) -> impl Iterator<Item = Match<'a>> + 'a {
         let raw = request.as_bytes().to_vec();
         let decoded = urldecode(&raw);
         self.rules.iter().filter_map(move |rule| {
@@ -229,7 +255,13 @@ impl RewriteRules {
             }
             let anchored = !file.is_empty() && rule.pattern.starts_with(file) && file != request;
             let (raw, decoded) = if anchored {
-                let join = |part: &[u8]| if part.is_empty() { file.as_bytes().to_vec() } else { [file.as_bytes(), b"/", part].concat() };
+                let join = |part: &[u8]| {
+                    if part.is_empty() {
+                        file.as_bytes().to_vec()
+                    } else {
+                        [file.as_bytes(), b"/", part].concat()
+                    }
+                };
                 (join(&raw), join(&decoded))
             } else {
                 (raw.clone(), decoded.clone())
@@ -237,12 +269,18 @@ impl RewriteRules {
             if raw.is_empty() && rule.pattern != "$" {
                 return None;
             }
-            if !raw.starts_with(rule.prefix.as_bytes()) && !decoded.starts_with(rule.prefix.as_bytes()) {
+            if !raw.starts_with(rule.prefix.as_bytes())
+                && !decoded.starts_with(rule.prefix.as_bytes())
+            {
                 return None;
             }
             let regex = rule.regex()?;
             let captures = captures(regex, &raw).or_else(|| captures(regex, &decoded))?;
-            Some(Match { rule, vars: substitute(&rule.query, &captures), captures })
+            Some(Match {
+                rule,
+                vars: substitute(&rule.query, &captures),
+                captures,
+            })
         })
     }
 }
@@ -251,7 +289,15 @@ impl RewriteRules {
 fn captures(regex: &Regex, haystack: &[u8]) -> Option<Vec<Vec<u8>>> {
     let mut caps = regex.create_captures();
     regex.captures(haystack, &mut caps);
-    caps.is_match().then(|| (0..caps.group_len()).map(|i| caps.get_group(i).map(|span| haystack[span].to_vec()).unwrap_or_default()).collect())
+    caps.is_match().then(|| {
+        (0..caps.group_len())
+            .map(|i| {
+                caps.get_group(i)
+                    .map(|span| haystack[span].to_vec())
+                    .unwrap_or_default()
+            })
+            .collect()
+    })
 }
 
 /// `index.php?a=$matches[1]&b=$matches[2]` -> `{a: ..., b: ...}`.
@@ -264,7 +310,9 @@ fn substitute(query: &str, caps: &[Vec<u8>]) -> QueryVars {
     while i < bytes.len() {
         if let Some(rest) = bytes[i..].strip_prefix(b"$matches[")
             && let Some(end) = rest.iter().position(|&b| b == b']')
-            && let Some(n) = std::str::from_utf8(&rest[..end]).ok().and_then(|n| n.parse::<usize>().ok())
+            && let Some(n) = std::str::from_utf8(&rest[..end])
+                .ok()
+                .and_then(|n| n.parse::<usize>().ok())
         {
             if let Some(m) = caps.get(n) {
                 // `WP_MatchesMapRegex` urlencodes the captures, so `parse_str()` gives back exactly what matched.
@@ -311,7 +359,10 @@ pub fn request_path(url_path: &str, home_path: &str) -> String {
     if path == "index.php" {
         String::new()
     } else {
-        path.strip_prefix("index.php/").unwrap_or(path).trim_matches('/').to_owned()
+        path.strip_prefix("index.php/")
+            .unwrap_or(path)
+            .trim_matches('/')
+            .to_owned()
     }
 }
 
@@ -350,9 +401,15 @@ mod tests {
     #[test]
     fn first_match_wins_and_groups_are_substituted() {
         let r = rules(&[
-            ("category/(.+?)/page/?([0-9]{1,})/?$", "index.php?category_name=$matches[1]&paged=$matches[2]"),
+            (
+                "category/(.+?)/page/?([0-9]{1,})/?$",
+                "index.php?category_name=$matches[1]&paged=$matches[2]",
+            ),
             ("category/(.+?)/?$", "index.php?category_name=$matches[1]"),
-            ("([^/]+)(?:/([0-9]+))?/?$", "index.php?name=$matches[1]&page=$matches[2]"),
+            (
+                "([^/]+)(?:/([0-9]+))?/?$",
+                "index.php?name=$matches[1]&page=$matches[2]",
+            ),
         ]);
         let m = r.matches("category/tech/rust/page/2").next().unwrap();
         assert_eq!(m.vars.get("category_name"), Some("tech/rust"));
@@ -378,7 +435,10 @@ mod tests {
 
     #[test]
     fn empty_request_matches_nothing_but_dollar() {
-        let r = rules(&[("([^/]+)/?$", "index.php?name=$matches[1]"), ("$", "index.php?x=1")]);
+        let r = rules(&[
+            ("([^/]+)/?$", "index.php?name=$matches[1]"),
+            ("$", "index.php?x=1"),
+        ]);
         let m = r.matches("").next().unwrap();
         assert_eq!(m.rule.pattern, "$");
     }

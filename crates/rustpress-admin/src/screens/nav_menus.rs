@@ -20,7 +20,14 @@ use crate::content::{Content, MenuItemData, PostData};
 const ITEM: &str = include_str!("../data/nav_menu_item.tpl");
 
 /// The arguments the links of the screen leave out (`$removed_args`).
-const REMOVED_ARGS: [&str; 6] = ["action", "customlink-tab", "edit-menu-item", "menu-item", "page-tab", "_wpnonce"];
+const REMOVED_ARGS: [&str; 6] = [
+    "action",
+    "customlink-tab",
+    "edit-menu-item",
+    "menu-item",
+    "page-tab",
+    "_wpnonce",
+];
 
 /// `(int) $value`.
 fn php_int(value: &str) -> i64 {
@@ -29,7 +36,9 @@ fn php_int(value: &str) -> i64 {
         Some(rest) => (true, rest),
         None => (false, value.strip_prefix('+').unwrap_or(value)),
     };
-    let end = digits.find(|c: char| !c.is_ascii_digit()).unwrap_or(digits.len());
+    let end = digits
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(digits.len());
     let number = digits[..end].parse::<i64>().unwrap_or(0);
     if negative { -number } else { number }
 }
@@ -42,15 +51,33 @@ fn special_chars(text: &str) -> String {
 /// `get_registered_nav_menus()`: the locations of Twenty Seventeen, with their translated names.
 pub(super) fn registered_locations(ctx: &Ctx<'_>) -> Vec<(String, String)> {
     let i18n = ctx.site().i18n();
-    vec![("top".to_owned(), i18n.gettext("twentyseventeen", "Top Menu")), ("social".to_owned(), i18n.gettext("twentyseventeen", "Social Links Menu"))]
+    vec![
+        (
+            "top".to_owned(),
+            i18n.gettext("twentyseventeen", "Top Menu"),
+        ),
+        (
+            "social".to_owned(),
+            i18n.gettext("twentyseventeen", "Social Links Menu"),
+        ),
+    ]
 }
 
 /// `get_nav_menu_locations()`, from the table: a page after a save comes before the options are read again.
 pub(super) async fn menu_locations(ctx: &Ctx<'_>) -> Vec<(String, i64)> {
     let name = format!("theme_mods_{}", ctx.site().settings.stylesheet);
-    let stored = ctx.env.db.option(&name).await.ok().flatten().unwrap_or_default();
+    let stored = ctx
+        .env
+        .db
+        .option(&name)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let mods = rustpress_core::options::maybe_unserialize(&stored);
-    let Some(locations) = mods.get("nav_menu_locations") else { return Vec::new() };
+    let Some(locations) = mods.get("nav_menu_locations") else {
+        return Vec::new();
+    };
     locations
         .as_array()
         .unwrap_or_default()
@@ -77,13 +104,34 @@ pub(super) struct BoxType {
 /// `get_post_types( [ 'show_in_nav_menus' => true ], 'object' )`.
 pub(super) fn box_post_types(ctx: &Ctx<'_>) -> Vec<BoxType> {
     let mut types = vec![
-        BoxType { name: "post".into(), title: ctx.tr("Posts"), search_items: ctx.tr("Search Posts"), all_items: ctx.tr("All Posts"), hierarchical: false },
-        BoxType { name: "page".into(), title: ctx.tr("Pages"), search_items: ctx.tr("Search Pages"), all_items: ctx.tr("All Pages"), hierarchical: true },
+        BoxType {
+            name: "post".into(),
+            title: ctx.tr("Posts"),
+            search_items: ctx.tr("Search Posts"),
+            all_items: ctx.tr("All Posts"),
+            hierarchical: false,
+        },
+        BoxType {
+            name: "page".into(),
+            title: ctx.tr("Pages"),
+            search_items: ctx.tr("Search Pages"),
+            all_items: ctx.tr("All Pages"),
+            hierarchical: true,
+        },
     ];
     let admin = ctx.site().types.admin_post_types();
-    for registered in ctx.site().types.registered_types(false).into_iter().filter(|t| t.show_in_nav_menus) {
+    for registered in ctx
+        .site()
+        .types
+        .registered_types(false)
+        .into_iter()
+        .filter(|t| t.show_in_nav_menus)
+    {
         let info = admin.iter().find(|t| t.name == registered.name);
-        let label = |key: &str, default: &str| info.and_then(|t| t.label(key)).unwrap_or_else(|| ctx.tr(default));
+        let label = |key: &str, default: &str| {
+            info.and_then(|t| t.label(key))
+                .unwrap_or_else(|| ctx.tr(default))
+        };
         types.push(BoxType {
             title: label("name", "Posts"),
             search_items: label("search_items", "Search Posts"),
@@ -107,19 +155,67 @@ pub(super) struct BoxTaxonomy {
 
 pub(super) fn box_taxonomies(ctx: &Ctx<'_>) -> Vec<BoxTaxonomy> {
     let mut taxonomies = vec![
-        BoxTaxonomy { name: "category".into(), title: ctx.tr("Categories"), most_used: ctx.env.site.trx("Most Used", "categories"), search_items: ctx.tr("Search Categories"), all_items: ctx.tr("All Categories"), hierarchical: true },
-        BoxTaxonomy { name: "post_tag".into(), title: ctx.tr("Tags"), most_used: ctx.env.site.trx("Most Used", "tags"), search_items: ctx.tr("Search Tags"), all_items: ctx.tr("All Tags"), hierarchical: false },
+        BoxTaxonomy {
+            name: "category".into(),
+            title: ctx.tr("Categories"),
+            most_used: ctx.env.site.trx("Most Used", "categories"),
+            search_items: ctx.tr("Search Categories"),
+            all_items: ctx.tr("All Categories"),
+            hierarchical: true,
+        },
+        BoxTaxonomy {
+            name: "post_tag".into(),
+            title: ctx.tr("Tags"),
+            most_used: ctx.env.site.trx("Most Used", "tags"),
+            search_items: ctx.tr("Search Tags"),
+            all_items: ctx.tr("All Tags"),
+            hierarchical: false,
+        },
     ];
     if ctx.env.theme.adds_theme_support("post-formats") || !ctx.env.block_theme {
-        taxonomies.push(BoxTaxonomy { name: "post_format".into(), title: ctx.env.site.trx("Formats", "post format"), most_used: ctx.env.site.trx("Most Used", "tags"), search_items: ctx.tr("Search Tags"), all_items: ctx.env.site.trx("Formats", "post format"), hierarchical: false });
+        taxonomies.push(BoxTaxonomy {
+            name: "post_format".into(),
+            title: ctx.env.site.trx("Formats", "post format"),
+            most_used: ctx.env.site.trx("Most Used", "tags"),
+            search_items: ctx.tr("Search Tags"),
+            all_items: ctx.env.site.trx("Formats", "post format"),
+            hierarchical: false,
+        });
     }
-    for registered in ctx.site().types.registered_types(true).into_iter().filter(|t| t.show_in_nav_menus) {
-        let title = registered.label.clone().unwrap_or_else(|| ctx.tr(if registered.hierarchical { "Categories" } else { "Tags" }));
+    for registered in ctx
+        .site()
+        .types
+        .registered_types(true)
+        .into_iter()
+        .filter(|t| t.show_in_nav_menus)
+    {
+        let title = registered.label.clone().unwrap_or_else(|| {
+            ctx.tr(if registered.hierarchical {
+                "Categories"
+            } else {
+                "Tags"
+            })
+        });
         taxonomies.push(BoxTaxonomy {
             title,
-            most_used: ctx.env.site.trx("Most Used", if registered.hierarchical { "categories" } else { "tags" }),
-            search_items: ctx.tr(if registered.hierarchical { "Search Categories" } else { "Search Tags" }),
-            all_items: ctx.tr(if registered.hierarchical { "All Categories" } else { "All Tags" }),
+            most_used: ctx.env.site.trx(
+                "Most Used",
+                if registered.hierarchical {
+                    "categories"
+                } else {
+                    "tags"
+                },
+            ),
+            search_items: ctx.tr(if registered.hierarchical {
+                "Search Categories"
+            } else {
+                "Search Tags"
+            }),
+            all_items: ctx.tr(if registered.hierarchical {
+                "All Categories"
+            } else {
+                "All Tags"
+            }),
             hierarchical: registered.hierarchical,
             name: registered.name,
         });
@@ -160,7 +256,14 @@ struct Boxes<'a, 'b> {
 }
 
 /// `Walker::walk( $elements, 0, ... )`: top level first, children nested, what has no parent in the list at the end.
-fn walk<T: Clone>(elements: &[T], parent: impl Fn(&T) -> i64, id: impl Fn(&T) -> i64, mut start_el: impl FnMut(&mut String, &T, usize), start_lvl: impl Fn(&mut String, usize), end_lvl: impl Fn(&mut String, usize)) -> String {
+fn walk<T: Clone>(
+    elements: &[T],
+    parent: impl Fn(&T) -> i64,
+    id: impl Fn(&T) -> i64,
+    mut start_el: impl FnMut(&mut String, &T, usize),
+    start_lvl: impl Fn(&mut String, usize),
+    end_lvl: impl Fn(&mut String, usize),
+) -> String {
     let mut output = String::new();
     if elements.is_empty() {
         return output;
@@ -195,7 +298,17 @@ fn walk<T: Clone>(elements: &[T], parent: impl Fn(&T) -> i64, id: impl Fn(&T) ->
         children: &'w mut Vec<(i64, Vec<T>)>,
     }
     #[allow(clippy::too_many_arguments)]
-    fn display<T: Clone>(walk: &mut Walk<'_, T>, element: &T, depth: usize, max_depth: usize, output: &mut String, id: &impl Fn(&T) -> i64, start_el: &mut impl FnMut(&mut String, &T, usize), start_lvl: &impl Fn(&mut String, usize), end_lvl: &impl Fn(&mut String, usize)) {
+    fn display<T: Clone>(
+        walk: &mut Walk<'_, T>,
+        element: &T,
+        depth: usize,
+        max_depth: usize,
+        output: &mut String,
+        id: &impl Fn(&T) -> i64,
+        start_el: &mut impl FnMut(&mut String, &T, usize),
+        start_lvl: &impl Fn(&mut String, usize),
+        end_lvl: &impl Fn(&mut String, usize),
+    ) {
         start_el(output, element, depth);
         let key = id(element);
         let mut opened = false;
@@ -208,7 +321,17 @@ fn walk<T: Clone>(elements: &[T], parent: impl Fn(&T) -> i64, id: impl Fn(&T) ->
                     opened = true;
                     start_lvl(output, depth);
                 }
-                display(walk, child, depth + 1, max_depth, output, id, start_el, start_lvl, end_lvl);
+                display(
+                    walk,
+                    child,
+                    depth + 1,
+                    max_depth,
+                    output,
+                    id,
+                    start_el,
+                    start_lvl,
+                    end_lvl,
+                );
             }
             if let Some(at) = walk.children.iter().position(|(k, _)| *k == key) {
                 walk.children.remove(at);
@@ -220,16 +343,43 @@ fn walk<T: Clone>(elements: &[T], parent: impl Fn(&T) -> i64, id: impl Fn(&T) ->
         // `Walker_Nav_Menu::end_el()`.
         output.push_str("</li>\n");
     }
-    let mut state = Walk { children: &mut children };
+    let mut state = Walk {
+        children: &mut children,
+    };
     for element in &top {
-        display(&mut state, element, 0, 0, &mut output, &id, &mut start_el, &start_lvl, &end_lvl);
+        display(
+            &mut state,
+            element,
+            0,
+            0,
+            &mut output,
+            &id,
+            &mut start_el,
+            &start_lvl,
+            &end_lvl,
+        );
     }
     // Orphans.
-    let orphans: Vec<T> = children.iter().flat_map(|(_, list)| list.iter().cloned()).collect();
+    let orphans: Vec<T> = children
+        .iter()
+        .flat_map(|(_, list)| list.iter().cloned())
+        .collect();
     let mut none: Vec<(i64, Vec<T>)> = Vec::new();
-    let mut state = Walk { children: &mut none };
+    let mut state = Walk {
+        children: &mut none,
+    };
     for orphan in &orphans {
-        display(&mut state, orphan, 0, 1, &mut output, &id, &mut start_el, &start_lvl, &end_lvl);
+        display(
+            &mut state,
+            orphan,
+            0,
+            1,
+            &mut output,
+            &id,
+            &mut start_el,
+            &start_lvl,
+            &end_lvl,
+        );
     }
     output
 }
@@ -237,33 +387,67 @@ fn walk<T: Clone>(elements: &[T], parent: impl Fn(&T) -> i64, id: impl Fn(&T) ->
 impl Boxes<'_, '_> {
     /// `wp_nav_menu_disabled_check()`.
     fn disabled(&self) -> &'static str {
-        if self.one_location_no_menus || self.selected != 0 || self.ajax { "" } else { " disabled='disabled'" }
+        if self.one_location_no_menus || self.selected != 0 || self.ajax {
+            ""
+        } else {
+            " disabled='disabled'"
+        }
     }
 
     fn next_placeholder(&mut self) -> i64 {
-        self.placeholder = if self.placeholder < 0 { self.placeholder - 1 } else { -1 };
+        self.placeholder = if self.placeholder < 0 {
+            self.placeholder - 1
+        } else {
+            -1
+        };
         self.placeholder
     }
 
     /// `Walker_Nav_Menu_Checklist::start_el()`.
     fn checklist_item(&mut self, output: &mut String, item: &ChecklistItem, depth: usize) {
         let placeholder = self.next_placeholder();
-        let possible_object_id = if item.menu_item { item.object_id } else { placeholder };
-        let possible_db_id = if item.id != 0 && possible_object_id > 0 { item.id } else { 0 };
+        let possible_object_id = if item.menu_item {
+            item.object_id
+        } else {
+            placeholder
+        };
+        let possible_db_id = if item.id != 0 && possible_object_id > 0 {
+            item.id
+        } else {
+            0
+        };
         output.push_str(&"\t".repeat(depth));
         output.push_str("<li><label class=\"menu-item-title\">");
-        output.push_str(&format!("<input type=\"checkbox\"{} class=\"menu-item-checkbox", self.disabled()));
+        output.push_str(&format!(
+            "<input type=\"checkbox\"{} class=\"menu-item-checkbox",
+            self.disabled()
+        ));
         if item.front_or_home {
             output.push_str(" add-to-top");
         }
-        output.push_str(&format!("\" name=\"menu-item[{possible_object_id}][menu-item-object-id]\" value=\"{}\" /> ", item.object_id));
+        output.push_str(&format!(
+            "\" name=\"menu-item[{possible_object_id}][menu-item-object-id]\" value=\"{}\" /> ",
+            item.object_id
+        ));
         output.push_str(&esc_html(&item.label));
         output.push_str(&item.states);
         output.push_str("</label>");
-        let field = |name: &str, class: &str, value: &str| format!("<input type=\"hidden\" class=\"menu-item-{class}\" name=\"menu-item[{possible_object_id}][menu-item-{name}]\" value=\"{value}\" />");
+        let field = |name: &str, class: &str, value: &str| {
+            format!(
+                "<input type=\"hidden\" class=\"menu-item-{class}\" name=\"menu-item[{possible_object_id}][menu-item-{name}]\" value=\"{value}\" />"
+            )
+        };
         output.push_str(&field("db-id", "db-id", &possible_db_id.to_string()));
         output.push_str(&field("object", "object", &esc_attr(&item.object)));
-        output.push_str(&field("parent-id", "parent-id", if item.menu_item && item.id == 0 { "" } else { "0" }));
+        output.push_str(&field(
+            "parent-id",
+            "parent-id",
+            if item.menu_item && item.id == 0 {
+                ""
+            } else {
+                "0"
+            },
+        ));
         output.push_str(&field("type", "type", &esc_attr(&item.kind)));
         output.push_str(&field("title", "title", &special_chars(&item.title)));
         output.push_str(&field("url", "url", &esc_url(&item.url)));
@@ -275,10 +459,25 @@ impl Boxes<'_, '_> {
 
     /// `walk_nav_menu_tree()` with `Walker_Nav_Menu_Checklist`.
     fn checklist(&mut self, items: &[ChecklistItem]) -> String {
-        let start_lvl = |output: &mut String, depth: usize| output.push_str(&format!("\n{0}<ul class='children'>\n", "\t".repeat(depth)));
-        let end_lvl = |output: &mut String, depth: usize| output.push_str(&format!("\n{}</ul>", "\t".repeat(depth)));
+        let start_lvl = |output: &mut String, depth: usize| {
+            output.push_str(&format!("\n{0}<ul class='children'>\n", "\t".repeat(depth)))
+        };
+        let end_lvl = |output: &mut String, depth: usize| {
+            output.push_str(&format!("\n{}</ul>", "\t".repeat(depth)))
+        };
         let mut me = Some(self);
-        walk(items, |i| i.parent, |i| i.id, |output, item, depth| me.as_mut().expect("present").checklist_item(output, item, depth), start_lvl, end_lvl)
+        walk(
+            items,
+            |i| i.parent,
+            |i| i.id,
+            |output, item, depth| {
+                me.as_mut()
+                    .expect("present")
+                    .checklist_item(output, item, depth)
+            },
+            start_lvl,
+            end_lvl,
+        )
     }
 
     /// `wp_nav_menu_item_link_meta_box()`.
@@ -303,7 +502,11 @@ async fn item_of_post(ctx: &Ctx<'_>, post: &Post, nested: bool) -> ChecklistItem
     if labelled.post_title.is_empty() {
         labelled.post_title = sprintf(&ctx.tr("#%d (no title)"), &[&post.id.to_string()]);
     }
-    let states = if post.post_type == "page" { super::posts::post_states(ctx, post, "", false).await } else { String::new() };
+    let states = if post.post_type == "page" {
+        super::posts::post_states(ctx, post, "", false).await
+    } else {
+        String::new()
+    };
     ChecklistItem {
         id: post.id as i64,
         parent: if nested { post.post_parent as i64 } else { 0 },
@@ -356,28 +559,55 @@ async fn item_of_term(ctx: &Ctx<'_>, term: &Term, nested: bool) -> ChecklistItem
 }
 
 /// `paginate_links()` of a box.
-fn box_page_links(ctx: &Ctx<'_>, tab_name: &str, item_type: &str, item_object: &str, total: u64, current: u64) -> String {
+fn box_page_links(
+    ctx: &Ctx<'_>,
+    tab_name: &str,
+    item_type: &str,
+    item_object: &str,
+    total: u64,
+    current: u64,
+) -> String {
     if total < 2 {
         return String::new();
     }
     let mut base = ctx.request.request_uri.clone();
-    for (key, value) in [(tab_name, "all"), ("paged", "%#%"), ("item-type", item_type), ("item-object", item_object)] {
+    for (key, value) in [
+        (tab_name, "all"),
+        ("paged", "%#%"),
+        ("item-type", item_type),
+        ("item-object", item_object),
+    ] {
         base = add_query_arg(&base, key, value);
     }
     let link = |n: u64| esc_url(&base.replace("%#%", &n.to_string()));
-    let page = format!("<span class=\"screen-reader-text\">{}</span> ", ctx.tr("Page"));
+    let page = format!(
+        "<span class=\"screen-reader-text\">{}</span> ",
+        ctx.tr("Page")
+    );
     let number = |n: u64| ctx.site().number_i18n(n);
     let mut out = Vec::new();
     if current > 1 {
-        out.push(format!("<a class=\"prev page-numbers\" href=\"{}\"><span aria-label=\"{}\">{}</span></a>", link(current - 1), esc_attr(&ctx.tr("Previous page")), ctx.tr("&laquo;")));
+        out.push(format!(
+            "<a class=\"prev page-numbers\" href=\"{}\"><span aria-label=\"{}\">{}</span></a>",
+            link(current - 1),
+            esc_attr(&ctx.tr("Previous page")),
+            ctx.tr("&laquo;")
+        ));
     }
     let mut dots = false;
     for n in 1..=total {
         if n == current {
-            out.push(format!("<span aria-current=\"page\" class=\"page-numbers current\">{page}{}</span>", number(n)));
+            out.push(format!(
+                "<span aria-current=\"page\" class=\"page-numbers current\">{page}{}</span>",
+                number(n)
+            ));
             dots = true;
         } else if n <= 1 || (n + 2 >= current && n <= current + 2) || n > total - 1 {
-            out.push(format!("<a class=\"page-numbers\" href=\"{}\">{page}{}</a>", link(n), number(n)));
+            out.push(format!(
+                "<a class=\"page-numbers\" href=\"{}\">{page}{}</a>",
+                link(n),
+                number(n)
+            ));
             dots = true;
         } else if dots {
             out.push("<span class=\"page-numbers dots\">&hellip;</span>".to_owned());
@@ -385,7 +615,12 @@ fn box_page_links(ctx: &Ctx<'_>, tab_name: &str, item_type: &str, item_object: &
         }
     }
     if current < total {
-        out.push(format!("<a class=\"next page-numbers\" href=\"{}\"><span aria-label=\"{}\">{}</span></a>", link(current + 1), esc_attr(&ctx.tr("Next page")), ctx.tr("&raquo;")));
+        out.push(format!(
+            "<a class=\"next page-numbers\" href=\"{}\"><span aria-label=\"{}\">{}</span></a>",
+            link(current + 1),
+            esc_attr(&ctx.tr("Next page")),
+            ctx.tr("&raquo;")
+        ));
     }
     out.join("\n")
 }
@@ -411,8 +646,18 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
     let name = post_type.name.as_str();
     let tab_name = format!("{name}-tab");
     let per_page = 50;
-    let pagenum = if ctx.request.request(&tab_name).is_some() { ctx.request.request("paged").map_or(1, |p| php_int(p).unsigned_abs()) } else { 1 };
-    let offset = if pagenum > 0 { per_page * (pagenum - 1) } else { 0 };
+    let pagenum = if ctx.request.request(&tab_name).is_some() {
+        ctx.request
+            .request("paged")
+            .map_or(1, |p| php_int(p).unsigned_abs())
+    } else {
+        1
+    };
+    let offset = if pagenum > 0 {
+        per_page * (pagenum - 1)
+    } else {
+        0
+    };
     let nested = post_type.hierarchical;
 
     // The important pages.
@@ -420,8 +665,16 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
     let mut suppressed: Vec<u64> = Vec::new();
     if name == "page" {
         let static_front = site.options.string("show_on_front", "") == "page";
-        let front = if static_front { site.options.u64("page_on_front", 0) } else { 0 };
-        let front_post = if front != 0 { db.post(front).await.ok().flatten() } else { None };
+        let front = if static_front {
+            site.options.u64("page_on_front", 0)
+        } else {
+            0
+        };
+        let front_post = if front != 0 {
+            db.post(front).await.ok().flatten()
+        } else {
+            None
+        };
         match front_post {
             Some(post) => {
                 let mut item = item_of_post(ctx, &post, nested).await;
@@ -435,7 +688,13 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
                     menu_item: true,
                     object_id: placeholder,
                     kind: "custom".to_owned(),
-                    label: rustpress_blocks::content::the_title_in_admin(site, &Post { post_title: site.trx("Home", "nav menu home label"), ..Default::default() }),
+                    label: rustpress_blocks::content::the_title_in_admin(
+                        site,
+                        &Post {
+                            post_title: site.trx("Home", "nav menu home label"),
+                            ..Default::default()
+                        },
+                    ),
                     title: site.trx("Home", "nav menu home label"),
                     url: site.home_url("/"),
                     front_or_home: true,
@@ -443,7 +702,11 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
                 });
             }
         }
-        let posts_page = if static_front { site.options.u64("page_for_posts", 0) } else { 0 };
+        let posts_page = if static_front {
+            site.options.u64("page_for_posts", 0)
+        } else {
+            0
+        };
         if posts_page != 0
             && let Ok(Some(post)) = db.post(posts_page).await
         {
@@ -469,7 +732,11 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
         exclude_ids: exclude.to_vec(),
         ..PostQuery::default()
     };
-    let order_all = if name == "page" { OrderBy::MenuOrderTitle } else { OrderBy::Title };
+    let order_all = if name == "page" {
+        OrderBy::MenuOrderTitle
+    } else {
+        OrderBy::Title
+    };
     let mut query = base_query(order_all, Order::Asc, per_page, &suppressed);
     let mut found = db.count_posts(&query).await.unwrap_or(0);
     let mut listed = db.posts(&query).await.unwrap_or_default();
@@ -487,7 +754,11 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
     let page_links = box_page_links(ctx, &tab_name, "post_type", name, num_pages, pagenum);
 
     let mut current_tab = "most-recent";
-    if let Some(tab) = ctx.request.request(&tab_name).filter(|t| matches!(*t, "all" | "search")) {
+    if let Some(tab) = ctx
+        .request
+        .request(&tab_name)
+        .filter(|t| matches!(*t, "all" | "search"))
+    {
         current_tab = if tab == "all" { "all" } else { "search" };
     }
     let search_key = format!("quick-search-posttype-{name}");
@@ -499,22 +770,48 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
     let tab = |value: &str, label: &str, data: &str| {
         format!(
             "\t\t\t<li {}>\n\t\t\t\t<a class=\"nav-tab-link\"\n\t\t\t\t\tdata-type=\"{data}\"\n\t\t\t\t\thref=\"{}\"\n\t\t\t\t>\n\t\t\t\t\t{label}\t\t\t\t</a>\n\t\t\t</li>\n",
-            if current_tab == value { " class=\"tabs\"" } else { "" },
-            esc_url(&format!("{}#{data}", tab_url(ctx, selected, &tab_name, value))),
+            if current_tab == value {
+                " class=\"tabs\""
+            } else {
+                ""
+            },
+            esc_url(&format!(
+                "{}#{data}",
+                tab_url(ctx, selected, &tab_name, value)
+            )),
         )
     };
-    let active = |value: &str| if current_tab == value { "tabs-panel-active" } else { "tabs-panel-inactive" };
-    let mut h = format!("\t<div id=\"posttype-{name}\" class=\"posttypediv\">\n\t\t<ul id=\"posttype-{name}-tabs\" class=\"posttype-tabs add-menu-item-tabs\">\n");
-    h.push_str(&tab("most-recent", &tr("Most Recent"), &format!("tabs-panel-posttype-{name}-most-recent")));
+    let active = |value: &str| {
+        if current_tab == value {
+            "tabs-panel-active"
+        } else {
+            "tabs-panel-inactive"
+        }
+    };
+    let mut h = format!(
+        "\t<div id=\"posttype-{name}\" class=\"posttypediv\">\n\t\t<ul id=\"posttype-{name}-tabs\" class=\"posttype-tabs add-menu-item-tabs\">\n"
+    );
+    h.push_str(&tab(
+        "most-recent",
+        &tr("Most Recent"),
+        &format!("tabs-panel-posttype-{name}-most-recent"),
+    ));
     h.push_str(&tab("all", &tr("View All"), &format!("{name}-all")));
-    h.push_str(&tab("search", &tr("Search"), &format!("tabs-panel-posttype-{name}-search")));
+    h.push_str(&tab(
+        "search",
+        &tr("Search"),
+        &format!("tabs-panel-posttype-{name}-search"),
+    ));
     h.push_str("\t\t</ul><!-- .posttype-tabs -->\n\n");
     h.push_str(&format!(
         "\t\t<div id=\"tabs-panel-posttype-{name}-most-recent\"\n\t\t\tclass=\"tabs-panel {}\"\n\t\t\trole=\"region\" aria-label=\"{}\" tabindex=\"0\"\n\t\t>\n\t\t\t<ul id=\"{name}checklist-most-recent\"\n\t\t\t\tclass=\"categorychecklist form-no-clear\"\n\t\t\t>\n\t\t\t\t",
         active("most-recent"),
         esc_attr(&tr("Most Recent"))
     ));
-    let recent_posts = db.posts(&base_query(OrderBy::Date, Order::Desc, 15, &suppressed)).await.unwrap_or_default();
+    let recent_posts = db
+        .posts(&base_query(OrderBy::Date, Order::Desc, 15, &suppressed))
+        .await
+        .unwrap_or_default();
     let mut recent = Vec::with_capacity(recent_posts.len());
     for post in &recent_posts {
         recent.push(item_of_post(ctx, post, nested).await);
@@ -553,10 +850,19 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
         h.push_str(&boxes.checklist(&results));
         h.push_str("\t\t\t");
     } else if !searched.is_empty() {
-        h.push_str(&format!("\t\t\t\t<li>{}</li>\n\t\t\t", tr("No results found.")));
+        h.push_str(&format!(
+            "\t\t\t\t<li>{}</li>\n\t\t\t",
+            tr("No results found.")
+        ));
     }
     h.push_str("\t\t\t</ul>\n\t\t</div><!-- /.tabs-panel -->\n\n");
-    let pager = if page_links.is_empty() { String::new() } else { format!("\t\t\t\t<div class=\"add-menu-item-pagelinks\">\n\t\t\t\t\t{page_links}\t\t\t\t</div>\n\t\t\t") };
+    let pager = if page_links.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\t\t\t\t<div class=\"add-menu-item-pagelinks\">\n\t\t\t\t\t{page_links}\t\t\t\t</div>\n\t\t\t"
+        )
+    };
     h.push_str(&format!(
         "\t\t<div id=\"{name}-all\"\n\t\t\tclass=\"tabs-panel tabs-panel-view-all {}\"\n\t\t\trole=\"region\" aria-label=\"{}\" tabindex=\"0\"\n\t\t>\n\t\t\t{pager}\n\t\t\t<ul id=\"{name}checklist\"\n\t\t\t\tdata-wp-lists=\"list:{name}\"\n\t\t\t\tclass=\"categorychecklist form-no-clear\"\n\t\t\t>\n\t\t\t\t",
         active("all"),
@@ -567,7 +873,9 @@ async fn post_type_box(boxes: &mut Boxes<'_, '_>, post_type: &BoxType) -> String
         all.push(item_of_post(ctx, post, nested).await);
     }
     h.push_str(&boxes.checklist(&all));
-    h.push_str(&format!("\t\t\t</ul>\n\n\t\t\t{pager}\t\t</div><!-- /.tabs-panel -->\n\n"));
+    h.push_str(&format!(
+        "\t\t\t</ul>\n\n\t\t\t{pager}\t\t</div><!-- /.tabs-panel -->\n\n"
+    ));
     let disabled = boxes.disabled();
     h.push_str(&format!(
         "\t\t<p class=\"button-controls\" data-items-type=\"posttype-{name}\">\n\t\t\t<span class=\"list-controls hide-if-no-js\">\n\t\t\t\t<input type=\"checkbox\"{disabled}\t\t\t\t\tid=\"{tab_name}\" class=\"select-all\"\n\t\t\t\t/>\n\t\t\t\t<label for=\"{tab_name}\">{}</label>\n\t\t\t</span>\n\n\t\t\t<span class=\"add-to-menu\">\n\t\t\t\t<input type=\"submit\"{disabled}\t\t\t\t\tclass=\"button submit-add-to-menu right\" value=\"{}\"\n\t\t\t\t\tname=\"add-post-type-menu-item\" id=\"submit-posttype-{name}\"\n\t\t\t\t/>\n\t\t\t\t<span class=\"spinner\"></span>\n\t\t\t</span>\n\t\t</p>\n\n\t</div><!-- /.posttypediv -->\n\t",
@@ -585,10 +893,25 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
     let name = taxonomy.name.as_str();
     let tab_name = format!("{name}-tab");
     let per_page = 50usize;
-    let pagenum = if ctx.request.request(&tab_name).is_some() { ctx.request.request("paged").map_or(1, |p| php_int(p).unsigned_abs()) } else { 1 };
-    let offset = if pagenum > 0 { per_page * (pagenum as usize - 1) } else { 0 };
+    let pagenum = if ctx.request.request(&tab_name).is_some() {
+        ctx.request
+            .request("paged")
+            .map_or(1, |p| php_int(p).unsigned_abs())
+    } else {
+        1
+    };
+    let offset = if pagenum > 0 {
+        per_page * (pagenum as usize - 1)
+    } else {
+        0
+    };
     let terms_all = db.terms(name).await.unwrap_or_default();
-    let terms: Vec<Term> = terms_all.iter().skip(offset).take(per_page).cloned().collect();
+    let terms: Vec<Term> = terms_all
+        .iter()
+        .skip(offset)
+        .take(per_page)
+        .cloned()
+        .collect();
     if terms.is_empty() {
         return format!("<p>{}</p>", tr("No items."));
     }
@@ -612,15 +935,42 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
     let tab = |value: &str, label: &str, data: &str| {
         format!(
             "\t\t\t<li {}>\n\t\t\t\t<a class=\"nav-tab-link\"\n\t\t\t\t\tdata-type=\"{data}\"\n\t\t\t\t\thref=\"{}\"\n\t\t\t\t>\n\t\t\t\t\t{label}\t\t\t\t</a>\n\t\t\t</li>\n",
-            if current_tab == value { " class=\"tabs\"" } else { "" },
-            esc_url(&format!("{}#{data}", tab_url(ctx, selected, &tab_name, value))),
+            if current_tab == value {
+                " class=\"tabs\""
+            } else {
+                ""
+            },
+            esc_url(&format!(
+                "{}#{data}",
+                tab_url(ctx, selected, &tab_name, value)
+            )),
         )
     };
-    let active = |value: &str| if current_tab == value { "tabs-panel-active" } else { "tabs-panel-inactive" };
-    let mut h = format!("\t<div id=\"taxonomy-{name}\" class=\"taxonomydiv\">\n\t\t<ul id=\"taxonomy-{name}-tabs\" class=\"taxonomy-tabs add-menu-item-tabs\">\n");
-    h.push_str(&tab("most-used", &esc_html(&taxonomy.most_used), &format!("tabs-panel-{name}-pop")));
-    h.push_str(&tab("all", &tr("View All"), &format!("tabs-panel-{name}-all")));
-    h.push_str(&tab("search", &tr("Search"), &format!("tabs-panel-search-taxonomy-{name}")));
+    let active = |value: &str| {
+        if current_tab == value {
+            "tabs-panel-active"
+        } else {
+            "tabs-panel-inactive"
+        }
+    };
+    let mut h = format!(
+        "\t<div id=\"taxonomy-{name}\" class=\"taxonomydiv\">\n\t\t<ul id=\"taxonomy-{name}-tabs\" class=\"taxonomy-tabs add-menu-item-tabs\">\n"
+    );
+    h.push_str(&tab(
+        "most-used",
+        &esc_html(&taxonomy.most_used),
+        &format!("tabs-panel-{name}-pop"),
+    ));
+    h.push_str(&tab(
+        "all",
+        &tr("View All"),
+        &format!("tabs-panel-{name}-all"),
+    ));
+    h.push_str(&tab(
+        "search",
+        &tr("Search"),
+        &format!("tabs-panel-search-taxonomy-{name}"),
+    ));
     h.push_str("\t\t</ul><!-- .taxonomy-tabs -->\n\n");
     h.push_str(&format!(
         "\t\t<div id=\"tabs-panel-{name}-pop\"\n\t\t\tclass=\"tabs-panel {}\"\n\t\t\trole=\"region\" aria-label=\"{}\" tabindex=\"0\"\n\t\t>\n\t\t\t<ul id=\"{name}checklist-pop\"\n\t\t\t\tclass=\"categorychecklist form-no-clear\"\n\t\t\t>\n\t\t\t\t",
@@ -633,7 +983,13 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
     }
     h.push_str(&boxes.checklist(&popular));
     h.push_str("\t\t\t</ul>\n\t\t</div><!-- /.tabs-panel -->\n\n");
-    let pager = if page_links.is_empty() { String::new() } else { format!("\t\t\t\t<div class=\"add-menu-item-pagelinks\">\n\t\t\t\t\t{page_links}\t\t\t\t</div>\n\t\t\t") };
+    let pager = if page_links.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\t\t\t\t<div class=\"add-menu-item-pagelinks\">\n\t\t\t\t\t{page_links}\t\t\t\t</div>\n\t\t\t"
+        )
+    };
     h.push_str(&format!(
         "\t\t<div id=\"tabs-panel-{name}-all\"\n\t\t\tclass=\"tabs-panel tabs-panel-view-all {}\"\n\t\t\trole=\"region\" aria-label=\"{}\" tabindex=\"0\"\n\t\t>\n\t\t\t{pager}\n\t\t\t<ul id=\"{name}checklist\"\n\t\t\t\tdata-wp-lists=\"list:{name}\"\n\t\t\t\tclass=\"categorychecklist form-no-clear\"\n\t\t\t>\n\t\t\t\t",
         active("all"),
@@ -644,7 +1000,9 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
         all.push(item_of_term(ctx, term, nested).await);
     }
     h.push_str(&boxes.checklist(&all));
-    h.push_str(&format!("\t\t\t</ul>\n\n\t\t\t{pager}\t\t</div><!-- /.tabs-panel -->\n\n"));
+    h.push_str(&format!(
+        "\t\t\t</ul>\n\n\t\t\t{pager}\t\t</div><!-- /.tabs-panel -->\n\n"
+    ));
     let searched = searched_raw.map_or_else(String::new, esc_attr);
     h.push_str(&format!(
         "\t\t<div id=\"tabs-panel-search-taxonomy-{name}\"\n\t\t\tclass=\"tabs-panel {}\"\n\t\t\trole=\"region\" aria-label=\"{}\" tabindex=\"0\">\n\t\t\t\t\t\t<p class=\"quick-search-wrap\">\n\t\t\t\t<label for=\"{search_key}\" class=\"screen-reader-text\">\n\t\t\t\t\t{}\t\t\t\t</label>\n\t\t\t\t<input type=\"search\"\n\t\t\t\t\tclass=\"quick-search\" value=\"{searched}\"\n\t\t\t\t\tname=\"{search_key}\"\n\t\t\t\t\tid=\"{search_key}\"\n\t\t\t\t/>\n\t\t\t\t<span class=\"spinner\"></span>\n\t\t\t\t{}\t\t\t</p>\n\n\t\t\t<ul id=\"{name}-search-checklist\"\n\t\t\t\tdata-wp-lists=\"list:{name}\"\n\t\t\t\tclass=\"categorychecklist form-no-clear\"\n\t\t\t>\n\t\t\t",
@@ -655,7 +1013,11 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
     ));
     if searched_raw.is_some() {
         let needle = searched.to_lowercase();
-        let mut found: Vec<Term> = terms_all.iter().filter(|t| t.name.to_lowercase().contains(&needle) && t.count > 0).cloned().collect();
+        let mut found: Vec<Term> = terms_all
+            .iter()
+            .filter(|t| t.name.to_lowercase().contains(&needle) && t.count > 0)
+            .cloned()
+            .collect();
         found.sort_by_key(|t| std::cmp::Reverse(t.count));
         if !found.is_empty() {
             let mut results = Vec::with_capacity(found.len());
@@ -666,7 +1028,10 @@ async fn taxonomy_box(boxes: &mut Boxes<'_, '_>, taxonomy: &BoxTaxonomy) -> Stri
             h.push_str(&boxes.checklist(&results));
             h.push_str("\t\t\t");
         } else if !searched.is_empty() {
-            h.push_str(&format!("\t\t\t\t<li>{}</li>\n\t\t\t", tr("No results found.")));
+            h.push_str(&format!(
+                "\t\t\t\t<li>{}</li>\n\t\t\t",
+                tr("No results found.")
+            ));
         }
     }
     h.push_str("\t\t\t</ul>\n\t\t</div><!-- /.tabs-panel -->\n\n");
@@ -684,7 +1049,11 @@ fn accordion(sections: &[(String, String, String)], hidden: &[String]) -> String
     let mut h = "\t<div id=\"side-sortables\" class=\"accordion-container\">\n\t\t<ul class=\"outer-border\">\n\t".to_owned();
     let mut first_open = false;
     for (id, title, body) in sections {
-        let hidden_class = if hidden.contains(id) { "hide-if-js" } else { "" };
+        let hidden_class = if hidden.contains(id) {
+            "hide-if-js"
+        } else {
+            ""
+        };
         let open = !first_open && hidden_class.is_empty();
         first_open |= open;
         h.push_str(&format!(
@@ -728,7 +1097,12 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
     let site = ctx.site();
     let db = ctx.env.db;
     let meta = db.post_meta(post.id).await.unwrap_or_default();
-    let get = |key: &str| meta.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone()).unwrap_or_default();
+    let get = |key: &str| {
+        meta.iter()
+            .find(|m| m.meta_key.as_deref() == Some(key))
+            .and_then(|m| m.meta_value.clone())
+            .unwrap_or_default()
+    };
     let mut item = EditItem {
         id: post.id,
         parent: get("_menu_item_menu_item_parent"),
@@ -739,26 +1113,47 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
         post_status: post.post_status.clone(),
         target: get("_menu_item_target"),
         xfn: get("_menu_item_xfn"),
-        description: rustpress_core::formatting::wp_trim_words(&post.post_content, 200, &ctx.tr("&hellip;")),
+        description: rustpress_core::formatting::wp_trim_words(
+            &post.post_content,
+            200,
+            &ctx.tr("&hellip;"),
+        ),
         menu_order: i64::from(post.menu_order),
         ..Default::default()
     };
-    item.classes = match meta.iter().find(|m| m.meta_key.as_deref() == Some("_menu_item_classes")).and_then(|m| m.meta_value.as_deref()).map(rustpress_core::options::maybe_unserialize) {
-        Some(rustpress_phpser::Value::Array(list)) => list.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+    item.classes = match meta
+        .iter()
+        .find(|m| m.meta_key.as_deref() == Some("_menu_item_classes"))
+        .and_then(|m| m.meta_value.as_deref())
+        .map(rustpress_core::options::maybe_unserialize)
+    {
+        Some(rustpress_phpser::Value::Array(list)) => list
+            .iter()
+            .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+            .collect(),
         Some(rustpress_phpser::Value::Str(s)) => vec![String::from_utf8_lossy(&s).into_owned()],
         _ => vec![String::new()],
     };
     let object_id = php_int(&item.object_id).unsigned_abs();
     match item.kind.as_str() {
         "post_type" => {
-            let known = matches!(item.object.as_str(), "post" | "page") || site.types.post_type_exists(&item.object);
-            let target = if object_id != 0 { db.post(object_id).await.ok().flatten() } else { None };
+            let known = matches!(item.object.as_str(), "post" | "page")
+                || site.types.post_type_exists(&item.object);
+            let target = if object_id != 0 {
+                db.post(object_id).await.ok().flatten()
+            } else {
+                None
+            };
             if known {
-                item.type_label = box_post_types(ctx).into_iter().find(|t| t.name == item.object).map_or_else(|| item.object.clone(), |t| singular_of(ctx, &t.name));
+                item.type_label = box_post_types(ctx)
+                    .into_iter()
+                    .find(|t| t.name == item.object)
+                    .map_or_else(|| item.object.clone(), |t| singular_of(ctx, &t.name));
                 if let Some(target) = &target {
                     let states = super::posts::state_labels(ctx, target, "", false).await;
                     if !states.is_empty() {
-                        item.type_label = rustpress_core::formatting::wp_strip_all_tags(&states.join(", "));
+                        item.type_label =
+                            rustpress_core::formatting::wp_strip_all_tags(&states.join(", "));
                     }
                 }
             } else {
@@ -772,15 +1167,27 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
                         item.invalid = true;
                     }
                     item.url = site.permalink(target).await.unwrap_or_default();
-                    original = rustpress_blocks::content::the_title_in_admin(site, &Post { post_password: String::new(), post_status: "publish".into(), ..target.clone() });
-                    item.original_title = Some(rustpress_blocks::content::the_title_in_admin(site, target));
+                    original = rustpress_blocks::content::the_title_in_admin(
+                        site,
+                        &Post {
+                            post_password: String::new(),
+                            post_status: "publish".into(),
+                            ..target.clone()
+                        },
+                    );
+                    item.original_title =
+                        Some(rustpress_blocks::content::the_title_in_admin(site, target));
                 }
                 None => item.invalid = true,
             }
             if original.is_empty() {
                 original = sprintf(&ctx.tr("#%d (no title)"), &[&item.object_id]);
             }
-            item.title = if post.post_title.is_empty() { original } else { post.post_title.clone() };
+            item.title = if post.post_title.is_empty() {
+                original
+            } else {
+                post.post_title.clone()
+            };
         }
         "post_type_archive" => {
             item.title = post.post_title.clone();
@@ -796,7 +1203,11 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
                     item.invalid = true;
                 }
             }
-            let term = db.term_by_id(Some(&item.object), object_id).await.ok().flatten();
+            let term = db
+                .term_by_id(Some(&item.object), object_id)
+                .await
+                .ok()
+                .flatten();
             let mut original = String::new();
             match &term {
                 Some(term) => {
@@ -809,7 +1220,11 @@ pub(super) async fn setup_item(ctx: &Ctx<'_>, post: &Post) -> EditItem {
             if original.is_empty() {
                 original = sprintf(&ctx.tr("#%d (no title)"), &[&item.object_id]);
             }
-            item.title = if post.post_title.is_empty() { original } else { post.post_title.clone() };
+            item.title = if post.post_title.is_empty() {
+                original
+            } else {
+                post.post_title.clone()
+            };
         }
         _ => {
             item.type_label = ctx.tr("Custom Link");
@@ -825,7 +1240,14 @@ pub(super) fn singular_of(ctx: &Ctx<'_>, name: &str) -> String {
     match name {
         "post" => ctx.env.site.trx("Post", "post type singular name"),
         "page" => ctx.env.site.trx("Page", "post type singular name"),
-        _ => ctx.site().types.admin_post_types().into_iter().find(|t| t.name == name).and_then(|t| t.label("singular_name")).unwrap_or_else(|| ctx.tr("Post")),
+        _ => ctx
+            .site()
+            .types
+            .admin_post_types()
+            .into_iter()
+            .find(|t| t.name == name)
+            .and_then(|t| t.label("singular_name"))
+            .unwrap_or_else(|| ctx.tr("Post")),
     }
 }
 
@@ -835,7 +1257,14 @@ pub(super) fn singular_of_taxonomy(ctx: &Ctx<'_>, name: &str) -> String {
         "category" => ctx.env.site.trx("Category", "taxonomy singular name"),
         "post_tag" => ctx.env.site.trx("Tag", "taxonomy singular name"),
         "post_format" => ctx.env.site.trx("Format", "post format"),
-        _ => ctx.site().types.registered_types(true).into_iter().find(|t| t.name == name).and_then(|t| t.singular).unwrap_or_else(|| ctx.env.site.trx("Tag", "taxonomy singular name")),
+        _ => ctx
+            .site()
+            .types
+            .registered_types(true)
+            .into_iter()
+            .find(|t| t.name == name)
+            .and_then(|t| t.singular)
+            .unwrap_or_else(|| ctx.env.site.trx("Tag", "taxonomy singular name")),
     }
 }
 
@@ -847,7 +1276,9 @@ pub(super) async fn menu_items(ctx: &Ctx<'_>, menu: &Term) -> Vec<EditItem> {
     let query = PostQuery {
         post_types: vec!["nav_menu_item".into()],
         // `any`.
-        statuses: ["publish", "draft", "pending", "private", "future"].map(str::to_owned).to_vec(),
+        statuses: ["publish", "draft", "pending", "private", "future"]
+            .map(str::to_owned)
+            .to_vec(),
         tax_groups: vec![vec![menu.term_taxonomy_id]],
         order_by: OrderBy::MenuOrder,
         order: Order::Asc,
@@ -869,8 +1300,21 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
     let tr = |s: &str| ctx.tr(s);
     let id = item.id.to_string();
     let editing = ctx.request.get("edit-menu-item") == Some(id.as_str());
-    let nonce_url = |action: &str, nonce_action: &str| format!("{}?action={action}&amp;menu-item={id}&amp;_wpnonce={}", ctx.admin_url("nav-menus.php"), ctx.create_nonce(nonce_action));
-    let mut classes = vec![format!("menu-item menu-item-depth-{depth}"), format!("menu-item-{}", esc_attr(&item.object)), format!("menu-item-edit-{}", if editing { "active" } else { "inactive" })];
+    let nonce_url = |action: &str, nonce_action: &str| {
+        format!(
+            "{}?action={action}&amp;menu-item={id}&amp;_wpnonce={}",
+            ctx.admin_url("nav-menus.php"),
+            ctx.create_nonce(nonce_action)
+        )
+    };
+    let mut classes = vec![
+        format!("menu-item menu-item-depth-{depth}"),
+        format!("menu-item-{}", esc_attr(&item.object)),
+        format!(
+            "menu-item-edit-{}",
+            if editing { "active" } else { "inactive" }
+        ),
+    ];
     let mut title = item.title.clone();
     if item.invalid {
         classes.push("menu-item-invalid".to_owned());
@@ -891,15 +1335,37 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
     } else {
         String::new()
     };
-    let original = match item.original_title.as_ref().filter(|_| item.kind != "custom") {
+    let original = match item
+        .original_title
+        .as_ref()
+        .filter(|_| item.kind != "custom")
+    {
         Some(original) => format!(
             "\t\t\t\t\t\t<p class=\"link-to-original\">\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t</p>\n\t\t\t\t\t",
-            sprintf(&tr("Original: %s"), &[&format!("<a href=\"{}\">{}</a>", esc_url(&item.url), esc_html(original))])
+            sprintf(
+                &tr("Original: %s"),
+                &[&format!(
+                    "<a href=\"{}\">{}</a>",
+                    esc_url(&item.url),
+                    esc_html(original)
+                )]
+            )
         ),
         None => String::new(),
     };
-    let edit_url = if editing { ctx.admin_url("nav-menus.php") } else { format!("{}?edit-menu-item={id}#menu-item-settings-{id}", ctx.admin_url("nav-menus.php")) };
-    let cancel_url = esc_url(&format!("{}?edit-menu-item={id}&cancel={}", ctx.admin_url("nav-menus.php"), ctx.env.now));
+    let edit_url = if editing {
+        ctx.admin_url("nav-menus.php")
+    } else {
+        format!(
+            "{}?edit-menu-item={id}#menu-item-settings-{id}",
+            ctx.admin_url("nav-menus.php")
+        )
+    };
+    let cancel_url = esc_url(&format!(
+        "{}?edit-menu-item={id}&cancel={}",
+        ctx.admin_url("nav-menus.php"),
+        ctx.env.now
+    ));
     // The walker ends with the indentation of its closing `<?php`.
     let template = format!("{ITEM}\t\t");
     template
@@ -907,12 +1373,25 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
         .replace("{t4}", "\t\t\t\t")
         .replace("{classes}", &classes.join(" "))
         .replace("{title}", &esc_html(&title))
-        .replace("{submenu_style}", if depth == 0 { "style=\"display: none;\"" } else { "" })
+        .replace(
+            "{submenu_style}",
+            if depth == 0 {
+                "style=\"display: none;\""
+            } else {
+                ""
+            },
+        )
         .replace("{sub_item}", &tr("sub item"))
         .replace("{type_label}", &esc_html(&item.type_label))
-        .replace("{move_up_url}", &nonce_url("move-up-menu-item", "move-menu_item"))
+        .replace(
+            "{move_up_url}",
+            &nonce_url("move-up-menu-item", "move-menu_item"),
+        )
         .replace("{move_up}", &esc_attr(&tr("Move up")))
-        .replace("{move_down_url}", &nonce_url("move-down-menu-item", "move-menu_item"))
+        .replace(
+            "{move_down_url}",
+            &nonce_url("move-down-menu-item", "move-menu_item"),
+        )
         .replace("{move_down}", &esc_attr(&tr("Move down")))
         .replace("{edit_url}", &esc_url(&edit_url))
         .replace("{edit_item}", &esc_attr(&tr("Edit menu item")))
@@ -922,15 +1401,28 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
         .replace("{title_value}", &special_chars(&item.title))
         .replace("{title_attribute}", &tr("Title Attribute"))
         .replace("{attr_title}", &special_chars(&item.post_excerpt))
-        .replace("{target_checked}", if item.target == "_blank" { " checked='checked'" } else { "" })
+        .replace(
+            "{target_checked}",
+            if item.target == "_blank" {
+                " checked='checked'"
+            } else {
+                ""
+            },
+        )
         .replace("{new_tab}", &tr("Open link in a new tab"))
         .replace("{css_classes}", &tr("CSS Classes (optional)"))
         .replace("{classes_value}", &special_chars(&item.classes.join(" ")))
         .replace("{xfn_label}", &tr("Link Relationship (XFN)"))
         .replace("{xfn}", &special_chars(&item.xfn))
         .replace("{description_label}", &tr("Description"))
-        .replace("{description}", &crate::sanitize::esc_textarea(&item.description))
-        .replace("{description_help}", &tr("The description will be displayed in the menu if the active theme supports it."))
+        .replace(
+            "{description}",
+            &crate::sanitize::esc_textarea(&item.description),
+        )
+        .replace(
+            "{description_help}",
+            &tr("The description will be displayed in the menu if the active theme supports it."),
+        )
         .replace("{menu_parent}", &tr("Menu Parent"))
         .replace("{menu_order}", &tr("Menu Order"))
         .replace("{move}", &tr("Move"))
@@ -938,7 +1430,10 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
         .replace("{down_one}", &tr("Down one"))
         .replace("{to_top}", &tr("To the top"))
         .replace("{original}", &original)
-        .replace("{delete_url}", &nonce_url("delete-menu-item", &format!("delete-menu_item_{id}")))
+        .replace(
+            "{delete_url}",
+            &nonce_url("delete-menu-item", &format!("delete-menu_item_{id}")),
+        )
         .replace("{remove}", &tr("Remove"))
         .replace("{cancel_url}", &cancel_url)
         .replace("{cancel}", &tr("Cancel"))
@@ -952,16 +1447,38 @@ fn edit_item(ctx: &Ctx<'_>, item: &EditItem, depth: usize) -> String {
 
 /// `wp_get_nav_menu_to_edit()`, and the deepest level of the menu.
 fn menu_to_edit(ctx: &Ctx<'_>, items: &[EditItem]) -> (String, usize) {
-    let mut result = format!("<div id=\"menu-instructions\" class=\"post-body-plain{}\"><p>{}</p></div>", if items.is_empty() { "" } else { " menu-instructions-inactive" }, ctx.tr("Add menu items from the column on the left."));
+    let mut result = format!(
+        "<div id=\"menu-instructions\" class=\"post-body-plain{}\"><p>{}</p></div>",
+        if items.is_empty() {
+            ""
+        } else {
+            " menu-instructions-inactive"
+        },
+        ctx.tr("Add menu items from the column on the left.")
+    );
     if items.is_empty() {
         result.push_str(" <ul class=\"menu\" id=\"menu-to-edit\"> </ul>");
         return (result, 0);
     }
     if items.iter().any(|item| item.post_status == "draft") {
-        result.push_str(&notice(&ctx.tr("Click Save Menu to make pending menu items public."), "info", false, "", &["notice-alt", "inline"], true));
+        result.push_str(&notice(
+            &ctx.tr("Click Save Menu to make pending menu items public."),
+            "info",
+            false,
+            "",
+            &["notice-alt", "inline"],
+            true,
+        ));
     }
     if items.iter().any(|item| item.invalid) {
-        result.push_str(&notice(&ctx.tr("There are some invalid menu items. Please check or delete them."), "error", false, "", &["notice-alt", "inline"], true));
+        result.push_str(&notice(
+            &ctx.tr("There are some invalid menu items. Please check or delete them."),
+            "error",
+            false,
+            "",
+            &["notice-alt", "inline"],
+            true,
+        ));
     }
     let mut deepest = 0;
     let tree = walk(
@@ -1013,7 +1530,11 @@ fn l10n(ctx: &Ctx<'_>, one_location_no_menus: bool) -> serde_json::Value {
 /// The help tabs of the two views.
 fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
     let tr = |s: &str| ctx.tr(s);
-    let tab = |id: &str, title: String, content: String| HelpTab { id: id.to_owned(), title, content };
+    let tab = |id: &str, title: String, content: String| HelpTab {
+        id: id.to_owned(),
+        title,
+        content,
+    };
     let widgets = ctx.admin_url("widgets.php");
     let tabs = if locations_screen {
         vec![tab(
@@ -1021,10 +1542,18 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
             tr("Overview"),
             format!(
                 "<p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li></ul>",
-                tr("This screen is used for globally assigning menus to locations defined by your theme."),
-                tr("To assign menus to one or more theme menu locations, <strong>select a menu from each location&#8217;s dropdown</strong>. When you are finished, <strong>click Save Changes</strong>"),
-                tr("To edit a menu currently assigned to a theme menu location, <strong>click the adjacent &#8217;Edit&#8217; link</strong>"),
-                tr("To add a new menu instead of assigning an existing one, <strong>click the &#8217;Use new menu&#8217; link</strong>. Your new menu will be automatically assigned to that location in the theme."),
+                tr(
+                    "This screen is used for globally assigning menus to locations defined by your theme."
+                ),
+                tr(
+                    "To assign menus to one or more theme menu locations, <strong>select a menu from each location&#8217;s dropdown</strong>. When you are finished, <strong>click Save Changes</strong>"
+                ),
+                tr(
+                    "To edit a menu currently assigned to a theme menu location, <strong>click the adjacent &#8217;Edit&#8217; link</strong>"
+                ),
+                tr(
+                    "To add a new menu instead of assigning an existing one, <strong>click the &#8217;Use new menu&#8217; link</strong>. Your new menu will be automatically assigned to that location in the theme."
+                ),
             ),
         )]
     } else {
@@ -1035,7 +1564,12 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
                 format!(
                     "<p>{}</p><p>{}</p><p>{}</p><ul><li>{}</li><li>{}</li></ul>",
                     tr("This screen is used for managing your navigation menus."),
-                    sprintf(&tr("Menus can be displayed in locations defined by your theme, even used in sidebars by adding a &#8220;Navigation Menu&#8221; widget on the <a href=\"%1$s\">Widgets</a> screen. If your theme does not support the navigation menus feature (the default themes, %2$s and %3$s, do), you can learn about adding this support by following the documentation link to the side."), &[&widgets, "Twenty Twenty", "Twenty Twenty-One"]),
+                    sprintf(
+                        &tr(
+                            "Menus can be displayed in locations defined by your theme, even used in sidebars by adding a &#8220;Navigation Menu&#8221; widget on the <a href=\"%1$s\">Widgets</a> screen. If your theme does not support the navigation menus feature (the default themes, %2$s and %3$s, do), you can learn about adding this support by following the documentation link to the side."
+                        ),
+                        &[&widgets, "Twenty Twenty", "Twenty Twenty-One"]
+                    ),
                     tr("From this screen you can:"),
                     tr("Create, edit, and delete menus"),
                     tr("Add, organize, and modify individual menu items"),
@@ -1046,10 +1580,18 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
                 tr("Menu Management"),
                 format!(
                     "<p>{}</p><ul><li>{}</li><li>{}</li></ul><p>{}</p>",
-                    tr("The menu management box at the top of the screen is used to control which menu is opened in the editor below."),
-                    tr("To edit an existing menu, <strong>choose a menu from the dropdown and click Select</strong>"),
-                    tr("If you have not yet created any menus, <strong>click the &#8217;create a new menu&#8217; link</strong> to get started"),
-                    tr("You can assign individual menus to the theme&#8217;s menu locations by <strong>selecting the desired settings</strong> at the bottom of the menu editor. To assign menus to all theme menu locations at once, <strong>visit the Manage Locations tab</strong> at the top of the screen."),
+                    tr(
+                        "The menu management box at the top of the screen is used to control which menu is opened in the editor below."
+                    ),
+                    tr(
+                        "To edit an existing menu, <strong>choose a menu from the dropdown and click Select</strong>"
+                    ),
+                    tr(
+                        "If you have not yet created any menus, <strong>click the &#8217;create a new menu&#8217; link</strong> to get started"
+                    ),
+                    tr(
+                        "You can assign individual menus to the theme&#8217;s menu locations by <strong>selecting the desired settings</strong> at the bottom of the menu editor. To assign menus to all theme menu locations at once, <strong>visit the Manage Locations tab</strong> at the top of the screen."
+                    ),
                 ),
             ),
             tab(
@@ -1057,12 +1599,24 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
                 tr("Editing Menus"),
                 format!(
                     "<p>{}</p><p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li><li>{}</li></ul>",
-                    tr("Each navigation menu may contain a mix of links to pages, categories, custom URLs or other content types. Menu links are added by selecting items from the expanding boxes in the left-hand column below."),
-                    tr("<strong>Clicking the arrow to the right of any menu item</strong> in the editor will reveal a standard group of settings. Additional settings such as link target, CSS classes, link relationships, and link descriptions can be enabled and disabled via the Screen Options tab."),
-                    tr("Add one or several items at once by <strong>selecting the checkbox next to each item and clicking Add to Menu</strong>"),
-                    tr("To add a custom link, <strong>expand the Custom Links section, enter a URL and link text, and click Add to Menu</strong>"),
-                    tr("To reorganize menu items, <strong>drag and drop items with your mouse or use your keyboard</strong>. Drag or move a menu item a little to the right to make it a submenu"),
-                    tr("Delete a menu item by <strong>expanding it and clicking the Remove link</strong>"),
+                    tr(
+                        "Each navigation menu may contain a mix of links to pages, categories, custom URLs or other content types. Menu links are added by selecting items from the expanding boxes in the left-hand column below."
+                    ),
+                    tr(
+                        "<strong>Clicking the arrow to the right of any menu item</strong> in the editor will reveal a standard group of settings. Additional settings such as link target, CSS classes, link relationships, and link descriptions can be enabled and disabled via the Screen Options tab."
+                    ),
+                    tr(
+                        "Add one or several items at once by <strong>selecting the checkbox next to each item and clicking Add to Menu</strong>"
+                    ),
+                    tr(
+                        "To add a custom link, <strong>expand the Custom Links section, enter a URL and link text, and click Add to Menu</strong>"
+                    ),
+                    tr(
+                        "To reorganize menu items, <strong>drag and drop items with your mouse or use your keyboard</strong>. Drag or move a menu item a little to the right to make it a submenu"
+                    ),
+                    tr(
+                        "Delete a menu item by <strong>expanding it and clicking the Remove link</strong>"
+                    ),
                 ),
             ),
         ]
@@ -1070,7 +1624,9 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
     let sidebar = format!(
         "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
         tr("For more information:"),
-        tr("<a href=\"https://wordpress.org/documentation/article/appearance-menus-screen/\">Documentation on Menus</a>"),
+        tr(
+            "<a href=\"https://wordpress.org/documentation/article/appearance-menus-screen/\">Documentation on Menus</a>"
+        ),
         tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>"),
     );
     Help { tabs, sidebar }
@@ -1078,28 +1634,56 @@ fn help(ctx: &Ctx<'_>, locations_screen: bool) -> Help {
 
 /// `wp_html_excerpt( $name, 40, '&hellip;' )`.
 fn truncated(name: &str) -> String {
-    static ENTITY_END: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"&[^;\s]{0,6}$").expect("valid pattern"));
+    static ENTITY_END: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"&[^;\s]{0,6}$").expect("valid pattern"));
     let text = rustpress_core::formatting::wp_strip_all_tags(name);
     let excerpt: String = text.chars().take(40).collect();
     let cut = ENTITY_END.replace(&excerpt, "").into_owned();
-    if cut != text { format!("{cut}&hellip;") } else { cut }
+    if cut != text {
+        format!("{cut}&hellip;")
+    } else {
+        cut
+    }
 }
 
 /// A list of strings as PHP stores it.
 fn serialized_list(items: &[&str]) -> String {
-    let body: String = items.iter().enumerate().map(|(index, item)| format!("i:{index};s:{}:\"{item}\";", item.len())).collect();
+    let body: String = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| format!("i:{index};s:{}:\"{item}\";", item.len()))
+        .collect();
     format!("a:{}:{{{body}}}", items.len())
 }
 
 /// The tab of the locations.
-fn locations_view(ctx: &Ctx<'_>, locations: &[(String, String)], assigned: &[(String, i64)], menus: &[Term], selected: i64) -> String {
+fn locations_view(
+    ctx: &Ctx<'_>,
+    locations: &[(String, String)],
+    assigned: &[(String, i64)],
+    menus: &[Term],
+    selected: i64,
+) -> String {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     let count = locations.len();
     let mut h = if count == 1 {
-        format!("<p>{}</p>", tr("Your theme supports one menu. Select which menu you would like to use."))
+        format!(
+            "<p>{}</p>",
+            tr("Your theme supports one menu. Select which menu you would like to use.")
+        )
     } else {
-        format!("<p>{}</p>", sprintf(&site.trn("Your theme supports %s menu. Select which menu appears in each location.", "Your theme supports %s menus. Select which menu appears in each location.", count as i64), &[&site.number_i18n(count as u64)]))
+        format!(
+            "<p>{}</p>",
+            sprintf(
+                &site.trn(
+                    "Your theme supports %s menu. Select which menu appears in each location.",
+                    "Your theme supports %s menus. Select which menu appears in each location.",
+                    count as i64
+                ),
+                &[&site.number_i18n(count as u64)]
+            )
+        )
     };
     let locations_url = format!("{}?action=locations", ctx.admin_url("nav-menus.php"));
     h.push_str(&format!(
@@ -1109,7 +1693,10 @@ fn locations_view(ctx: &Ctx<'_>, locations: &[(String, String)], assigned: &[(St
         tr("Assigned Menu"),
     ));
     for (location, name) in locations {
-        let current = assigned.iter().find(|(key, _)| key == location).map(|(_, id)| *id);
+        let current = assigned
+            .iter()
+            .find(|(key, _)| key == location)
+            .map(|(_, id)| *id);
         h.push_str(&format!(
             "\t\t\t\t\t<tr class=\"menu-locations-row\">\n\t\t\t\t\t\t<td class=\"menu-location-title\"><label for=\"locations-{location}\">{name}</label></td>\n\t\t\t\t\t\t<td class=\"menu-location-menus\">\n\t\t\t\t\t\t\t<select name=\"menu-locations[{location}]\" id=\"locations-{location}\">\n\t\t\t\t\t\t\t\t<option value=\"0\">&mdash; {} &mdash;</option>\n\t\t\t\t\t\t\t\t",
             esc_html(&tr("Select a Menu")),
@@ -1149,16 +1736,42 @@ fn locations_view(ctx: &Ctx<'_>, locations: &[(String, String)], assigned: &[(St
 
 /// `wp_ajax_add_menu_item()`: the items are saved without a menu and come back as they are edited.
 pub(super) async fn ajax_add_menu_item(ctx: &Ctx<'_>) -> String {
-    let Some(writer) = ctx.env.writer else { return "0".to_owned() };
+    let Some(writer) = ctx.env.writer else {
+        return "0".to_owned();
+    };
     let db = ctx.env.db;
-    let content = Content { site: ctx.site(), db, writer, user: &ctx.user, now: ctx.env.now };
+    let content = Content {
+        site: ctx.site(),
+        db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let mut rows = Vec::new();
     for (index, (_, mut fields)) in posted_items(ctx).into_iter().enumerate() {
-        let field = |name: &str| fields.iter().rev().find(|(k, _)| k == name).map_or_else(String::new, |(_, v)| v.clone());
-        let (kind, object, object_id) = (field("menu-item-type"), field("menu-item-object"), field("menu-item-object-id"));
+        let field = |name: &str| {
+            fields
+                .iter()
+                .rev()
+                .find(|(k, _)| k == name)
+                .map_or_else(String::new, |(_, v)| v.clone())
+        };
+        let (kind, object, object_id) = (
+            field("menu-item-type"),
+            field("menu-item-object"),
+            field("menu-item-object-id"),
+        );
         if !kind.is_empty() && kind != "custom" && !object_id.is_empty() && object_id != "0" {
             // "Restore the missing menu item properties."
-            let description = if kind == "taxonomy" { db.term_by_id(Some(&object), php_int(&object_id).unsigned_abs()).await.ok().flatten().map_or_else(String::new, |term| term.description) } else { String::new() };
+            let description = if kind == "taxonomy" {
+                db.term_by_id(Some(&object), php_int(&object_id).unsigned_abs())
+                    .await
+                    .ok()
+                    .flatten()
+                    .map_or_else(String::new, |term| term.description)
+            } else {
+                String::new()
+            };
             fields.push(("menu-item-description".to_owned(), description));
         }
         rows.push((index.to_string(), fields));
@@ -1178,17 +1791,35 @@ pub(super) async fn ajax_add_menu_item(ctx: &Ctx<'_>) -> String {
     if items.is_empty() {
         return String::new();
     }
-    walk(&items, |item| php_int(&item.parent), |item| item.id as i64, |output, item, depth| output.push_str(&edit_item(ctx, item, depth)), |_, _| {}, |_, _| {})
+    walk(
+        &items,
+        |item| php_int(&item.parent),
+        |item| item.id as i64,
+        |output, item, depth| output.push_str(&edit_item(ctx, item, depth)),
+        |_, _| {},
+        |_, _| {},
+    )
 }
 
 /// `wp_ajax_menu_locations_save()` after its checks.
 pub(super) async fn ajax_locations_save(ctx: &Ctx<'_>) -> &'static str {
-    let list: Vec<(String, i64)> = form_list(ctx, "menu-locations").into_iter().map(|(key, value)| (key, php_int(&value).abs())).collect();
+    let list: Vec<(String, i64)> = form_list(ctx, "menu-locations")
+        .into_iter()
+        .map(|(key, value)| (key, php_int(&value).abs()))
+        .collect();
     if list.is_empty() {
         return "0";
     }
-    let Some(writer) = ctx.env.writer else { return "0" };
-    let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+    let Some(writer) = ctx.env.writer else {
+        return "0";
+    };
+    let content = Content {
+        site: ctx.site(),
+        db: ctx.env.db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     if content.set_nav_menu_locations(&list).await.is_err() {
         return "0";
     }
@@ -1199,7 +1830,13 @@ pub(super) async fn ajax_locations_save(ctx: &Ctx<'_>) -> &'static str {
 pub(super) async fn ajax_metabox(ctx: &Ctx<'_>) -> String {
     let request = ctx.request;
     let object = request.post_field("item-object").unwrap_or_default();
-    let mut boxes = Boxes { ctx, selected: 0, placeholder: 0, one_location_no_menus: false, ajax: true };
+    let mut boxes = Boxes {
+        ctx,
+        selected: 0,
+        placeholder: 0,
+        one_location_no_menus: false,
+        ajax: true,
+    };
     let (kind, markup) = match request.post_field("item-type") {
         Some("post_type") => match box_post_types(ctx).iter().find(|t| t.name == object) {
             Some(post_type) => ("posttype", post_type_box(&mut boxes, post_type).await),
@@ -1211,7 +1848,9 @@ pub(super) async fn ajax_metabox(ctx: &Ctx<'_>) -> String {
         },
         _ => return String::new(),
     };
-    rustpress_blocks::php_json::encode(&json!({"replace-id": format!("{kind}-{object}"), "markup": markup}))
+    rustpress_blocks::php_json::encode(
+        &json!({"replace-id": format!("{kind}-{object}"), "markup": markup}),
+    )
 }
 
 /// `_wp_ajax_menu_quick_search()`.
@@ -1223,21 +1862,43 @@ pub(super) async fn ajax_quick_search(ctx: &Ctx<'_>) -> String {
     let object_type = request.post_field("object_type").unwrap_or_default();
     let query = request.post_field("q").unwrap_or_default();
     let markup = request.post_field("response-format") == Some("markup");
-    let mut boxes = Boxes { ctx, selected: 0, placeholder: 0, one_location_no_menus: false, ajax: true };
-    let line = |id: u64, title: &str, post_type: &str| format!("{}\n", rustpress_blocks::php_json::encode(&json!({"ID": id, "post_title": title, "post_type": post_type})));
-    let is_post_type = |name: &str| matches!(name, "post" | "page") || site.types.post_type_exists(name);
-    let is_taxonomy = |name: &str| matches!(name, "category" | "post_tag" | "post_format") || site.types.is_taxonomy(name);
+    let mut boxes = Boxes {
+        ctx,
+        selected: 0,
+        placeholder: 0,
+        one_location_no_menus: false,
+        ajax: true,
+    };
+    let line = |id: u64, title: &str, post_type: &str| {
+        format!(
+            "{}\n",
+            rustpress_blocks::php_json::encode(
+                &json!({"ID": id, "post_title": title, "post_type": post_type})
+            )
+        )
+    };
+    let is_post_type =
+        |name: &str| matches!(name, "post" | "page") || site.types.post_type_exists(name);
+    let is_taxonomy = |name: &str| {
+        matches!(name, "category" | "post_tag" | "post_format") || site.types.is_taxonomy(name)
+    };
     let mut out = String::new();
     if kind == "get-post-item" {
         let id = request.post_field("ID").map(|v| php_int(v).unsigned_abs());
         let Some(id) = id else { return out };
         if is_post_type(object_type) {
-            let Ok(Some(post)) = db.post(id).await else { return out };
+            let Ok(Some(post)) = db.post(id).await else {
+                return out;
+            };
             if markup {
                 let item = item_of_post(ctx, &post, false).await;
                 out.push_str(&boxes.checklist(&[item]));
             } else {
-                out.push_str(&line(id, &rustpress_blocks::content::the_title_in_admin(site, &post), &post.post_type));
+                out.push_str(&line(
+                    id,
+                    &rustpress_blocks::content::the_title_in_admin(site, &post),
+                    &post.post_type,
+                ));
             }
         } else if is_taxonomy(object_type)
             && let Ok(Some(term)) = db.term_by_id(Some(object_type), id).await
@@ -1251,8 +1912,13 @@ pub(super) async fn ajax_quick_search(ctx: &Ctx<'_>) -> String {
         }
         return out;
     }
-    static SEARCH: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"quick-search-(posttype|taxonomy)-([a-zA-Z0-9_-]*\b)").expect("valid pattern"));
-    let Some(found) = SEARCH.captures(kind) else { return out };
+    static SEARCH: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"quick-search-(posttype|taxonomy)-([a-zA-Z0-9_-]*\b)")
+            .expect("valid pattern")
+    });
+    let Some(found) = SEARCH.captures(kind) else {
+        return out;
+    };
     let name = found[2].to_owned();
     if &found[1] == "posttype" {
         if !is_post_type(&name) {
@@ -1260,20 +1926,38 @@ pub(super) async fn ajax_quick_search(ctx: &Ctx<'_>) -> String {
         }
         // `search_columns`: only the title.
         let terms = rustpress_core::query::parse_search_terms(query, false);
-        let order_by = if name == "page" { OrderBy::MenuOrderTitle } else { OrderBy::Date };
-        let posts = db.posts_by_title(&name, &terms, order_by, Order::Desc, 10).await.unwrap_or_default();
+        let order_by = if name == "page" {
+            OrderBy::MenuOrderTitle
+        } else {
+            OrderBy::Date
+        };
+        let posts = db
+            .posts_by_title(&name, &terms, order_by, Order::Desc, 10)
+            .await
+            .unwrap_or_default();
         for post in &posts {
             if markup {
                 let item = item_of_post(ctx, post, false).await;
                 out.push_str(&boxes.checklist(&[item]));
             } else {
-                out.push_str(&line(post.id, &rustpress_blocks::content::the_title_in_admin(site, post), &name));
+                out.push_str(&line(
+                    post.id,
+                    &rustpress_blocks::content::the_title_in_admin(site, post),
+                    &name,
+                ));
             }
         }
         return out;
     }
     let needle = query.to_lowercase();
-    let terms: Vec<Term> = db.terms(&name).await.unwrap_or_default().into_iter().filter(|term| term.name.to_lowercase().contains(&needle)).take(10).collect();
+    let terms: Vec<Term> = db
+        .terms(&name)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|term| term.name.to_lowercase().contains(&needle))
+        .take(10)
+        .collect();
     for term in &terms {
         if markup {
             let item = item_of_term(ctx, term, false).await;
@@ -1304,7 +1988,10 @@ struct View<'a> {
 /// The part of the page above the columns.
 fn manage_menus(ctx: &Ctx<'_>, view: &View<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let create_url = esc_url(&format!("{}?action=edit&menu=0", ctx.admin_url("nav-menus.php")));
+    let create_url = esc_url(&format!(
+        "{}?action=edit&menu=0",
+        ctx.admin_url("nav-menus.php")
+    ));
     let count = view.menus.len();
     let mut h = "\t<div class=\"manage-menus\">\n\t\t".to_owned();
     if count < 1 {
@@ -1326,20 +2013,45 @@ fn manage_menus(ctx: &Ctx<'_>, view: &View<'_>) -> String {
             tr("Select a menu to edit:"),
         ));
         if view.add_new_screen {
-            h.push_str(&format!("\t\t\t\t\t<option value=\"0\" selected=\"selected\">{}</option>\n\t\t\t\t", tr("&mdash; Select &mdash;")));
+            h.push_str(&format!(
+                "\t\t\t\t\t<option value=\"0\" selected=\"selected\">{}</option>\n\t\t\t\t",
+                tr("&mdash; Select &mdash;")
+            ));
         }
         h.push_str("\t\t\t\t");
         for menu in view.menus {
             h.push_str(&format!(
                 "\t\t\t\t\t<option value=\"{id}\" {selected}>\n\t\t\t\t\t\t{name}",
                 id = menu.term_id,
-                selected = if menu.term_id as i64 == view.selected { " selected='selected'" } else { "" },
+                selected = if menu.term_id as i64 == view.selected {
+                    " selected='selected'"
+                } else {
+                    ""
+                },
                 name = esc_html(&truncated(&menu.name)),
             ));
-            let at: Vec<&str> = view.assigned.iter().filter(|(_, id)| *id == menu.term_id as i64).filter_map(|(key, _)| view.locations.iter().find(|(location, _)| location == key).map(|(_, name)| name.as_str())).collect();
+            let at: Vec<&str> = view
+                .assigned
+                .iter()
+                .filter(|(_, id)| *id == menu.term_id as i64)
+                .filter_map(|(key, _)| {
+                    view.locations
+                        .iter()
+                        .find(|(location, _)| location == key)
+                        .map(|(_, name)| name.as_str())
+                })
+                .collect();
             if !at.is_empty() {
                 let listed = &at[..at.len().min(3)];
-                h.push_str(&format!(" ({}{})", listed.join(", "), if at.len() > listed.len() { " &hellip;" } else { "" }));
+                h.push_str(&format!(
+                    " ({}{})",
+                    listed.join(", "),
+                    if at.len() > listed.len() {
+                        " &hellip;"
+                    } else {
+                        ""
+                    }
+                ));
             }
             h.push_str("\t\t\t\t\t</option>\n\t\t\t\t");
         }
@@ -1358,9 +2070,26 @@ fn manage_menus(ctx: &Ctx<'_>, view: &View<'_>) -> String {
 fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
     let tr = |s: &str| ctx.tr(s);
     let selected = view.selected;
-    let disabled = if ctx.request.get("menu").is_some_and(|m| php_int(m) == 0) { " metabox-holder-disabled" } else { "" };
-    let save_label = if selected == 0 { tr("Create Menu") } else { tr("Save Menu") };
-    let save = |id: &str| submit_button(&save_label, "primary large menu-save", "save_menu", false, Some(id), &[]);
+    let disabled = if ctx.request.get("menu").is_some_and(|m| php_int(m) == 0) {
+        " metabox-holder-disabled"
+    } else {
+        ""
+    };
+    let save_label = if selected == 0 {
+        tr("Create Menu")
+    } else {
+        tr("Save Menu")
+    };
+    let save = |id: &str| {
+        submit_button(
+            &save_label,
+            "primary large menu-save",
+            "save_menu",
+            false,
+            Some(id),
+            &[],
+        )
+    };
     let mut h = format!(
         "\t<div id=\"nav-menus-frame\" class=\"wp-clearfix\">\n\t<div id=\"menu-settings-column\" class=\"metabox-holder{disabled}\">\n\n\t\t<div class=\"clear\"></div>\n\n\t\t<form id=\"nav-menu-meta\" class=\"nav-menu-meta\" method=\"post\" enctype=\"multipart/form-data\">\n\t\t\t<input type=\"hidden\" name=\"menu\" id=\"nav-menu-meta-object-id\" value=\"{selected}\" />\n\t\t\t<input type=\"hidden\" name=\"action\" value=\"add-menu-item\" />\n\t\t\t{}\t\t\t<h2>{}</h2>\n\t\t\t{}\t\t</form>\n\n\t</div><!-- /#menu-settings-column -->\n\t<div id=\"menu-management-liquid\">\n\t\t<div id=\"menu-management\">\n\t\t\t<form id=\"update-nav-menu\" method=\"post\" enctype=\"multipart/form-data\">\n\t\t\t\t<h2>{}</h2>\n\t\t\t\t<div class=\"menu-edit\">\n\t\t\t\t\t<input type=\"hidden\" name=\"nav-menu-data\">\n\t\t\t\t\t",
         ctx.nonce_field_named("add-menu_item", "menu-settings-column-nonce"),
@@ -1374,7 +2103,11 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
         ctx.create_nonce("meta-box-order"),
         ctx.nonce_field_named("update-nav_menu", "update-nav-menu-nonce"),
     ));
-    let name_value = if view.one_location_no_menus { esc_attr(&tr("Menu 1")) } else { esc_attr(&view.title) };
+    let name_value = if view.one_location_no_menus {
+        esc_attr(&tr("Menu 1"))
+    } else {
+        esc_attr(&view.title)
+    };
     if view.one_location_no_menus {
         h.push_str("\t\t\t\t\t\t<input type=\"hidden\" name=\"zero-menu-state\" value=\"true\" />\n\t\t\t\t\t\t");
     }
@@ -1384,12 +2117,20 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
         if view.add_new_screen { " aria-describedby=\"menu-name-desc\"" } else { "" },
         save("save_menu_header"),
     ));
-    let hide_style = if view.items == Some(0) { "style=\"display: none;\"" } else { "" };
+    let hide_style = if view.items == Some(0) {
+        "style=\"display: none;\""
+    } else {
+        ""
+    };
     if !view.add_new_screen {
         let starter = if view.one_location_no_menus {
-            tr("Edit your default menu by adding or removing items. Drag the items into the order you prefer. Click Create Menu to save your changes.")
+            tr(
+                "Edit your default menu by adding or removing items. Drag the items into the order you prefer. Click Create Menu to save your changes.",
+            )
         } else {
-            tr("Drag the items into the order you prefer. Click the arrow on the right of the item to reveal additional configuration options.")
+            tr(
+                "Drag the items into the order you prefer. Click the arrow on the right of the item to reveal additional configuration options.",
+            )
         };
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<div class=\"drag-instructions post-body-plain\" {hide_style}>\n\t\t\t\t\t\t\t\t\t<p>{starter}</p>\n\t\t\t\t\t\t\t\t</div>\n\n\t\t\t\t\t\t\t\t<div id=\"nav-menu-bulk-actions-top\" class=\"bulk-actions\" {hide_style}>\n\t\t\t\t\t\t\t\t\t<label class=\"bulk-select-button\" for=\"bulk-select-switcher-top\">\n\t\t\t\t\t\t\t\t\t\t<input type=\"checkbox\" id=\"bulk-select-switcher-top\" name=\"bulk-select-switcher-top\" class=\"bulk-select-switcher\">\n\t\t\t\t\t\t\t\t\t\t<span class=\"bulk-select-button-label\">{}</span>\n\t\t\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t\t</div>\n\n\t\t\t\t\t\t\t\t",
@@ -1416,7 +2157,11 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
             tr("List of menu items selected for deletion:"),
         ));
     }
-    let no_menus_style = if view.one_location_no_menus { "style=\"display: none;\"" } else { "" };
+    let no_menus_style = if view.one_location_no_menus {
+        "style=\"display: none;\""
+    } else {
+        ""
+    };
     let auto_add = view.auto_add.contains(&selected);
     h.push_str(&format!(
         "\n\t\t\t\t\t\t\t<div class=\"menu-settings\" {no_menus_style}>\n\t\t\t\t\t\t\t\t<h3>{}</h3>\n\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t<fieldset class=\"menu-settings-group auto-add-pages\">\n\t\t\t\t\t\t\t\t\t<legend class=\"menu-settings-group-name howto\">{}</legend>\n\t\t\t\t\t\t\t\t\t<div class=\"menu-settings-input checkbox-input\">\n\t\t\t\t\t\t\t\t\t\t<input type=\"checkbox\"{} name=\"auto-add-pages\" id=\"auto-add-pages\" value=\"1\" /> <label for=\"auto-add-pages\">{}</label>\n\t\t\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t\t\t</fieldset>\n\n\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t<fieldset class=\"menu-settings-group menu-theme-locations\">\n\t\t\t\t\t\t\t\t\t\t<legend class=\"menu-settings-group-name howto\">{}</legend>\n\t\t\t\t\t\t\t\t\t\t",
@@ -1427,18 +2172,32 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
         tr("Menu location"),
     ));
     for (location, description) in view.locations {
-        let current = view.assigned.iter().find(|(key, _)| key == location).map(|(_, id)| *id);
+        let current = view
+            .assigned
+            .iter()
+            .find(|(key, _)| key == location)
+            .map(|(_, id)| *id);
         let checked = current == Some(selected) && selected != 0;
         let other = current.filter(|id| *id != 0 && *id != selected);
         let location = esc_attr(location);
-        let described = if other.is_some() { format!("\t\t\t\t\t\t\t\t\t\t\t\t\t\taria-describedby=\"theme-location-set-{location}\"\n\t\t\t\t\t\t\t\t\t\t\t\t\t") } else { String::new() };
+        let described = if other.is_some() {
+            format!(
+                "\t\t\t\t\t\t\t\t\t\t\t\t\t\taria-describedby=\"theme-location-set-{location}\"\n\t\t\t\t\t\t\t\t\t\t\t\t\t"
+            )
+        } else {
+            String::new()
+        };
         h.push_str(&format!(
             "\t\t\t\t\t\t\t\t\t\t\t<div class=\"menu-settings-input checkbox-input\">\n\t\t\t\t\t\t\t\t\t\t\t\t<input type=\"checkbox\"{}\t\t\t\t\t\t\t\t\t\t\t\t\tname=\"menu-locations[{location}]\"\n\t\t\t\t\t\t\t\t\t\t\t\t\tid=\"locations-{location}\"\n\t\t\t\t\t\t\t\t\t\t\t\t\tvalue=\"{selected}\"\n\t\t\t\t\t\t\t\t\t\t\t\t\t{described}\t\t\t\t\t\t\t\t\t\t\t\t/>\n\t\t\t\t\t\t\t\t\t\t\t\t<label for=\"locations-{location}\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t\t\t\t\t\t\t",
             if checked { " checked='checked'" } else { "" },
             esc_html(description),
         ));
         if let Some(id) = other {
-            let name = view.menus.iter().find(|menu| menu.term_id as i64 == id).map_or_else(|| tr("an unknown menu"), |menu| esc_html(&menu.name));
+            let name = view
+                .menus
+                .iter()
+                .find(|menu| menu.term_id as i64 == id)
+                .map_or_else(|| tr("an unknown menu"), |menu| esc_html(&menu.name));
             h.push_str(&format!(
                 "\t\t\t\t\t\t\t\t\t\t\t\t\t<span class=\"theme-location-set\" id=\"theme-location-set-{location}\">\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t\t\t\t\t\t\t</span>\n\t\t\t\t\t\t\t\t\t\t\t\t",
                 sprintf(&ctx.env.site.trx("(Currently set to: %s)", "menu location"), &[&name]),
@@ -1459,7 +2218,11 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
                 tr("Cancel"),
             ));
         } else {
-            let url = format!("{}?action=delete&amp;menu={selected}&amp;_wpnonce={}", ctx.admin_url("nav-menus.php"), ctx.create_nonce(&format!("delete-nav_menu-{selected}")));
+            let url = format!(
+                "{}?action=delete&amp;menu={selected}&amp;_wpnonce={}",
+                ctx.admin_url("nav-menus.php"),
+                ctx.create_nonce(&format!("delete-nav_menu-{selected}"))
+            );
             h.push_str(&format!(
                 "\t\t\t\t\t\t\t\t<span class=\"delete-action\">\n\t\t\t\t\t\t\t\t\t<a class=\"submitdelete deletion menu-delete\" href=\"{}\">{}</a>\t\t\t\t\t\t\t\t</span><!-- END .delete-action -->\n\t\t\t\t\t\t\t\t",
                 esc_url(&url),
@@ -1474,10 +2237,23 @@ fn editor(ctx: &Ctx<'_>, view: &View<'_>) -> String {
 
 /// `$nav_menu_option['auto_add']`.
 async fn auto_add_list(ctx: &Ctx<'_>) -> Vec<i64> {
-    let stored = ctx.env.db.option("nav_menu_options").await.ok().flatten().unwrap_or_default();
+    let stored = ctx
+        .env
+        .db
+        .option("nav_menu_options")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let options = rustpress_core::options::maybe_unserialize(&stored);
-    let Some(list) = options.get("auto_add") else { return Vec::new() };
-    list.as_array().unwrap_or_default().iter().filter_map(|(_, value)| value.as_i64()).collect()
+    let Some(list) = options.get("auto_add") else {
+        return Vec::new();
+    };
+    list.as_array()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|(_, value)| value.as_i64())
+        .collect()
 }
 
 /// `wp_get_admin_notice()` of the screen.
@@ -1488,16 +2264,30 @@ fn message(text: &str, class: &str) -> String {
 /// A field `$name[$key]` of a form.
 fn form_list(ctx: &Ctx<'_>, name: &str) -> Vec<(String, String)> {
     let prefix = format!("{name}[");
-    ctx.request.form.iter().filter_map(|(key, value)| key.strip_prefix(&prefix).and_then(|rest| rest.strip_suffix(']')).map(|rest| (rest.to_owned(), value.clone()))).collect()
+    ctx.request
+        .form
+        .iter()
+        .filter_map(|(key, value)| {
+            key.strip_prefix(&prefix)
+                .and_then(|rest| rest.strip_suffix(']'))
+                .map(|rest| (rest.to_owned(), value.clone()))
+        })
+        .collect()
 }
 
 /// The rows of `$_REQUEST['menu-item']`: `$key => [ $field => $value ]`.
 fn posted_items(ctx: &Ctx<'_>) -> Vec<(String, Vec<(String, String)>)> {
     let mut rows: Vec<(String, Vec<(String, String)>)> = Vec::new();
     for (key, value) in &ctx.request.form {
-        let Some(rest) = key.strip_prefix("menu-item[") else { continue };
-        let Some((id, field)) = rest.split_once("][") else { continue };
-        let Some(field) = field.strip_suffix(']') else { continue };
+        let Some(rest) = key.strip_prefix("menu-item[") else {
+            continue;
+        };
+        let Some((id, field)) = rest.split_once("][") else {
+            continue;
+        };
+        let Some(field) = field.strip_suffix(']') else {
+            continue;
+        };
         let entry = (field.to_owned(), value.clone());
         match rows.iter_mut().find(|(known, _)| known == id) {
             Some((_, fields)) => fields.push(entry),
@@ -1508,20 +2298,42 @@ fn posted_items(ctx: &Ctx<'_>) -> Vec<(String, Vec<(String, String)>)> {
 }
 
 /// `wp_save_nav_menu_items()`.
-async fn save_menu_items(content: &Content<'_>, menu_id: u64, rows: Vec<(String, Vec<(String, String)>)>) -> Vec<u64> {
+async fn save_menu_items(
+    content: &Content<'_>,
+    menu_id: u64,
+    rows: Vec<(String, Vec<(String, String)>)>,
+) -> Vec<u64> {
     let mut saved = Vec::new();
     for (key, fields) in rows {
-        let field = |name: &str| fields.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        let field = |name: &str| {
+            fields
+                .iter()
+                .rev()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
         let db_id = field("menu-item-db-id");
         let db_id_empty = db_id.as_deref().is_none_or(|v| v.is_empty() || v == "0");
         let object_id_empty = field("menu-item-object-id").is_none_or(|v| v.is_empty() || v == "0");
         let kind = field("menu-item-type");
         let url = field("menu-item-url").unwrap_or_default();
-        if object_id_empty && (kind.is_none() || matches!(url.as_str(), "https://" | "http://" | "") || !(kind.as_deref() == Some("custom") && db_id.is_none()) || !db_id_empty) {
+        if object_id_empty
+            && (kind.is_none()
+                || matches!(url.as_str(), "https://" | "http://" | "")
+                || !(kind.as_deref() == Some("custom") && db_id.is_none())
+                || !db_id_empty)
+        {
             continue;
         }
         let possible = php_int(&key);
-        let actual = if db_id_empty || possible < 0 || db_id.as_deref().is_some_and(|v| php_int(v) != possible) { 0 } else { possible as u64 };
+        let actual = if db_id_empty
+            || possible < 0
+            || db_id.as_deref().is_some_and(|v| php_int(v) != possible)
+        {
+            0
+        } else {
+            possible as u64
+        };
         let value = |name: &str| field(name).unwrap_or_default();
         let data = MenuItemData {
             object_id: value("menu-item-object-id"),
@@ -1546,18 +2358,45 @@ async fn save_menu_items(content: &Content<'_>, menu_id: u64, rows: Vec<(String,
 }
 
 /// `wp_nav_menu_update_menu_items()`.
-async fn update_menu_items(ctx: &Ctx<'_>, content: &Content<'_>, menu_id: u64, title: &str) -> Vec<String> {
+async fn update_menu_items(
+    ctx: &Ctx<'_>,
+    content: &Content<'_>,
+    menu_id: u64,
+    title: &str,
+) -> Vec<String> {
     use rustpress_core::OrLog;
     let db = ctx.env.db;
     let mut messages = Vec::new();
-    let mut left: Vec<u64> = match db.term_by_id(Some("nav_menu"), menu_id).await.ok().flatten() {
+    let mut left: Vec<u64> = match db
+        .term_by_id(Some("nav_menu"), menu_id)
+        .await
+        .ok()
+        .flatten()
+    {
         Some(menu) if menu.count > 0 => {
-            let query = PostQuery { post_types: vec!["nav_menu_item".into()], statuses: vec!["draft".into(), "publish".into()], tax_groups: vec![vec![menu.term_taxonomy_id]], ..PostQuery::default() };
-            db.posts(&query).await.unwrap_or_default().into_iter().map(|post| post.id).collect()
+            let query = PostQuery {
+                post_types: vec!["nav_menu_item".into()],
+                statuses: vec!["draft".into(), "publish".into()],
+                tax_groups: vec![vec![menu.term_taxonomy_id]],
+                ..PostQuery::default()
+            };
+            db.posts(&query)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|post| post.id)
+                .collect()
         }
         _ => Vec::new(),
     };
-    let lookup = |name: &str, key: &str| ctx.request.form.iter().rev().find(|(k, _)| *k == format!("{name}[{key}]")).map_or_else(String::new, |(_, value)| value.clone());
+    let lookup = |name: &str, key: &str| {
+        ctx.request
+            .form
+            .iter()
+            .rev()
+            .find(|(k, _)| *k == format!("{name}[{key}]"))
+            .map_or_else(String::new, |(_, value)| value.clone())
+    };
     for (key, db_id) in form_list(ctx, "menu-item-db-id") {
         // A menu item title can't be blank.
         let title_field = lookup("menu-item-title", &key);
@@ -1579,7 +2418,11 @@ async fn update_menu_items(ctx: &Ctx<'_>, content: &Content<'_>, menu_id: u64, t
             xfn: lookup("menu-item-xfn", &key),
             status: String::new(),
         };
-        let id = if php_int(&db_id) != php_int(&key) || key.parse::<i64>().is_err() { 0 } else { php_int(&key).unsigned_abs() };
+        let id = if php_int(&db_id) != php_int(&key) || key.parse::<i64>().is_err() {
+            0
+        } else {
+            php_int(&key).unsigned_abs()
+        };
         match content.update_nav_menu_item(menu_id, id, &data).await {
             Ok(saved) => left.retain(|item| *item != saved),
             Err(error) => messages.push(notice(&error, "", false, "message", &["error"], true)),
@@ -1590,7 +2433,10 @@ async fn update_menu_items(ctx: &Ctx<'_>, content: &Content<'_>, menu_id: u64, t
         content.delete_post(item, false).await.or_log();
     }
     // Store 'auto-add' pages.
-    let auto_add = ctx.request.post_field("auto-add-pages").is_some_and(|v| !v.is_empty() && v != "0");
+    let auto_add = ctx
+        .request
+        .post_field("auto-add-pages")
+        .is_some_and(|v| !v.is_empty() && v != "0");
     let mut list = auto_add_list(ctx).await;
     let id = menu_id as i64;
     if auto_add {
@@ -1602,22 +2448,51 @@ async fn update_menu_items(ctx: &Ctx<'_>, content: &Content<'_>, menu_id: u64, t
     }
     let menus = db.terms("nav_menu").await.unwrap_or_default();
     list.retain(|known| menus.iter().any(|menu| menu.term_id as i64 == *known));
-    let stored = db.option("nav_menu_options").await.ok().flatten().unwrap_or_default();
+    let stored = db
+        .option("nav_menu_options")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let mut options = match rustpress_core::options::maybe_unserialize(&stored) {
         rustpress_phpser::Value::Array(items) => items,
-        _ => vec![(rustpress_phpser::Key::Int(0), rustpress_phpser::Value::Bool(false))],
+        _ => vec![(
+            rustpress_phpser::Key::Int(0),
+            rustpress_phpser::Value::Bool(false),
+        )],
     };
-    let auto: Vec<(rustpress_phpser::Key, rustpress_phpser::Value)> = list.iter().enumerate().map(|(index, id)| (rustpress_phpser::Key::Int(index as i64), rustpress_phpser::Value::Int(*id))).collect();
+    let auto: Vec<(rustpress_phpser::Key, rustpress_phpser::Value)> = list
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            (
+                rustpress_phpser::Key::Int(index as i64),
+                rustpress_phpser::Value::Int(*id),
+            )
+        })
+        .collect();
     let key = rustpress_phpser::Key::Str(b"auto_add".to_vec());
     match options.iter_mut().find(|(k, _)| *k == key) {
         Some((_, value)) => *value = rustpress_phpser::Value::Array(auto),
         None => options.push((key, rustpress_phpser::Value::Array(auto))),
     }
     if let Some(writer) = ctx.env.writer {
-        let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&rustpress_phpser::Value::Array(options))).into_owned();
-        writer.update_option_with_autoload("nav_menu_options", &serialized, "off").await.or_log();
+        let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(
+            &rustpress_phpser::Value::Array(options),
+        ))
+        .into_owned();
+        writer
+            .update_option_with_autoload("nav_menu_options", &serialized, "off")
+            .await
+            .or_log();
     }
-    messages.push(message(&sprintf(&ctx.tr("%s has been updated."), &[&format!("<strong>{title}</strong>")]), "updated"));
+    messages.push(message(
+        &sprintf(
+            &ctx.tr("%s has been updated."),
+            &[&format!("<strong>{title}</strong>")],
+        ),
+        "updated",
+    ));
     messages
 }
 
@@ -1628,14 +2503,32 @@ enum ActionResult {
 }
 
 fn expired(ctx: &Ctx<'_>) -> ActionResult {
-    ActionResult::Respond(Box::new(die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."))))
+    ActionResult::Respond(Box::new(die(
+        ctx.env,
+        403,
+        &ctx.tr("An error occurred."),
+        &ctx.tr("The link you followed has expired."),
+    )))
 }
 
 /// A menu item for the moves: `(ID, parent)` in the order of `wp_get_nav_menu_items()`, numbered from 1.
 async fn ordered_items(ctx: &Ctx<'_>, menu_id: u64) -> Vec<EditItem> {
-    match ctx.env.db.term_by_id(Some("nav_menu"), menu_id).await.ok().flatten() {
+    match ctx
+        .env
+        .db
+        .term_by_id(Some("nav_menu"), menu_id)
+        .await
+        .ok()
+        .flatten()
+    {
         Some(menu) if menu.count > 0 => {
-            let query = PostQuery { post_types: vec!["nav_menu_item".into()], tax_groups: vec![vec![menu.term_taxonomy_id]], order_by: OrderBy::MenuOrder, order: Order::Asc, ..PostQuery::default() };
+            let query = PostQuery {
+                post_types: vec!["nav_menu_item".into()],
+                tax_groups: vec![vec![menu.term_taxonomy_id]],
+                order_by: OrderBy::MenuOrder,
+                order: Order::Asc,
+                ..PostQuery::default()
+            };
             let mut items = Vec::new();
             for post in ctx.env.db.posts(&query).await.unwrap_or_default() {
                 items.push(setup_item(ctx, &post).await);
@@ -1655,47 +2548,95 @@ async fn move_item(ctx: &Ctx<'_>, content: &Content<'_>, up: bool) {
     use rustpress_core::OrLog;
     let db = ctx.env.db;
     let Some(writer) = ctx.env.writer else { return };
-    let item_id = ctx.request.request("menu-item").map_or(0, php_int).unsigned_abs();
-    let Ok(Some(item_post)) = db.post(item_id).await else { return };
+    let item_id = ctx
+        .request
+        .request("menu-item")
+        .map_or(0, php_int)
+        .unsigned_abs();
+    let Ok(Some(item_post)) = db.post(item_id).await else {
+        return;
+    };
     if item_post.post_type != "nav_menu_item" {
         return;
     }
     let menu_id = match ctx.request.request("menu") {
         Some(menu) => php_int(menu).unsigned_abs(),
-        None => db.terms_for_post(item_id, Some("nav_menu")).await.unwrap_or_default().first().map_or(0, |term| term.term_id),
+        None => db
+            .terms_for_post(item_id, Some("nav_menu"))
+            .await
+            .unwrap_or_default()
+            .first()
+            .map_or(0, |term| term.term_id),
     };
     if menu_id == 0 {
         return;
     }
     let items = ordered_items(ctx, menu_id).await;
-    let order_of = |id: u64| items.iter().find(|item| item.id == id).map(|item| item.menu_order);
-    let at_order = |order: i64| items.iter().find(|item| item.menu_order == order).map(|item| item.id);
+    let order_of = |id: u64| {
+        items
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| item.menu_order)
+    };
+    let at_order = |order: i64| {
+        items
+            .iter()
+            .find(|item| item.menu_order == order)
+            .map(|item| item.id)
+    };
     let contains = |id: i64| id > 0 && items.iter().any(|item| item.id == id as u64);
     let item = setup_item(ctx, &item_post).await;
     let parent = php_int(&item.parent);
     let reset = |value: i64| if value == item_id as i64 { 0 } else { value };
     let set_parent = |value: i64| async move {
-        writer.update_post_meta(item_id, "_menu_item_menu_item_parent", &value.to_string()).await.or_log();
+        writer
+            .update_post_meta(item_id, "_menu_item_menu_item_parent", &value.to_string())
+            .await
+            .or_log();
     };
     let set_order = |id: u64, order: i32| async move {
-        content.insert_post(&PostData { id: Some(id), menu_order: Some(order), ..Default::default() }).await.or_log();
+        content
+            .insert_post(&PostData {
+                id: Some(id),
+                menu_order: Some(order),
+                ..Default::default()
+            })
+            .await
+            .or_log();
     };
     let own_order = i64::from(item_post.menu_order);
     if up {
         // If this menu item is not first.
-        let Some(order) = order_of(item_id).filter(|order| *order != 0) else { return };
-        let Some(previous) = at_order(order - 1) else { return };
+        let Some(order) = order_of(item_id).filter(|order| *order != 0) else {
+            return;
+        };
+        let Some(previous) = at_order(order - 1) else {
+            return;
+        };
         if parent != 0 && contains(parent) && parent as u64 == previous {
             let parent_post = db.post(parent as u64).await.ok().flatten();
-            let Some(parent_post) = parent_post else { return };
+            let Some(parent_post) = parent_post else {
+                return;
+            };
             let parent_item = setup_item(ctx, &parent_post).await;
             let parent_order = order_of(parent as u64).unwrap_or(0);
-            let before_parent = if parent_order != 0 { at_order(parent_order - 1) } else { None };
+            let before_parent = if parent_order != 0 {
+                at_order(parent_order - 1)
+            } else {
+                None
+            };
             let grandparent = php_int(&parent_item.parent);
             let new_parent = match before_parent {
                 Some(_) if grandparent != 0 => grandparent,
                 Some(before) => {
-                    let possible = db.post_meta(before).await.unwrap_or_default().into_iter().find(|m| m.meta_key.as_deref() == Some("_menu_item_menu_item_parent")).and_then(|m| m.meta_value).map_or(0, |v| php_int(&v));
+                    let possible = db
+                        .post_meta(before)
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|m| m.meta_key.as_deref() == Some("_menu_item_menu_item_parent"))
+                        .and_then(|m| m.meta_value)
+                        .map_or(0, |v| php_int(&v));
                     if contains(possible) { possible } else { 0 }
                 }
                 None => 0,
@@ -1712,7 +2653,9 @@ async fn move_item(ctx: &Ctx<'_>, content: &Content<'_>, up: bool) {
     }
     let order = order_of(item_id).unwrap_or(0);
     if let Some(next) = at_order(order + 1) {
-        let Ok(Some(next_post)) = db.post(next).await else { return };
+        let Ok(Some(next_post)) = db.post(next).await else {
+            return;
+        };
         let next_item = setup_item(ctx, &next_post).await;
         let next_parent = php_int(&next_item.parent);
         if parent != 0 && (next_parent == 0 || next_parent != parent) {
@@ -1731,13 +2674,27 @@ async fn move_item(ctx: &Ctx<'_>, content: &Content<'_>, up: bool) {
         }
     } else if parent != 0 && contains(parent) {
         // The item is last but still has a parent, so bubble up.
-        let bubbled = db.post_meta(parent as u64).await.unwrap_or_default().into_iter().find(|m| m.meta_key.as_deref() == Some("_menu_item_menu_item_parent")).and_then(|m| m.meta_value).map_or(0, |v| php_int(&v));
+        let bubbled = db
+            .post_meta(parent as u64)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .find(|m| m.meta_key.as_deref() == Some("_menu_item_menu_item_parent"))
+            .and_then(|m| m.meta_value)
+            .map_or(0, |v| php_int(&v));
         set_parent(reset(bubbled)).await;
     }
 }
 
 /// The switch at the top of `nav-menus.php`.
-async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut String, assigned: &mut Vec<(String, i64)>, messages: &mut Vec<String>, locations: &[(String, String)]) -> ActionResult {
+async fn run_action(
+    ctx: &Ctx<'_>,
+    selected: &mut i64,
+    selected_title: &mut String,
+    assigned: &mut Vec<(String, i64)>,
+    messages: &mut Vec<String>,
+    locations: &[(String, String)],
+) -> ActionResult {
     use rustpress_core::OrLog;
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
@@ -1746,12 +2703,29 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
     if action == "locations" && locations.is_empty() {
         return ActionResult::Respond(Box::new(redirect(&ctx.admin_url("nav-menus.php"))));
     }
-    let writes = matches!(action.as_str(), "add-menu-item" | "move-down-menu-item" | "move-up-menu-item" | "delete-menu-item" | "delete" | "delete_menus" | "update") || (action == "locations" && !form_list(ctx, "menu-locations").is_empty());
+    let writes = matches!(
+        action.as_str(),
+        "add-menu-item"
+            | "move-down-menu-item"
+            | "move-up-menu-item"
+            | "delete-menu-item"
+            | "delete"
+            | "delete_menus"
+            | "update"
+    ) || (action == "locations" && !form_list(ctx, "menu-locations").is_empty());
     if !writes {
         return ActionResult::Continue;
     }
-    let Some(writer) = ctx.env.writer else { return ActionResult::Respond(Box::new(super::common::read_only(ctx))) };
-    let content = Content { site: ctx.site(), db, writer, user: &ctx.user, now: ctx.env.now };
+    let Some(writer) = ctx.env.writer else {
+        return ActionResult::Respond(Box::new(super::common::read_only(ctx)));
+    };
+    let content = Content {
+        site: ctx.site(),
+        db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let form_locations = |current: &[(String, i64)]| {
         let mut merged = current.to_vec();
         for (key, value) in form_list(ctx, "menu-locations") {
@@ -1769,7 +2743,10 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
                 return expired(ctx);
             }
             if request.request("nav-menu-locations").is_some() {
-                let list: Vec<(String, i64)> = form_list(ctx, "menu-locations").into_iter().map(|(key, value)| (key, php_int(&value).abs())).collect();
+                let list: Vec<(String, i64)> = form_list(ctx, "menu-locations")
+                    .into_iter()
+                    .map(|(key, value)| (key, php_int(&value).abs()))
+                    .collect();
                 content.set_nav_menu_locations(&list).await.or_log();
             } else {
                 save_menu_items(&content, (*selected).unsigned_abs(), posted_items(ctx)).await;
@@ -1782,24 +2759,46 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
             move_item(ctx, &content, action == "move-up-menu-item").await;
         }
         "delete-menu-item" => {
-            let item_id = request.request("menu-item").map_or(0, php_int).unsigned_abs();
+            let item_id = request
+                .request("menu-item")
+                .map_or(0, php_int)
+                .unsigned_abs();
             if !ctx.verify_nonce(&format!("delete-menu_item_{item_id}")) {
                 return expired(ctx);
             }
-            let item = db.post(item_id).await.ok().flatten().filter(|post| post.post_type == "nav_menu_item");
+            let item = db
+                .post(item_id)
+                .await
+                .ok()
+                .flatten()
+                .filter(|post| post.post_type == "nav_menu_item");
             if item.is_some() && content.delete_post(item_id, true).await.unwrap_or(false) {
-                messages.push(message(&tr("The menu item has been successfully deleted."), "updated"));
+                messages.push(message(
+                    &tr("The menu item has been successfully deleted."),
+                    "updated",
+                ));
             }
         }
         "delete" => {
             if !ctx.verify_nonce(&format!("delete-nav_menu-{selected}")) {
                 return expired(ctx);
             }
-            let exists = db.term_by_id(Some("nav_menu"), (*selected).unsigned_abs()).await.ok().flatten().is_some();
+            let exists = db
+                .term_by_id(Some("nav_menu"), (*selected).unsigned_abs())
+                .await
+                .ok()
+                .flatten()
+                .is_some();
             if exists {
-                content.delete_nav_menu((*selected).unsigned_abs(), assigned).await.or_log();
+                content
+                    .delete_nav_menu((*selected).unsigned_abs(), assigned)
+                    .await
+                    .or_log();
                 *assigned = menu_locations(ctx).await;
-                messages.push(message(&tr("The menu has been successfully deleted."), "updated"));
+                messages.push(message(
+                    &tr("The menu has been successfully deleted."),
+                    "updated",
+                ));
             } else {
                 *selected = 0;
             }
@@ -1810,12 +2809,21 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
             }
             for (_, id) in form_list(ctx, "delete_menus") {
                 let id = php_int(&id).unsigned_abs();
-                if db.term_by_id(Some("nav_menu"), id).await.ok().flatten().is_some() {
+                if db
+                    .term_by_id(Some("nav_menu"), id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
                     content.delete_nav_menu(id, assigned).await.or_log();
                     *assigned = menu_locations(ctx).await;
                 }
             }
-            messages.push(message(&tr("Selected menus have been successfully deleted."), "updated"));
+            messages.push(message(
+                &tr("Selected menus have been successfully deleted."),
+                "updated",
+            ));
         }
         "update" => {
             if !ctx.verify_nonce_field("update-nav_menu", "update-nav-menu-nonce") {
@@ -1823,7 +2831,10 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
             }
             let new_locations = form_list(ctx, "menu-locations");
             let merged = form_locations(assigned);
-            let posted_name = rustpress_core::formatting::php_trim(&esc_html(request.post_field("menu-name").unwrap_or_default())).to_owned();
+            let posted_name = rustpress_core::formatting::php_trim(&esc_html(
+                request.post_field("menu-name").unwrap_or_default(),
+            ))
+            .to_owned();
             if *selected == 0 {
                 if posted_name.is_empty() {
                     messages.push(message(&tr("Please enter a valid menu name."), "error"));
@@ -1832,13 +2843,22 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
                 match content.update_nav_menu_object(0, &posted_name).await {
                     Err(error) => messages.push(message(&error, "error")),
                     Ok(id) => {
-                        let name = db.term_by_id(Some("nav_menu"), id).await.ok().flatten().map_or_else(String::new, |menu| menu.name);
+                        let name = db
+                            .term_by_id(Some("nav_menu"), id)
+                            .await
+                            .ok()
+                            .flatten()
+                            .map_or_else(String::new, |menu| menu.name);
                         *selected = id as i64;
                         *selected_title = name.clone();
                         if request.request("menu-item").is_some() {
                             save_menu_items(&content, id, posted_items(ctx)).await;
                         }
-                        if request.request("zero-menu-state").is_some() || request.post_field("auto-add-pages").is_some_and(|v| !v.is_empty() && v != "0") {
+                        if request.request("zero-menu-state").is_some()
+                            || request
+                                .post_field("auto-add-pages")
+                                .is_some_and(|v| !v.is_empty() && v != "0")
+                        {
                             update_menu_items(ctx, &content, id, &name).await;
                         }
                         let mut list = assigned.clone();
@@ -1865,7 +2885,9 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
                             }
                             content.set_nav_menu_locations(&list).await.or_log();
                         }
-                        return ActionResult::Respond(Box::new(redirect(&ctx.admin_url(&format!("nav-menus.php?menu={id}")))));
+                        return ActionResult::Respond(Box::new(redirect(
+                            &ctx.admin_url(&format!("nav-menus.php?menu={id}")),
+                        )));
                     }
                 }
                 return ActionResult::Continue;
@@ -1873,23 +2895,43 @@ async fn run_action(ctx: &Ctx<'_>, selected: &mut i64, selected_title: &mut Stri
             // Remove menu locations that have been unchecked.
             let mut list = merged;
             for (location, _) in locations {
-                let posted = new_locations.iter().any(|(key, value)| key == location && !value.is_empty() && value != "0");
-                if !posted && list.iter().any(|(key, id)| key == location && *id == *selected) {
+                let posted = new_locations
+                    .iter()
+                    .any(|(key, value)| key == location && !value.is_empty() && value != "0");
+                if !posted
+                    && list
+                        .iter()
+                        .any(|(key, id)| key == location && *id == *selected)
+                {
                     list.retain(|(key, _)| key != location);
                 }
             }
             content.set_nav_menu_locations(&list).await.or_log();
             *assigned = list;
-            let current = db.term_by_id(Some("nav_menu"), (*selected).unsigned_abs()).await.ok().flatten();
+            let current = db
+                .term_by_id(Some("nav_menu"), (*selected).unsigned_abs())
+                .await
+                .ok()
+                .flatten();
             let mut name = posted_name;
             if name.is_empty() {
                 messages.push(message(&tr("Please enter a valid menu name."), "error"));
-                name = current.as_ref().map_or_else(String::new, |menu| menu.name.clone());
+                name = current
+                    .as_ref()
+                    .map_or_else(String::new, |menu| menu.name.clone());
             }
-            match content.update_nav_menu_object((*selected).unsigned_abs(), &name).await {
+            match content
+                .update_nav_menu_object((*selected).unsigned_abs(), &name)
+                .await
+            {
                 Err(error) => messages.push(message(&error, "error")),
                 Ok(id) => {
-                    *selected_title = db.term_by_id(Some("nav_menu"), id).await.ok().flatten().map_or_else(String::new, |menu| menu.name);
+                    *selected_title = db
+                        .term_by_id(Some("nav_menu"), id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map_or_else(String::new, |menu| menu.name);
                     let updates = update_menu_items(ctx, &content, id, selected_title).await;
                     messages.extend(updates);
                 }
@@ -1916,17 +2958,34 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     // `current_theme_supports( 'menus' )`: Twenty Seventeen registers locations, a block theme has this screen only
     // when it asks for it.
     if ctx.env.block_theme {
-        return die(ctx.env, 500, "WordPress &rsaquo; Error", &tr("Your theme does not support navigation menus or widgets."));
+        return die(
+            ctx.env,
+            500,
+            "WordPress &rsaquo; Error",
+            &tr("Your theme does not support navigation menus or widgets."),
+        );
     }
     if !ctx.can("edit_theme_options") {
-        return super::common::forbidden_heading(ctx, "Sorry, you are not allowed to edit theme options on this site.");
+        return super::common::forbidden_heading(
+            ctx,
+            "Sorry, you are not allowed to edit theme options on this site.",
+        );
     }
     let locations = registered_locations(ctx);
     let mut selected = request.request("menu").map_or(0, php_int);
     let mut assigned = menu_locations(ctx).await;
     let mut messages: Vec<String> = Vec::new();
     let mut selected_title = String::new();
-    match run_action(ctx, &mut selected, &mut selected_title, &mut assigned, &mut messages, &locations).await {
+    match run_action(
+        ctx,
+        &mut selected,
+        &mut selected_title,
+        &mut assigned,
+        &mut messages,
+        &locations,
+    )
+    .await
+    {
         ActionResult::Continue => {}
         ActionResult::Respond(response) => return *response,
     }
@@ -1934,14 +2993,28 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     let menu_count = menus.len();
     let add_new_screen = request.get("menu").is_some_and(|m| php_int(m) == 0);
     let locations_screen = request.get("action") == Some("locations");
-    let published_pages = db.count_posts(&PostQuery { post_types: vec!["page".into()], statuses: vec!["publish".into()], ..PostQuery::default() }).await.unwrap_or(0);
-    let one_location_no_menus = locations.len() == 1 && !add_new_screen && menus.is_empty() && published_pages > 0;
+    let published_pages = db
+        .count_posts(&PostQuery {
+            post_types: vec!["page".into()],
+            statuses: vec!["publish".into()],
+            ..PostQuery::default()
+        })
+        .await
+        .unwrap_or(0);
+    let one_location_no_menus =
+        locations.len() == 1 && !add_new_screen && menus.is_empty() && published_pages > 0;
     if menu_count == 0 && !add_new_screen && !one_location_no_menus {
         return redirect(&ctx.admin_url("nav-menus.php?action=edit&menu=0"));
     }
     let is_menu = |id: i64| menus.iter().any(|menu| menu.term_id as i64 == id);
-    let stored_recent = super::common::user_option(ctx, "nav_menu_recently_edited").await.map_or(0, |value| php_int(&value).abs());
-    let recently_edited = if stored_recent == 0 && is_menu(selected) { selected } else { stored_recent };
+    let stored_recent = super::common::user_option(ctx, "nav_menu_recently_edited")
+        .await
+        .map_or(0, |value| php_int(&value).abs());
+    let recently_edited = if stored_recent == 0 && is_menu(selected) {
+        selected
+    } else {
+        stored_recent
+    };
     if selected == 0 && request.get("menu").is_none() && is_menu(recently_edited) {
         selected = recently_edited;
     }
@@ -1953,12 +3026,26 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     } else if selected == 0 && !menus.is_empty() && !add_new_screen {
         selected = menus[0].term_id as i64;
     }
-    if selected != recently_edited && is_menu(selected) && let Some(writer) = ctx.env.writer {
+    if selected != recently_edited
+        && is_menu(selected)
+        && let Some(writer) = ctx.env.writer
+    {
         use rustpress_core::OrLog;
-        writer.update_user_meta(ctx.user.id, "nav_menu_recently_edited", &selected.to_string()).await.or_log();
+        writer
+            .update_user_meta(
+                ctx.user.id,
+                "nav_menu_recently_edited",
+                &selected.to_string(),
+            )
+            .await
+            .or_log();
     }
     let current = menus.iter().find(|menu| menu.term_id as i64 == selected);
-    let title = if selected_title.is_empty() { current.map_or_else(String::new, |menu| menu.name.clone()) } else { selected_title };
+    let title = if selected_title.is_empty() {
+        current.map_or_else(String::new, |menu| menu.name.clone())
+    } else {
+        selected_title
+    };
     let assigned = menu_locations(ctx).await;
     let items = match current {
         Some(menu) => Some(menu_items(ctx, menu).await),
@@ -1978,52 +3065,132 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     // `_wp_delete_orphaned_draft_menu_items()` on `admin_head-nav-menus.php`.
     if let Some(writer) = ctx.env.writer {
         use rustpress_core::OrLog;
-        let content = Content { site: ctx.site(), db, writer, user: &ctx.user, now: ctx.env.now };
-        for id in db.orphaned_menu_items(ctx.env.now - 30 * 86_400).await.unwrap_or_default() {
+        let content = Content {
+            site: ctx.site(),
+            db,
+            writer,
+            user: &ctx.user,
+            now: ctx.env.now,
+        };
+        for id in db
+            .orphaned_menu_items(ctx.env.now - 30 * 86_400)
+            .await
+            .unwrap_or_default()
+        {
             content.delete_post(id, true).await.or_log();
         }
     }
     let mut hidden_columns = super::common::user_option(ctx, "managenav-menuscolumnshidden").await;
     if hidden_columns.is_none() {
-        let defaults = serialized_list(&["link-target", "css-classes", "xfn", "description", "title-attribute"]);
+        let defaults = serialized_list(&[
+            "link-target",
+            "css-classes",
+            "xfn",
+            "description",
+            "title-attribute",
+        ]);
         if let Some(writer) = ctx.env.writer {
             use rustpress_core::OrLog;
-            writer.update_user_meta(ctx.user.id, "managenav-menuscolumnshidden", &defaults).await.or_log();
+            writer
+                .update_user_meta(ctx.user.id, "managenav-menuscolumnshidden", &defaults)
+                .await
+                .or_log();
         }
         hidden_columns = Some(defaults);
     }
-    let hidden_columns: Vec<String> = hidden_columns.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok()).map_or_else(Vec::new, |value| value.as_array().unwrap_or_default().iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect());
+    let hidden_columns: Vec<String> = hidden_columns
+        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok())
+        .map_or_else(Vec::new, |value| {
+            value
+                .as_array()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                .collect()
+        });
     let mut box_ids: Vec<String> = Vec::new();
     box_ids.push("add-post-type-page".to_owned());
-    box_ids.extend(post_types.iter().filter(|t| t.name != "page").map(|t| format!("add-post-type-{}", t.name)));
+    box_ids.extend(
+        post_types
+            .iter()
+            .filter(|t| t.name != "page")
+            .map(|t| format!("add-post-type-{}", t.name)),
+    );
     box_ids.push("add-custom-links".to_owned());
     box_ids.extend(taxonomies.iter().map(|t| format!("add-{}", t.name)));
     let hidden_boxes = match super::common::user_option(ctx, "metaboxhidden_nav-menus").await {
-        Some(raw) => rustpress_phpser::unserialize(raw.as_bytes()).ok().map_or_else(Vec::new, |value| value.as_array().unwrap_or_default().iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect()),
+        Some(raw) => rustpress_phpser::unserialize(raw.as_bytes())
+            .ok()
+            .map_or_else(Vec::new, |value| {
+                value
+                    .as_array()
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                    .collect()
+            }),
         None => {
-            let initial = ["add-post-type-page", "add-post-type-post", "add-custom-links", "add-category"];
-            let hidden: Vec<String> = box_ids.iter().filter(|id| !initial.contains(&id.as_str())).cloned().collect();
+            let initial = [
+                "add-post-type-page",
+                "add-post-type-post",
+                "add-custom-links",
+                "add-category",
+            ];
+            let hidden: Vec<String> = box_ids
+                .iter()
+                .filter(|id| !initial.contains(&id.as_str()))
+                .cloned()
+                .collect();
             if let Some(writer) = ctx.env.writer {
                 use rustpress_core::OrLog;
-                writer.update_user_meta(ctx.user.id, "metaboxhidden_nav-menus", &serialized_list(&hidden.iter().map(String::as_str).collect::<Vec<_>>())).await.or_log();
+                writer
+                    .update_user_meta(
+                        ctx.user.id,
+                        "metaboxhidden_nav-menus",
+                        &serialized_list(&hidden.iter().map(String::as_str).collect::<Vec<_>>()),
+                    )
+                    .await
+                    .or_log();
             }
             hidden
         }
     };
 
     // The boxes, in the order they print, for `$_nav_menu_placeholder`.
-    let mut boxes = Boxes { ctx, selected, placeholder: 0, one_location_no_menus, ajax: false };
+    let mut boxes = Boxes {
+        ctx,
+        selected,
+        placeholder: 0,
+        one_location_no_menus,
+        ajax: false,
+    };
     let mut sections: Vec<(String, String, String)> = Vec::new();
     if !locations_screen {
         if let Some(page) = post_types.iter().find(|t| t.name == "page") {
-            sections.push(("add-post-type-page".to_owned(), page.title.clone(), post_type_box(&mut boxes, page).await));
+            sections.push((
+                "add-post-type-page".to_owned(),
+                page.title.clone(),
+                post_type_box(&mut boxes, page).await,
+            ));
         }
         for post_type in post_types.iter().filter(|t| t.name != "page") {
-            sections.push((format!("add-post-type-{}", post_type.name), post_type.title.clone(), post_type_box(&mut boxes, post_type).await));
+            sections.push((
+                format!("add-post-type-{}", post_type.name),
+                post_type.title.clone(),
+                post_type_box(&mut boxes, post_type).await,
+            ));
         }
-        sections.push(("add-custom-links".to_owned(), tr("Custom Links"), boxes.custom_links()));
+        sections.push((
+            "add-custom-links".to_owned(),
+            tr("Custom Links"),
+            boxes.custom_links(),
+        ));
         for taxonomy in &taxonomies {
-            sections.push((format!("add-{}", taxonomy.name), taxonomy.title.clone(), taxonomy_box(&mut boxes, taxonomy).await));
+            sections.push((
+                format!("add-{}", taxonomy.name),
+                taxonomy.title.clone(),
+                taxonomy_box(&mut boxes, taxonomy).await,
+            ));
         }
     }
     let view = View {
@@ -2044,13 +3211,27 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     // The page.
     let mut live_preview = String::new();
     if ctx.can("edit_theme_options") {
-        let focus = if locations_screen { ("autofocus%5Bsection%5D", "menu_locations") } else { ("autofocus%5Bpanel%5D", "nav_menus") };
+        let focus = if locations_screen {
+            ("autofocus%5Bsection%5D", "menu_locations")
+        } else {
+            ("autofocus%5Bpanel%5D", "nav_menus")
+        };
         let mut back = request.request_uri.clone();
         for arg in crate::chrome::REMOVABLE_QUERY_ARGS {
             back = remove_query_arg(&back, arg);
         }
-        let url = format!("{}?{}={}&return={}", ctx.admin_url("customize.php"), focus.0, focus.1, rustpress_core::canonical::php_urlencode(&back));
-        live_preview = format!(" <a class=\"page-title-action hide-if-no-customize\" href=\"{}\">{}</a>", esc_url(&url), tr("Manage with Live Preview"));
+        let url = format!(
+            "{}?{}={}&return={}",
+            ctx.admin_url("customize.php"),
+            focus.0,
+            focus.1,
+            rustpress_core::canonical::php_urlencode(&back)
+        );
+        live_preview = format!(
+            " <a class=\"page-title-action hide-if-no-customize\" href=\"{}\">{}</a>",
+            esc_url(&url),
+            tr("Manage with Live Preview")
+        );
     }
     let edit_tab_active = !request.get("action").is_some_and(|a| a == "locations");
     let mut h = format!(
@@ -2058,16 +3239,35 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
         esc_html(&tr("Menus")),
         esc_attr(&tr("Secondary menu")),
         esc_url(&ctx.admin_url("nav-menus.php")),
-        if edit_tab_active { " nav-tab-active" } else { "" },
-        if edit_tab_active { " aria-current=\"page\"" } else { "" },
+        if edit_tab_active {
+            " nav-tab-active"
+        } else {
+            ""
+        },
+        if edit_tab_active {
+            " aria-current=\"page\""
+        } else {
+            ""
+        },
         esc_html(&tr("Edit Menus")),
     );
     if !locations.is_empty() && menu_count > 0 {
         h.push_str(&format!(
             "\t\t\t<a href=\"{}\" class=\"nav-tab{}\"{}>{}</a>\n\t\t\t",
-            esc_url(&format!("{}?action=locations", ctx.admin_url("nav-menus.php"))),
-            if locations_screen { " nav-tab-active" } else { "" },
-            if locations_screen { " aria-current=\"page\"" } else { "" },
+            esc_url(&format!(
+                "{}?action=locations",
+                ctx.admin_url("nav-menus.php")
+            )),
+            if locations_screen {
+                " nav-tab-active"
+            } else {
+                ""
+            },
+            if locations_screen {
+                " aria-current=\"page\""
+            } else {
+                ""
+            },
             esc_html(&tr("Manage Locations")),
         ));
     }
@@ -2077,7 +3277,9 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     }
     h.push('\t');
     if locations_screen {
-        h.push_str(&locations_view(ctx, &locations, &assigned, &menus, selected));
+        h.push_str(&locations_view(
+            ctx, &locations, &assigned, &menus, selected,
+        ));
         h.push('\t');
     } else {
         h.push_str(&manage_menus(ctx, &view));
@@ -2085,17 +3287,45 @@ pub async fn nav_menus(ctx: &Ctx<'_>) -> AdminResponse {
     }
     h.push_str("</div><!-- /.wrap-->\n");
 
-    let mut assets = Assets { scripts: vec!["nav-menu".to_owned()], post_header_scripts: vec!["accordion".to_owned()], ..Default::default() };
-    assets.localize.push(("nav-menu".to_owned(), "menus".to_owned(), l10n(ctx, one_location_no_menus)));
+    let mut assets = Assets {
+        scripts: vec!["nav-menu".to_owned()],
+        post_header_scripts: vec!["accordion".to_owned()],
+        ..Default::default()
+    };
+    assets.localize.push((
+        "nav-menu".to_owned(),
+        "menus".to_owned(),
+        l10n(ctx, one_location_no_menus),
+    ));
     let options = if locations_screen {
         None
     } else {
-        let columns: Vec<(String, String, bool)> = [("link-target", "Link Target"), ("title-attribute", "Title Attribute"), ("css-classes", "CSS Classes"), ("xfn", "Link Relationship (XFN)"), ("description", "Description")]
+        let columns: Vec<(String, String, bool)> = [
+            ("link-target", "Link Target"),
+            ("title-attribute", "Title Attribute"),
+            ("css-classes", "CSS Classes"),
+            ("xfn", "Link Relationship (XFN)"),
+            ("description", "Description"),
+        ]
+        .iter()
+        .map(|(key, label)| {
+            (
+                (*key).to_owned(),
+                tr(label),
+                hidden_columns.iter().any(|hidden| hidden == key),
+            )
+        })
+        .collect();
+        let box_prefs: Vec<(String, String, bool)> = sections
             .iter()
-            .map(|(key, label)| ((*key).to_owned(), tr(label), hidden_columns.iter().any(|hidden| hidden == key)))
+            .map(|(id, title, _)| (id.clone(), title.clone(), hidden_boxes.contains(id)))
             .collect();
-        let box_prefs: Vec<(String, String, bool)> = sections.iter().map(|(id, title, _)| (id.clone(), title.clone(), hidden_boxes.contains(id))).collect();
-        Some(ScreenOptions { columns, columns_title: Some(tr("Show advanced menu properties")), meta_boxes: Some(box_prefs), ..Default::default() })
+        Some(ScreenOptions {
+            columns,
+            columns_title: Some(tr("Show advanced menu properties")),
+            meta_boxes: Some(box_prefs),
+            ..Default::default()
+        })
     };
     let screen = Screen {
         file: "nav-menus.php".into(),

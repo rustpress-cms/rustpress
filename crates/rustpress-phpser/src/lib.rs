@@ -89,14 +89,28 @@ impl Value {
 pub enum Error {
     UnexpectedEof,
     /// Unexpected byte at the given offset.
-    Unexpected { offset: usize, found: u8 },
-    InvalidNumber { offset: usize },
-    Unsupported { offset: usize, tag: u8 },
+    Unexpected {
+        offset: usize,
+        found: u8,
+    },
+    InvalidNumber {
+        offset: usize,
+    },
+    Unsupported {
+        offset: usize,
+        tag: u8,
+    },
     /// `R:`/`r:` pointing at a slot that does not exist (yet).
-    InvalidReference { offset: usize },
-    TrailingData { offset: usize },
+    InvalidReference {
+        offset: usize,
+    },
+    TrailingData {
+        offset: usize,
+    },
     /// Arrays and objects nested deeper than [`MAX_DEPTH`].
-    TooDeep { offset: usize },
+    TooDeep {
+        offset: usize,
+    },
 }
 
 /// How deep arrays and objects may nest (PHP's `unserialize_max_depth` is 4096; WordPress data is far flatter, and
@@ -112,7 +126,11 @@ impl fmt::Display for Error {
             }
             Error::InvalidNumber { offset } => write!(f, "invalid number at offset {offset}"),
             Error::Unsupported { offset, tag } => {
-                write!(f, "unsupported type tag {:?} at offset {offset}", *tag as char)
+                write!(
+                    f,
+                    "unsupported type tag {:?} at offset {offset}",
+                    *tag as char
+                )
             }
             Error::InvalidReference { offset } => {
                 write!(f, "invalid reference target at offset {offset}")
@@ -127,7 +145,12 @@ impl std::error::Error for Error {}
 
 /// Parses a complete serialized value; trailing bytes are an error.
 pub fn unserialize(input: &[u8]) -> Result<Value, Error> {
-    let mut p = Parser { input, pos: 0, slots: 0, depth: 0 };
+    let mut p = Parser {
+        input,
+        pos: 0,
+        slots: 0,
+        depth: 0,
+    };
     let value = p.value()?;
     if p.pos != input.len() {
         return Err(Error::TrailingData { offset: p.pos });
@@ -147,17 +170,27 @@ struct Parser<'a> {
 impl Parser<'_> {
     fn enter(&mut self, offset: usize) -> Result<(), Error> {
         self.depth += 1;
-        if self.depth > MAX_DEPTH { Err(Error::TooDeep { offset }) } else { Ok(()) }
+        if self.depth > MAX_DEPTH {
+            Err(Error::TooDeep { offset })
+        } else {
+            Ok(())
+        }
     }
 
     fn peek(&self) -> Result<u8, Error> {
-        self.input.get(self.pos).copied().ok_or(Error::UnexpectedEof)
+        self.input
+            .get(self.pos)
+            .copied()
+            .ok_or(Error::UnexpectedEof)
     }
 
     fn expect(&mut self, byte: u8) -> Result<(), Error> {
         let found = self.peek()?;
         if found != byte {
-            return Err(Error::Unexpected { offset: self.pos, found });
+            return Err(Error::Unexpected {
+                offset: self.pos,
+                found,
+            });
         }
         self.pos += 1;
         Ok(())
@@ -166,7 +199,10 @@ impl Parser<'_> {
     /// Reads bytes up to (not including) `end`, then consumes `end`.
     fn until(&mut self, end: u8) -> Result<&[u8], Error> {
         let rest = &self.input[self.pos..];
-        let len = rest.iter().position(|&b| b == end).ok_or(Error::UnexpectedEof)?;
+        let len = rest
+            .iter()
+            .position(|&b| b == end)
+            .ok_or(Error::UnexpectedEof)?;
         self.pos += len + 1;
         Ok(&rest[..len])
     }
@@ -233,7 +269,10 @@ impl Parser<'_> {
         match value? {
             Value::Int(i) => Ok(Key::Int(i)),
             Value::Str(s) => Ok(Key::Str(s)),
-            _ => Err(Error::Unexpected { offset, found: self.input[offset] }),
+            _ => Err(Error::Unexpected {
+                offset,
+                found: self.input[offset],
+            }),
         }
     }
 
@@ -275,7 +314,9 @@ impl Parser<'_> {
                 let offset = self.pos;
                 let text = std::str::from_utf8(self.until(b';')?)
                     .map_err(|_| Error::InvalidNumber { offset })?;
-                parse_float(text).map(Value::Float).ok_or(Error::InvalidNumber { offset })
+                parse_float(text)
+                    .map(Value::Float)
+                    .ok_or(Error::InvalidNumber { offset })
             }
             b's' => {
                 self.expect(b':')?;
@@ -321,10 +362,14 @@ impl Parser<'_> {
             }
             b'R' => Ok(Value::Reference(self.reference(tag_offset)?)),
             b'r' => Ok(Value::ObjectRef(self.reference(tag_offset)?)),
-            b'C' | b'E' => {
-                Err(Error::Unsupported { offset: tag_offset, tag })
-            }
-            found => Err(Error::Unexpected { offset: tag_offset, found }),
+            b'C' | b'E' => Err(Error::Unsupported {
+                offset: tag_offset,
+                tag,
+            }),
+            found => Err(Error::Unexpected {
+                offset: tag_offset,
+                found,
+            }),
         }
     }
 }
@@ -494,7 +539,10 @@ mod tests {
         assert_eq!(format_float(1e15), "1000000000000000");
         assert_eq!(format_float(1e16), "10000000000000000");
         assert_eq!(format_float(1e17), "1.0E+17");
-        assert_eq!(format_float(1.2345678901234568e17), "1.2345678901234568E+17");
+        assert_eq!(
+            format_float(1.2345678901234568e17),
+            "1.2345678901234568E+17"
+        );
         assert_eq!(format_float(0.0001), "0.0001");
         assert_eq!(format_float(1e-5), "1.0E-5");
         assert_eq!(format_float(f64::INFINITY), "INF");
@@ -507,7 +555,10 @@ mod tests {
         let value = unserialize(raw).unwrap();
         assert_eq!(
             value,
-            Value::Array(vec![(Key::Int(0), s("x")), (Key::Int(1), Value::Reference(2))])
+            Value::Array(vec![
+                (Key::Int(0), s("x")),
+                (Key::Int(1), Value::Reference(2))
+            ])
         );
         assert_eq!(serialize(&value), raw);
     }
@@ -538,12 +589,30 @@ mod tests {
     #[test]
     fn errors() {
         assert_eq!(unserialize(b"s:5:\"abc\";"), Err(Error::UnexpectedEof));
-        assert_eq!(unserialize(b"i:1;x"), Err(Error::TrailingData { offset: 4 }));
-        assert!(matches!(unserialize(b"C:1:\"A\":0:{}"), Err(Error::Unsupported { tag: b'C', .. })));
-        assert_eq!(unserialize(b"R:1;"), Err(Error::InvalidReference { offset: 0 }));
-        assert_eq!(unserialize(b"a:1:{i:0;R:0;}"), Err(Error::InvalidReference { offset: 9 }));
-        assert!(matches!(unserialize(b"q:1;"), Err(Error::Unexpected { .. })));
-        assert!(matches!(unserialize(b"b:2;"), Err(Error::InvalidNumber { .. })));
+        assert_eq!(
+            unserialize(b"i:1;x"),
+            Err(Error::TrailingData { offset: 4 })
+        );
+        assert!(matches!(
+            unserialize(b"C:1:\"A\":0:{}"),
+            Err(Error::Unsupported { tag: b'C', .. })
+        ));
+        assert_eq!(
+            unserialize(b"R:1;"),
+            Err(Error::InvalidReference { offset: 0 })
+        );
+        assert_eq!(
+            unserialize(b"a:1:{i:0;R:0;}"),
+            Err(Error::InvalidReference { offset: 9 })
+        );
+        assert!(matches!(
+            unserialize(b"q:1;"),
+            Err(Error::Unexpected { .. })
+        ));
+        assert!(matches!(
+            unserialize(b"b:2;"),
+            Err(Error::InvalidNumber { .. })
+        ));
     }
 
     fn arb_value() -> impl Strategy<Value = super::Value> {
@@ -551,7 +620,9 @@ mod tests {
             Just(Value::Null),
             any::<bool>().prop_map(Value::Bool),
             any::<i64>().prop_map(Value::Int),
-            any::<f64>().prop_filter("finite", |f| f.is_finite()).prop_map(Value::Float),
+            any::<f64>()
+                .prop_filter("finite", |f| f.is_finite())
+                .prop_map(Value::Float),
             proptest::collection::vec(any::<u8>(), 0..24).prop_map(Value::Str),
         ];
         leaf.prop_recursive(3, 24, 4, |inner| {
@@ -585,7 +656,10 @@ mod depth_tests {
     #[test]
     fn deep_nesting_is_an_error_not_a_crash() {
         let deep = "a:1:{i:0;".repeat(100_000) + "N;" + &"}".repeat(100_000);
-        assert!(matches!(unserialize(deep.as_bytes()), Err(Error::TooDeep { .. })));
+        assert!(matches!(
+            unserialize(deep.as_bytes()),
+            Err(Error::TooDeep { .. })
+        ));
         let fine = "a:1:{i:0;".repeat(10) + "N;" + &"}".repeat(10);
         assert!(unserialize(fine.as_bytes()).is_ok());
     }

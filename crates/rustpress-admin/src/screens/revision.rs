@@ -1,8 +1,8 @@
 //! `wp-admin/revision.php`: comparing and restoring the revisions of a post, and the `get-revision-diffs` action
 //! of `admin-ajax.php` that the screen's JavaScript asks for the differences.
 
-use rustpress_core::OrLog;
 use rustpress_auth::CurrentUser;
+use rustpress_core::OrLog;
 use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_core::text_diff::{DiffArgs, TableLabels, wp_text_diff};
@@ -18,12 +18,18 @@ const TEMPLATES: &str = include_str!("../data/revision_templates.html");
 
 /// `absint()`.
 fn absint(value: &str) -> u64 {
-    value.trim().parse::<i64>().map(i64::unsigned_abs).unwrap_or(0)
+    value
+        .trim()
+        .parse::<i64>()
+        .map(i64::unsigned_abs)
+        .unwrap_or(0)
 }
 
 /// `wp_is_post_autosave()`.
 fn is_autosave(revision: &Post) -> bool {
-    revision.post_name.contains(&format!("{}-autosave", revision.post_parent))
+    revision
+        .post_name
+        .contains(&format!("{}-autosave", revision.post_parent))
 }
 
 /// `wp_revisions_enabled()`.
@@ -36,15 +42,29 @@ fn may_edit(user: &CurrentUser, post: &Post) -> bool {
 }
 
 /// The revision and its parent, when the user may see them.
-async fn revision_and_parent(env: &AdminEnv<'_>, user: &CurrentUser, revision_id: u64) -> Option<(Post, Post)> {
-    let revision = env.db.post(revision_id).await.ok().flatten().filter(|p| p.post_type == "revision")?;
+async fn revision_and_parent(
+    env: &AdminEnv<'_>,
+    user: &CurrentUser,
+    revision_id: u64,
+) -> Option<(Post, Post)> {
+    let revision = env
+        .db
+        .post(revision_id)
+        .await
+        .ok()
+        .flatten()
+        .filter(|p| p.post_type == "revision")?;
     let post = env.db.post(revision.post_parent).await.ok().flatten()?;
     may_edit(user, &post).then_some((revision, post))
 }
 
 /// `_wp_post_revision_fields()`: `(field, name)`.
 fn revision_fields(env: &AdminEnv<'_>) -> [(&'static str, String); 3] {
-    [("post_title", env.site.tr("Title")), ("post_content", env.site.tr("Content")), ("post_excerpt", env.site.tr("Excerpt"))]
+    [
+        ("post_title", env.site.tr("Title")),
+        ("post_content", env.site.tr("Content")),
+        ("post_excerpt", env.site.tr("Excerpt")),
+    ]
 }
 
 fn field_of<'a>(post: &'a Post, field: &str) -> &'a str {
@@ -56,10 +76,19 @@ fn field_of<'a>(post: &'a Post, field: &str) -> &'a str {
 }
 
 /// `wp_get_revision_ui_diff()`: `[{id, name, diff}]`, or `None` for revisions that do not belong together.
-async fn revision_ui_diff(env: &AdminEnv<'_>, post_id: u64, compare_from: u64, compare_to: u64) -> Option<Vec<Value>> {
+async fn revision_ui_diff(
+    env: &AdminEnv<'_>,
+    post_id: u64,
+    compare_from: u64,
+    compare_to: u64,
+) -> Option<Vec<Value>> {
     let site = env.site;
     let post = env.db.post(post_id).await.ok().flatten()?;
-    let mut from = if compare_from != 0 { Some(env.db.post(compare_from).await.ok().flatten()?) } else { None };
+    let mut from = if compare_from != 0 {
+        Some(env.db.post(compare_from).await.ok().flatten()?)
+    } else {
+        None
+    };
     let mut to = env.db.post(compare_to).await.ok().flatten()?;
     if let Some(f) = &from
         && f.post_parent != post.id
@@ -70,7 +99,9 @@ async fn revision_ui_diff(env: &AdminEnv<'_>, post_id: u64, compare_from: u64, c
     if to.post_parent != post.id && to.id != post.id {
         return None;
     }
-    let gmt = |p: &Post| rustpress_core::datetime::SiteTimezone::gmt_timestamp(&p.post_date_gmt).unwrap_or(0);
+    let gmt = |p: &Post| {
+        rustpress_core::datetime::SiteTimezone::gmt_timestamp(&p.post_date_gmt).unwrap_or(0)
+    };
     if let Some(f) = from.take() {
         if gmt(&f) > gmt(&to) {
             from = Some(std::mem::replace(&mut to, f));
@@ -89,21 +120,37 @@ async fn revision_ui_diff(env: &AdminEnv<'_>, post_id: u64, compare_from: u64, c
     }
     let mut out = Vec::new();
     for (field, name) in revision_fields(env) {
-        let content_from = from.as_ref().map(|p| field_of(p, field).to_owned()).unwrap_or_default();
+        let content_from = from
+            .as_ref()
+            .map(|p| field_of(p, field).to_owned())
+            .unwrap_or_default();
         let content_to = field_of(&to, field).to_owned();
         let args = DiffArgs {
             show_split_view: true,
             title_left: site.tr("Removed"),
             title_right: site.tr("Added"),
-            labels: TableLabels { added: site.tr("Added:"), deleted: site.tr("Deleted:"), unchanged: site.tr("Unchanged:") },
+            labels: TableLabels {
+                added: site.tr("Added:"),
+                deleted: site.tr("Deleted:"),
+                unchanged: site.tr("Unchanged:"),
+            },
             ..Default::default()
         };
         let mut diff = wp_text_diff(&content_from, &content_to, &args);
         if diff.is_empty() && field == "post_title" {
             // It's a better user experience to still show the Title, even if it didn't change.
-            diff = String::from("<table class=\"diff\"><colgroup><col class=\"content diffsplit left\"><col class=\"content diffsplit middle\"><col class=\"content diffsplit right\"></colgroup><tbody><tr>");
-            let left = from.as_ref().map(|p| p.post_title.clone()).unwrap_or_default();
-            diff.push_str(&format!("<td>{}</td><td></td><td>{}</td>", esc_html(&left), esc_html(&to.post_title)));
+            diff = String::from(
+                "<table class=\"diff\"><colgroup><col class=\"content diffsplit left\"><col class=\"content diffsplit middle\"><col class=\"content diffsplit right\"></colgroup><tbody><tr>",
+            );
+            let left = from
+                .as_ref()
+                .map(|p| p.post_title.clone())
+                .unwrap_or_default();
+            diff.push_str(&format!(
+                "<td>{}</td><td></td><td>{}</td>",
+                esc_html(&left),
+                esc_html(&to.post_title)
+            ));
             diff.push_str("</tr></tbody></table>");
         }
         if !diff.is_empty() {
@@ -118,7 +165,14 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
     let env = ctx.env;
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
-    let query = PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), order_by: OrderBy::Date, order: Order::Asc, ..Default::default() };
+    let query = PostQuery {
+        post_types: vec!["revision".into()],
+        statuses: vec!["inherit".into()],
+        parent: Some(post.id),
+        order_by: OrderBy::Date,
+        order: Order::Asc,
+        ..Default::default()
+    };
     let mut revisions: Vec<Post> = env.db.posts(&query).await.unwrap_or_default();
     revisions.sort_by(|a, b| a.post_date.cmp(&b.post_date).then(a.id.cmp(&b.id)));
     // If revisions are disabled, we only want autosaves and the current post.
@@ -133,25 +187,53 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
     let mut data: Vec<Value> = Vec::new();
     let mut current_index: Option<usize> = None;
     for revision in &revisions {
-        let modified_gmt = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&revision.post_modified_gmt).unwrap_or(0);
+        let modified_gmt =
+            rustpress_core::datetime::SiteTimezone::gmt_timestamp(&revision.post_modified_gmt)
+                .unwrap_or(0);
         let restore_url = if can_restore {
-            Value::from(format!("{}&_wpnonce={}", ctx.admin_url(&format!("revision.php?revision={}&action=restore", revision.id)), ctx.create_nonce(&format!("restore-post_{}", revision.id))))
+            Value::from(format!(
+                "{}&_wpnonce={}",
+                ctx.admin_url(&format!(
+                    "revision.php?revision={}&action=restore",
+                    revision.id
+                )),
+                ctx.create_nonce(&format!("restore-post_{}", revision.id))
+            ))
         } else {
             Value::Bool(false)
         };
         let key = revision.post_author.to_string();
         if !authors.contains_key(&key) {
             let user = env.db.user(revision.post_author).await.ok().flatten();
-            let (name, email) = user.map(|u| (u.display_name.clone(), u.user_email.clone())).unwrap_or_default();
+            let (name, email) = user
+                .map(|u| (u.display_name.clone(), u.user_email.clone()))
+                .unwrap_or_default();
             let avatar = if show_avatars {
-                let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&site.options, &email, s));
+                let url = |s: u64| {
+                    esc_url(&rustpress_blocks::content::avatar_url(
+                        &site.options,
+                        &email,
+                        s,
+                    ))
+                };
                 // `get_avatar()`: no address, no avatar of its own.
-                let default = if email.is_empty() { " avatar-default" } else { "" };
-                format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-32 photo{default}' height='32' width='32' loading='lazy' decoding='async'/>", url(32), url(64))
+                let default = if email.is_empty() {
+                    " avatar-default"
+                } else {
+                    ""
+                };
+                format!(
+                    "<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-32 photo{default}' height='32' width='32' loading='lazy' decoding='async'/>",
+                    url(32),
+                    url(64)
+                )
             } else {
                 String::new()
             };
-            authors.insert(key.clone(), json!({"id": revision.post_author, "avatar": avatar, "name": name}));
+            authors.insert(
+                key.clone(),
+                json!({"id": revision.post_author, "avatar": avatar, "name": name}),
+            );
         }
         let autosave = is_autosave(revision);
         let mut current = !autosave && revision.post_modified_gmt == post.post_modified_gmt;
@@ -182,7 +264,9 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
     }
     // With one revision the initial one is missing, as for an autosave opened from the editor: the post stands in for it.
     if let [only] = data.as_slice() {
-        let modified_gmt = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_modified_gmt).unwrap_or(0);
+        let modified_gmt =
+            rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post.post_modified_gmt)
+                .unwrap_or(0);
         let author = only["author"].clone();
         data.push(json!({
             "id": post.id,
@@ -199,7 +283,10 @@ async fn revisions_for_js(ctx: &Ctx<'_>, post: &Post, selected: u64, from: Optio
     }
     // No revision is marked current: take the newest one that is not an autosave.
     if current_index.is_none()
-        && let Some(last) = data.iter().rposition(|r| r["autosave"] == Value::Bool(false)).or(data.len().checked_sub(1))
+        && let Some(last) = data
+            .iter()
+            .rposition(|r| r["autosave"] == Value::Bool(false))
+            .or(data.len().checked_sub(1))
     {
         data[last]["current"] = Value::Bool(true);
     }
@@ -235,15 +322,32 @@ fn help(ctx: &Ctx<'_>) -> Help {
     let overview = format!(
         "<p>{}</p><p>{}</p><p>{}</p><ul><li>{}</li><li>{}</li><li>{}</li></ul>",
         tr("This screen is used for managing your content revisions."),
-        tr("Revisions are saved copies of your post or page, which are periodically created as you update your content. The red text on the left shows the content that was removed. The green text on the right shows the content that was added."),
+        tr(
+            "Revisions are saved copies of your post or page, which are periodically created as you update your content. The red text on the left shows the content that was removed. The green text on the right shows the content that was added."
+        ),
         tr("From this screen you can review, compare, and restore revisions:"),
-        tr("To navigate between revisions, <strong>drag the slider handle left or right</strong> or <strong>use the Previous or Next buttons</strong>."),
-        tr("Compare two different revisions by <strong>selecting the &#8220;Compare any two revisions&#8221; box</strong> to the side."),
+        tr(
+            "To navigate between revisions, <strong>drag the slider handle left or right</strong> or <strong>use the Previous or Next buttons</strong>."
+        ),
+        tr(
+            "Compare two different revisions by <strong>selecting the &#8220;Compare any two revisions&#8221; box</strong> to the side."
+        ),
         tr("To restore a revision, <strong>click Restore This Revision</strong>."),
     );
     Help {
-        tabs: vec![HelpTab { id: "revisions-overview".into(), title: tr("Overview"), content: overview }],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/documentation/article/revisions/\">Revisions Management</a>"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")),
+        tabs: vec![HelpTab {
+            id: "revisions-overview".into(),
+            title: tr("Overview"),
+            content: overview,
+        }],
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p><p>{}</p>",
+            tr("For more information:"),
+            tr(
+                "<a href=\"https://wordpress.org/documentation/article/revisions/\">Revisions Management</a>"
+            ),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
     }
 }
 
@@ -251,32 +355,68 @@ fn help(ctx: &Ctx<'_>) -> Help {
 pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let env = ctx.env;
-    let to = request.request("to").filter(|v| v.parse::<f64>().is_ok()).map(absint).filter(|v| *v != 0);
-    let from = request.request("from").filter(|v| v.parse::<f64>().is_ok()).map(absint).filter(|v| *v != 0);
+    let to = request
+        .request("to")
+        .filter(|v| v.parse::<f64>().is_ok())
+        .map(absint)
+        .filter(|v| *v != 0);
+    let from = request
+        .request("from")
+        .filter(|v| v.parse::<f64>().is_ok())
+        .map(absint)
+        .filter(|v| *v != 0);
     let mut revision_id = request.request("revision").map(absint).unwrap_or(0);
     if revision_id == 0 {
         revision_id = to.unwrap_or(0);
     }
-    let action = rustpress_content::sanitize::text_field(request.request("action").unwrap_or_default());
+    let action =
+        rustpress_content::sanitize::text_field(request.request("action").unwrap_or_default());
     // `wp_redirect( 'edit.php' )`: the address stays relative.
     let edit_php = "edit.php".to_owned();
 
     if action == "restore" {
-        let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else { return redirect(&edit_php) };
+        let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else {
+            return redirect(&edit_php);
+        };
         if !revisions_enabled(env, &post) && !is_autosave(&revision) {
             return redirect(&ctx.admin_url(&format!("edit.php?post_type={}", post.post_type)));
         }
         if !ctx.verify_nonce(&format!("restore-post_{}", revision.id)) {
-            return die(env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
+            return die(
+                env,
+                403,
+                &ctx.tr("An error occurred."),
+                &ctx.tr("The link you followed has expired."),
+            );
         }
-        let Some(writer) = env.writer else { return super::common::read_only(ctx) };
-        let content = Content { site: env.site, db: env.db, writer, user: &ctx.user, now: env.now };
-        let data = PostData { id: Some(post.id), post_title: Some(revision.post_title.clone()), post_content: Some(revision.post_content.clone()), post_excerpt: Some(revision.post_excerpt.clone()), ..Default::default() };
+        let Some(writer) = env.writer else {
+            return super::common::read_only(ctx);
+        };
+        let content = Content {
+            site: env.site,
+            db: env.db,
+            writer,
+            user: &ctx.user,
+            now: env.now,
+        };
+        let data = PostData {
+            id: Some(post.id),
+            post_title: Some(revision.post_title.clone()),
+            post_content: Some(revision.post_content.clone()),
+            post_excerpt: Some(revision.post_excerpt.clone()),
+            ..Default::default()
+        };
         content.insert_post(&data).await.or_log();
-        return redirect(&format!("{}&message=5&revision={}", edit_link(ctx, &post).await, revision.id));
+        return redirect(&format!(
+            "{}&message=5&revision={}",
+            edit_link(ctx, &post).await,
+            revision.id
+        ));
     }
 
-    let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else { return redirect(&edit_php) };
+    let Some((revision, post)) = revision_and_parent(env, &ctx.user, revision_id).await else {
+        return redirect(&edit_php);
+    };
     if !revisions_enabled(env, &post) && !is_autosave(&revision) {
         return redirect(&ctx.admin_url(&format!("edit.php?post_type={}", post.post_type)));
     }
@@ -284,40 +424,100 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let edit = edit_link(ctx, &post).await;
     let shown_title = {
         let title = rustpress_blocks::content::the_title_in_admin(env.site, &post);
-        if post.post_title.is_empty() { tr("(no title)") } else { title }
+        if post.post_title.is_empty() {
+            tr("(no title)")
+        } else {
+            title
+        }
     };
-    let post_title = format!("<a href=\"{}\">{}</a>", esc_url(&edit), esc_html(&shown_title));
+    let post_title = format!(
+        "<a href=\"{}\">{}</a>",
+        esc_url(&edit),
+        esc_html(&shown_title)
+    );
     let h1 = sprintf(&tr("Compare Revisions of &#8220;%s&#8221;"), &[&post_title]);
-    let return_to_post = format!("<a href=\"{}\">{}</a>", esc_url(&edit), tr("&larr; Go to editor"));
-    let templates = super::template_text::translate(ctx.site(), TEMPLATES.strip_suffix('\n').unwrap_or(TEMPLATES));
-    let content = format!("<div class=\"wrap\">\n\t<h1 class=\"long-header\">{h1}</h1>\n\t{return_to_post}</div>\n{templates}");
+    let return_to_post = format!(
+        "<a href=\"{}\">{}</a>",
+        esc_url(&edit),
+        tr("&larr; Go to editor")
+    );
+    let templates = super::template_text::translate(
+        ctx.site(),
+        TEMPLATES.strip_suffix('\n').unwrap_or(TEMPLATES),
+    );
+    let content = format!(
+        "<div class=\"wrap\">\n\t<h1 class=\"long-header\">{h1}</h1>\n\t{return_to_post}</div>\n{templates}"
+    );
 
-    let (parent_file, submenu) = if post.post_type == "post" { ("edit.php".to_owned(), "edit.php".to_owned()) } else { (format!("edit.php?post_type={}", post.post_type), format!("edit.php?post_type={}", post.post_type)) };
-    let screen = Screen { file: "revision.php".into(), parent_file, submenu_file: Some(submenu), title: tr("Revisions"), help: Some(help(ctx)), ..Default::default() };
+    let (parent_file, submenu) = if post.post_type == "post" {
+        ("edit.php".to_owned(), "edit.php".to_owned())
+    } else {
+        (
+            format!("edit.php?post_type={}", post.post_type),
+            format!("edit.php?post_type={}", post.post_type),
+        )
+    };
+    let screen = Screen {
+        file: "revision.php".into(),
+        parent_file,
+        submenu_file: Some(submenu),
+        title: tr("Revisions"),
+        help: Some(help(ctx)),
+        ..Default::default()
+    };
     let settings = revisions_for_js(ctx, &post, revision_id, from).await;
-    let assets = Assets { scripts: vec!["revisions".into()], localize: vec![("revisions".into(), "_wpRevisionsSettings".into(), settings)], ..Default::default() };
+    let assets = Assets {
+        scripts: vec!["revisions".into()],
+        localize: vec![("revisions".into(), "_wpRevisionsSettings".into(), settings)],
+        ..Default::default()
+    };
     let _ = (esc_attr(""), to);
     render(ctx, &screen, &content, &assets).await
 }
 
 /// `wp_ajax_get_revision_diffs()`.
-pub async fn ajax_diffs(env: &AdminEnv<'_>, request: &AdminRequest, user: &CurrentUser, _token: &str) -> AdminResponse {
+pub async fn ajax_diffs(
+    env: &AdminEnv<'_>,
+    request: &AdminRequest,
+    user: &CurrentUser,
+    _token: &str,
+) -> AdminResponse {
     let failure = || json_response(200, &json!({"success": false}));
-    let post_id = request.request("post_id").map(|v| v.trim().parse::<i64>().unwrap_or(0).unsigned_abs()).unwrap_or(0);
-    let Some(post) = env.db.post(post_id).await.ok().flatten() else { return failure() };
+    let post_id = request
+        .request("post_id")
+        .map(|v| v.trim().parse::<i64>().unwrap_or(0).unsigned_abs())
+        .unwrap_or(0);
+    let Some(post) = env.db.post(post_id).await.ok().flatten() else {
+        return failure();
+    };
     if !may_edit(user, &post) {
         return failure();
     }
     // Really just pre-loading the cache here.
-    let query = PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post.id), ..Default::default() };
+    let query = PostQuery {
+        post_types: vec!["revision".into()],
+        statuses: vec!["inherit".into()],
+        parent: Some(post.id),
+        ..Default::default()
+    };
     if env.db.posts(&query).await.unwrap_or_default().is_empty() {
         return failure();
     }
-    let compare: Vec<String> = request.form.iter().chain(request.query.iter()).filter(|(k, _)| k == "compare[]").map(|(_, v)| v.clone()).collect();
+    let compare: Vec<String> = request
+        .form
+        .iter()
+        .chain(request.query.iter())
+        .filter(|(k, _)| k == "compare[]")
+        .map(|(_, v)| v.clone())
+        .collect();
     let mut out = Vec::new();
     for key in compare {
-        let (from, to) = key.split_once(':').map_or((absint(&key), 0), |(f, t)| (absint(f), absint(t)));
-        let fields = revision_ui_diff(env, post.id, from, to).await.map_or(Value::Bool(false), Value::from);
+        let (from, to) = key
+            .split_once(':')
+            .map_or((absint(&key), 0), |(f, t)| (absint(f), absint(t)));
+        let fields = revision_ui_diff(env, post.id, from, to)
+            .await
+            .map_or(Value::Bool(false), Value::from);
         out.push(json!({"id": key, "fields": fields}));
     }
     json_response(200, &json!({"success": true, "data": out}))

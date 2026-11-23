@@ -13,7 +13,10 @@ pub enum Kind {
     Document,
     /// `<!DOCTYPE name>`.
     Doctype(String),
-    Element { name: String, attrs: Vec<(String, Option<String>)> },
+    Element {
+        name: String,
+        attrs: Vec<(String, Option<String>)>,
+    },
     Text(String),
     Comment(String),
 }
@@ -34,35 +37,60 @@ pub struct Dom {
 /// `htmlElemDesc` of libxml's `html40ElementTable`: `(empty, saveEndTag, isinline)`.
 fn desc(name: &str) -> Option<(bool, bool, bool)> {
     Some(match name {
-        "area" | "base" | "col" | "frame" | "hr" | "isindex" | "link" | "meta" | "param" => (true, true, false),
+        "area" | "base" | "col" | "frame" | "hr" | "isindex" | "link" | "meta" | "param" => {
+            (true, true, false)
+        }
         "basefont" | "br" | "img" | "input" => (true, true, true),
         "li" => (false, true, false),
-        "a" | "abbr" | "acronym" | "applet" | "b" | "bdo" | "big" | "button" | "cite" | "code" | "del" | "dfn" | "em" | "embed" | "font" | "i" | "iframe" | "ins"
-        | "kbd" | "label" | "map" | "object" | "q" | "s" | "samp" | "script" | "select" | "small" | "span" | "strike" | "strong" | "sub" | "sup" | "textarea" | "tt"
-        | "u" | "var" => (false, false, true),
-        "address" | "blockquote" | "body" | "caption" | "center" | "colgroup" | "dd" | "dir" | "div" | "dl" | "dt" | "fieldset" | "form" | "frameset" | "h1" | "h2"
-        | "h3" | "h4" | "h5" | "h6" | "head" | "html" | "legend" | "menu" | "noframes" | "noscript" | "ol" | "optgroup" | "option" | "p" | "pre" | "style" | "table"
-        | "tbody" | "td" | "tfoot" | "th" | "thead" | "title" | "tr" | "ul" => (false, false, false),
+        "a" | "abbr" | "acronym" | "applet" | "b" | "bdo" | "big" | "button" | "cite" | "code"
+        | "del" | "dfn" | "em" | "embed" | "font" | "i" | "iframe" | "ins" | "kbd" | "label"
+        | "map" | "object" | "q" | "s" | "samp" | "script" | "select" | "small" | "span"
+        | "strike" | "strong" | "sub" | "sup" | "textarea" | "tt" | "u" | "var" => {
+            (false, false, true)
+        }
+        "address" | "blockquote" | "body" | "caption" | "center" | "colgroup" | "dd" | "dir"
+        | "div" | "dl" | "dt" | "fieldset" | "form" | "frameset" | "h1" | "h2" | "h3" | "h4"
+        | "h5" | "h6" | "head" | "html" | "legend" | "menu" | "noframes" | "noscript" | "ol"
+        | "optgroup" | "option" | "p" | "pre" | "style" | "table" | "tbody" | "td" | "tfoot"
+        | "th" | "thead" | "title" | "tr" | "ul" => (false, false, false),
         _ => return None,
     })
 }
 
 /// `htmlStartClose`: whether the start tag `new` closes the open element `open`.
 fn start_closes(new: &str, open: &str) -> bool {
-    const BLOCK: &[&str] = &["p", "head", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "xmp", "a"];
+    const BLOCK: &[&str] = &[
+        "p", "head", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "xmp", "a",
+    ];
     let list: &[&str] = match new {
-        "form" => &["form", "p", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "dl", "ul", "ol", "menu", "dir", "address", "pre", "listing", "xmp", "head"],
+        "form" => &[
+            "form", "p", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "dl", "ul", "ol", "menu", "dir",
+            "address", "pre", "listing", "xmp", "head",
+        ],
         "head" | "title" | "caption" => &["p"],
         "body" => &["head", "style", "script", "title"],
         "frameset" => &["head", "style", "script", "title"],
-        "li" => &["p", "h1", "h2", "h3", "h4", "h5", "h6", "dl", "address", "pre", "listing", "xmp", "head", "li"],
+        "li" => &[
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "dl", "address", "pre", "listing", "xmp",
+            "head", "li",
+        ],
         "hr" => &["p", "head"],
-        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => &["p", "head", "h1", "h2", "h3", "h4", "h5", "h6"],
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+            &["p", "head", "h1", "h2", "h3", "h4", "h5", "h6"]
+        }
         "dir" | "address" | "pre" | "listing" | "xmp" | "blockquote" => &["p", "head", "ul"],
-        "dl" => &["p", "dt", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dd"],
-        "dt" => &["p", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dd"],
-        "dd" => &["p", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dt"],
-        "ul" => &["p", "head", "ol", "menu", "dir", "address", "pre", "listing", "xmp"],
+        "dl" => &[
+            "p", "dt", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dd",
+        ],
+        "dt" => &[
+            "p", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dd",
+        ],
+        "dd" => &[
+            "p", "menu", "dir", "address", "pre", "listing", "xmp", "head", "dt",
+        ],
+        "ul" => &[
+            "p", "head", "ol", "menu", "dir", "address", "pre", "listing", "xmp",
+        ],
         "ol" => &["p", "head", "ul"],
         "menu" => &["p", "head", "ul"],
         "p" => &["p", "head", "h1", "h2", "h3", "h4", "h5", "h6"],
@@ -73,17 +101,24 @@ fn start_closes(new: &str, open: &str) -> bool {
         "colgroup" => &["caption", "colgroup", "col", "p"],
         "col" => &["caption", "col", "p"],
         "table" => BLOCK,
-        "fieldset" => &["legend", "p", "head", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "xmp", "a"],
+        "fieldset" => &[
+            "legend", "p", "head", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "listing", "xmp", "a",
+        ],
         "th" | "td" => &["th", "td", "p", "span", "font", "a", "b", "i", "u"],
         "tr" => &["th", "td", "tr", "caption", "col", "colgroup", "p"],
         "thead" => &["caption", "col", "colgroup"],
-        "tfoot" => &["th", "td", "tr", "caption", "col", "colgroup", "thead", "tbody", "p"],
-        "tbody" => &["th", "td", "tr", "caption", "col", "colgroup", "thead", "tfoot", "tbody", "p"],
+        "tfoot" => &[
+            "th", "td", "tr", "caption", "col", "colgroup", "thead", "tbody", "p",
+        ],
+        "tbody" => &[
+            "th", "td", "tr", "caption", "col", "colgroup", "thead", "tfoot", "tbody", "p",
+        ],
         "optgroup" => &["option"],
         "option" => &["option"],
-        "tt" | "i" | "b" | "u" | "s" | "strike" | "big" | "small" | "em" | "strong" | "dfn" | "code" | "samp" | "kbd" | "var" | "cite" | "abbr" | "acronym" | "img" | "br"
-        | "font" | "basefont" | "span" | "sub" | "sup" | "q" | "map" | "bdo" | "iframe" | "label" | "select" | "textarea" | "button" | "input" | "object" | "applet"
-        => &["head"],
+        "tt" | "i" | "b" | "u" | "s" | "strike" | "big" | "small" | "em" | "strong" | "dfn"
+        | "code" | "samp" | "kbd" | "var" | "cite" | "abbr" | "acronym" | "img" | "br" | "font"
+        | "basefont" | "span" | "sub" | "sup" | "q" | "map" | "bdo" | "iframe" | "label"
+        | "select" | "textarea" | "button" | "input" | "object" | "applet" => &["head"],
         _ => &[],
     };
     list.contains(&open)
@@ -109,30 +144,47 @@ fn entity(name: &str) -> Option<&'static str> {
         return None;
     }
     let key = format!("{name};");
-    rustpress_core::html_entities::NAMED.iter().find(|(n, _)| *n == key).map(|(_, v)| *v)
+    rustpress_core::html_entities::NAMED
+        .iter()
+        .find(|(n, _)| *n == key)
+        .map(|(_, v)| *v)
 }
 
 /// `htmlParseCharRef()` and `htmlParseEntityRef()` at `&`: the text and the bytes read, or `None` for a literal `&`.
 fn reference(s: &str) -> Option<(String, usize)> {
     let b = s.as_bytes();
     if b.get(1) == Some(&b'#') {
-        let (hex, start) = if matches!(b.get(2), Some(b'x' | b'X')) { (true, 3) } else { (false, 2) };
+        let (hex, start) = if matches!(b.get(2), Some(b'x' | b'X')) {
+            (true, 3)
+        } else {
+            (false, 2)
+        };
         let mut i = start;
         let mut value: u32 = 0;
         while i < b.len() && b[i] != b';' {
-            let d = if hex { (b[i] as char).to_digit(16) } else { (b[i] as char).to_digit(10) };
+            let d = if hex {
+                (b[i] as char).to_digit(16)
+            } else {
+                (b[i] as char).to_digit(10)
+            };
             let Some(d) = d else { break };
-            value = value.saturating_mul(if hex { 16 } else { 10 }).saturating_add(d);
+            value = value
+                .saturating_mul(if hex { 16 } else { 10 })
+                .saturating_add(d);
             i += 1;
         }
         if b.get(i) == Some(&b';') {
             i += 1;
         }
-        let text = char::from_u32(value).filter(|&c| c != '\0').map(String::from).unwrap_or_default();
+        let text = char::from_u32(value)
+            .filter(|&c| c != '\0')
+            .map(String::from)
+            .unwrap_or_default();
         return Some((text, i));
     }
     let mut i = 1;
-    while i < b.len() && (b[i].is_ascii_alphanumeric() || matches!(b[i], b'_' | b':' | b'.' | b'-')) {
+    while i < b.len() && (b[i].is_ascii_alphanumeric() || matches!(b[i], b'_' | b':' | b'.' | b'-'))
+    {
         i += 1;
     }
     if i == 1 || b.get(i) != Some(&b';') {
@@ -198,7 +250,11 @@ impl Parser {
 
     fn append(&mut self, parent: usize, kind: Kind) -> usize {
         let id = self.dom.nodes.len();
-        self.dom.nodes.push(Node { kind, parent: Some(parent), children: Vec::new() });
+        self.dom.nodes.push(Node {
+            kind,
+            parent: Some(parent),
+            children: Vec::new(),
+        });
         self.dom.nodes[parent].children.push(id);
         id
     }
@@ -234,18 +290,31 @@ impl Parser {
             return;
         }
         if self.stack.is_empty() {
-            let html = self.append(0, Kind::Element { name: "html".into(), attrs: Vec::new() });
+            let html = self.append(
+                0,
+                Kind::Element {
+                    name: "html".into(),
+                    attrs: Vec::new(),
+                },
+            );
             self.stack.push(html);
         }
         if matches!(name, "body" | "head") {
             return;
         }
-        let open: Vec<String> = self.stack.iter().map(|&i| self.name_of(i).to_owned()).collect();
+        let open: Vec<String> = self
+            .stack
+            .iter()
+            .map(|&i| self.name_of(i).to_owned())
+            .collect();
         if open.iter().any(|n| n == "body" || n == "head") {
             return;
         }
         let has_body = self.dom.nodes[self.stack[0]].children.iter().any(|&c| matches!(&self.dom.nodes[c].kind, Kind::Element { name, .. } if name == "body" || name == "head"));
-        if matches!(name, "script" | "style" | "meta" | "link" | "title" | "base") {
+        if matches!(
+            name,
+            "script" | "style" | "meta" | "link" | "title" | "base"
+        ) {
             if !has_body {
                 self.start_element("head", Vec::new());
             }
@@ -256,7 +325,13 @@ impl Parser {
 
     fn start_element(&mut self, name: &str, attrs: Vec<(String, Option<String>)>) -> usize {
         let parent = self.current();
-        let id = self.append(parent, Kind::Element { name: name.to_owned(), attrs });
+        let id = self.append(
+            parent,
+            Kind::Element {
+                name: name.to_owned(),
+                attrs,
+            },
+        );
         self.stack.push(id);
         id
     }
@@ -278,9 +353,14 @@ impl Parser {
     }
 
     fn end(&mut self, name: &str) {
-        let Some(pos) = self.stack.iter().rposition(|&i| self.name_of(i) == name) else { return };
+        let Some(pos) = self.stack.iter().rposition(|&i| self.name_of(i) == name) else {
+            return;
+        };
         let priority = end_priority(name);
-        if self.stack[pos + 1..].iter().any(|&i| end_priority(self.name_of(i)) > priority) {
+        if self.stack[pos + 1..]
+            .iter()
+            .any(|&i| end_priority(self.name_of(i)) > priority)
+        {
             return;
         }
         self.stack.truncate(pos);
@@ -289,7 +369,17 @@ impl Parser {
 
 /// `DOMDocument::loadHTML()` of a string of HTML.
 pub fn parse(html: &str, options: Options) -> Dom {
-    let mut p = Parser { dom: Dom { nodes: vec![Node { kind: Kind::Document, parent: None, children: Vec::new() }] }, stack: Vec::new(), options };
+    let mut p = Parser {
+        dom: Dom {
+            nodes: vec![Node {
+                kind: Kind::Document,
+                parent: None,
+                children: Vec::new(),
+            }],
+        },
+        stack: Vec::new(),
+        options,
+    };
     let b = html.as_bytes();
     let mut i = 0;
     let mut text_start = 0;
@@ -313,7 +403,11 @@ pub fn parse(html: &str, options: Options) -> Dom {
         if rest.len() > 9 && rest[..9].eq_ignore_ascii_case("<!doctype") {
             flush(&mut p, i);
             let end = rest.find('>').unwrap_or(rest.len());
-            let name = rest[9..end].split_whitespace().next().unwrap_or("").to_owned();
+            let name = rest[9..end]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_owned();
             if p.stack.is_empty() {
                 p.append(0, Kind::Doctype(name));
             }
@@ -321,7 +415,12 @@ pub fn parse(html: &str, options: Options) -> Dom {
             text_start = i;
             continue;
         }
-        if rest.starts_with("</") && rest.as_bytes().get(2).is_some_and(|c| c.is_ascii_alphabetic()) {
+        if rest.starts_with("</")
+            && rest
+                .as_bytes()
+                .get(2)
+                .is_some_and(|c| c.is_ascii_alphabetic())
+        {
             flush(&mut p, i);
             let mut j = 2;
             while j < rest.len() && is_name_byte(rest.as_bytes()[j]) {
@@ -334,7 +433,11 @@ pub fn parse(html: &str, options: Options) -> Dom {
             text_start = i;
             continue;
         }
-        if !rest.as_bytes().get(1).is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_' || *c == b':') {
+        if !rest
+            .as_bytes()
+            .get(1)
+            .is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_' || *c == b':')
+        {
             // Not a tag: the `<` is text.
             i += 1;
             continue;
@@ -365,7 +468,11 @@ pub fn parse(html: &str, options: Options) -> Dom {
                 break;
             }
             let start = j;
-            while j < rb.len() && !is_blank(rb[j]) && !matches!(rb[j], b'=' | b'>') && !(rb[j] == b'/' && rb.get(j + 1) == Some(&b'>')) {
+            while j < rb.len()
+                && !is_blank(rb[j])
+                && !matches!(rb[j], b'=' | b'>')
+                && !(rb[j] == b'/' && rb.get(j + 1) == Some(&b'>'))
+            {
                 j += 1;
             }
             if j == start {
@@ -435,7 +542,10 @@ impl Dom {
 
     pub fn attr(&self, id: usize, attr: &str) -> Option<&str> {
         match &self.nodes[id].kind {
-            Kind::Element { attrs, .. } => attrs.iter().find(|(n, _)| n == attr).map(|(_, v)| v.as_deref().unwrap_or("")),
+            Kind::Element { attrs, .. } => attrs
+                .iter()
+                .find(|(n, _)| n == attr)
+                .map(|(_, v)| v.as_deref().unwrap_or("")),
             _ => None,
         }
     }
@@ -465,7 +575,11 @@ impl Dom {
 
     /// The first element of the document (`documentElement`).
     pub fn document_element(&self) -> Option<usize> {
-        self.nodes[0].children.iter().copied().find(|&c| matches!(self.nodes[c].kind, Kind::Element { .. }))
+        self.nodes[0]
+            .children
+            .iter()
+            .copied()
+            .find(|&c| matches!(self.nodes[c].kind, Kind::Element { .. }))
     }
 
     /// `DOMDocument::saveHTML( $node )` with `formatOutput`.
@@ -474,7 +588,6 @@ impl Dom {
         self.dump(id, format, &mut out);
         out
     }
-
 
     fn is_text(&self, id: usize) -> bool {
         matches!(self.nodes[id].kind, Kind::Text(_))
@@ -506,8 +619,15 @@ impl Dom {
                 out.push_str("-->");
             }
             Kind::Text(text) => {
-                let raw = node.parent.and_then(|p| self.name(p)).is_some_and(|n| n == "script" || n == "style");
-                if raw { out.push_str(text) } else { out.push_str(&escape_text(text)) }
+                let raw = node
+                    .parent
+                    .and_then(|p| self.name(p))
+                    .is_some_and(|n| n == "script" || n == "style");
+                if raw {
+                    out.push_str(text)
+                } else {
+                    out.push_str(&escape_text(text))
+                }
             }
             Kind::Element { name, attrs } => {
                 let info = desc(name);
@@ -522,13 +642,20 @@ impl Dom {
                     }
                     out.push('=');
                     let escaped = escape_attr(value);
-                    if matches!(attr.as_str(), "href" | "action" | "src") || (attr == "name" && name == "a") {
-                        out.push_str(&quoted(&uri_escape(escaped.trim_start_matches([' ', '\t', '\n', '\r']))));
+                    if matches!(attr.as_str(), "href" | "action" | "src")
+                        || (attr == "name" && name == "a")
+                    {
+                        out.push_str(&quoted(&uri_escape(
+                            escaped.trim_start_matches([' ', '\t', '\n', '\r']),
+                        )));
                     } else {
                         out.push_str(&quoted(&escaped));
                     }
                 }
-                let parent_p = node.parent.and_then(|p| self.name(p)).is_some_and(|n| n.starts_with('p'));
+                let parent_p = node
+                    .parent
+                    .and_then(|p| self.name(p))
+                    .is_some_and(|n| n.starts_with('p'));
                 let block = info.is_some_and(|(_, _, inline)| !inline);
                 if info.is_some_and(|(empty, _, _)| empty) {
                     out.push('>');
@@ -542,18 +669,34 @@ impl Dom {
                     out.push('>');
                     let first = node.children[0];
                     let last = *node.children.last().unwrap_or(&first);
-                    if format && block && !self.is_text(first) && first != last && !name.starts_with('p') {
+                    if format
+                        && block
+                        && !self.is_text(first)
+                        && first != last
+                        && !name.starts_with('p')
+                    {
                         out.push('\n');
                     }
                     for &c in &node.children {
                         self.dump(c, format, out);
                     }
-                    if format && block && !self.is_text(last) && first != last && !name.starts_with('p') {
+                    if format
+                        && block
+                        && !self.is_text(last)
+                        && first != last
+                        && !name.starts_with('p')
+                    {
                         out.push('\n');
                     }
                     out.push_str(&format!("</{name}>"));
                 }
-                if format && block && let Some(next) = self.next(id) && !self.is_text(next) && node.parent.and_then(|p| self.name(p)).is_some() && !parent_p {
+                if format
+                    && block
+                    && let Some(next) = self.next(id)
+                    && !self.is_text(next)
+                    && node.parent.and_then(|p| self.name(p)).is_some()
+                    && !parent_p
+                {
                     out.push('\n');
                 }
             }
@@ -564,14 +707,39 @@ impl Dom {
     pub fn text_content(&self, id: usize) -> String {
         match &self.nodes[id].kind {
             Kind::Text(t) | Kind::Comment(t) => t.clone(),
-            _ => self.nodes[id].children.iter().map(|&c| if matches!(self.nodes[c].kind, Kind::Comment(_)) { String::new() } else { self.text_content(c) }).collect(),
+            _ => self.nodes[id]
+                .children
+                .iter()
+                .map(|&c| {
+                    if matches!(self.nodes[c].kind, Kind::Comment(_)) {
+                        String::new()
+                    } else {
+                        self.text_content(c)
+                    }
+                })
+                .collect(),
         }
     }
 }
 
 /// `htmlIsBooleanAttr()`.
 fn is_boolean(attr: &str) -> bool {
-    matches!(attr, "checked" | "compact" | "declare" | "defer" | "disabled" | "ismap" | "multiple" | "nohref" | "noresize" | "noshade" | "nowrap" | "readonly" | "selected")
+    matches!(
+        attr,
+        "checked"
+            | "compact"
+            | "declare"
+            | "defer"
+            | "disabled"
+            | "ismap"
+            | "multiple"
+            | "nohref"
+            | "noresize"
+            | "noshade"
+            | "nowrap"
+            | "readonly"
+            | "selected"
+    )
 }
 
 /// `xmlEncodeEntitiesReentrant()` of an HTML document.
@@ -595,7 +763,10 @@ fn escape_attr(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
-        if c == '&' && rest[1..].starts_with('{') && let Some(end) = rest.find('}') {
+        if c == '&'
+            && rest[1..].starts_with('{')
+            && let Some(end) = rest.find('}')
+        {
             out.push_str(&rest[..=end]);
             rest = &rest[end + 1..];
             continue;
@@ -629,7 +800,11 @@ fn uri_escape(value: &str) -> String {
 /// `xmlBufWriteQuotedString()`.
 fn quoted(value: &str) -> String {
     if value.contains('"') {
-        if value.contains('\'') { format!("\"{}\"", value.replace('"', "&quot;")) } else { format!("'{value}'") }
+        if value.contains('\'') {
+            format!("\"{}\"", value.replace('"', "&quot;"))
+        } else {
+            format!("'{value}'")
+        }
     } else {
         format!("\"{value}\"")
     }
@@ -641,22 +816,30 @@ mod tests {
 
     fn roundtrip(html: &str) -> String {
         let dom = parse(html, Options::default());
-        dom.save(dom.document_element().unwrap(), true).trim().to_owned()
+        dom.save(dom.document_element().unwrap(), true)
+            .trim()
+            .to_owned()
     }
 
     #[test]
     fn serializes_like_libxml() {
         // The output of PHP 8.3 with libxml 2.9.14 (`saveHTML( $documentElement )` with `formatOutput`).
         assert_eq!(
-            roundtrip("<!DOCTYPE html>\n<html lang=\"en\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><title>T</title></head><body><table><tbody>\n\t\t<tr>\n\t<td>a</td>\n</tr><tr>\n\t<td>b &amp; c &lt; d \" ' J\u{f6}rg \u{2713} &nbsp; &mdash;</td>\n</tr>\n\t</tbody>\n</table></body></html>"),
+            roundtrip(
+                "<!DOCTYPE html>\n<html lang=\"en\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><title>T</title></head><body><table><tbody>\n\t\t<tr>\n\t<td>a</td>\n</tr><tr>\n\t<td>b &amp; c &lt; d \" ' J\u{f6}rg \u{2713} &nbsp; &mdash;</td>\n</tr>\n\t</tbody>\n</table></body></html>"
+            ),
             "<html lang=\"en\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n<title>T</title>\n</head>\n<body><table>\n<tbody>\n\t\t<tr>\n\t<td>a</td>\n</tr>\n<tr>\n\t<td>b &amp; c &lt; d \" ' J\u{f6}rg \u{2713} \u{a0} \u{2014}</td>\n</tr>\n\t</tbody>\n</table></body>\n</html>"
         );
         assert_eq!(
-            roundtrip("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a\r\nb<br/>c<br />d</p><a href=\"http://x.de/a b?x=1&amp;y=\u{f6}\">l&ouml;</a><img src=\"x.png\" alt=\"A &amp; &quot;B&quot;\"></body></html>"),
+            roundtrip(
+                "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a\r\nb<br/>c<br />d</p><a href=\"http://x.de/a b?x=1&amp;y=\u{f6}\">l&ouml;</a><img src=\"x.png\" alt=\"A &amp; &quot;B&quot;\"></body></html>"
+            ),
             "<html>\n<head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head>\n<body>\n<p>a\r\nb<br>c<br>d</p>\n<a href=\"http://x.de/a%20b?x=1&amp;y=%C3%B6\">l\u{f6}</a><img src=\"x.png\" alt='A &amp; \"B\"'>\n</body>\n</html>"
         );
         assert_eq!(
-            roundtrip("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><div title=\"a<b>c 'q' &amp;\">x > y</div><a name=\"a b\">n</a><input type=\"checkbox\" checked disabled=\"disabled\"><select><option selected>x</option></select><div></div><span></span><p></p><td></td></body></html>"),
+            roundtrip(
+                "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><div title=\"a<b>c 'q' &amp;\">x > y</div><a name=\"a b\">n</a><input type=\"checkbox\" checked disabled=\"disabled\"><select><option selected>x</option></select><div></div><span></span><p></p><td></td></body></html>"
+            ),
             "<html>\n<head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head>\n<body>\n<div title=\"a&lt;b&gt;c 'q' &amp;\">x &gt; y</div>\n<a name=\"a%20b\">n</a><input type=\"checkbox\" checked disabled><select><option selected>x</option></select><div></div>\n<span></span><p></p>\n<td></td>\n</body>\n</html>"
         );
     }

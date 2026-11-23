@@ -63,11 +63,32 @@ impl TaxLabels {
 pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<TaxInfo> {
     let site = ctx.site();
     let (hierarchical, plural, singular, query_var, objects) = match name {
-        "category" => (true, site.tr("Categories"), site.trx("Category", "taxonomy singular name"), Some("category_name".to_owned()), vec!["post".to_owned()]),
-        "post_tag" => (false, site.tr("Tags"), site.trx("Tag", "taxonomy singular name"), Some("tag".to_owned()), vec!["post".to_owned()]),
+        "category" => (
+            true,
+            site.tr("Categories"),
+            site.trx("Category", "taxonomy singular name"),
+            Some("category_name".to_owned()),
+            vec!["post".to_owned()],
+        ),
+        "post_tag" => (
+            false,
+            site.tr("Tags"),
+            site.trx("Tag", "taxonomy singular name"),
+            Some("tag".to_owned()),
+            vec!["post".to_owned()],
+        ),
         other => {
-            let info = site.types.taxonomy(other).filter(|t| t.public || t.queryable || !t.object_types.is_empty())?;
-            (info.hierarchical, info.plural_label(), info.singular_label(), info.query_var.clone(), info.object_types.clone())
+            let info = site
+                .types
+                .taxonomy(other)
+                .filter(|t| t.public || t.queryable || !t.object_types.is_empty())?;
+            (
+                info.hierarchical,
+                info.plural_label(),
+                info.singular_label(),
+                info.query_var.clone(),
+                info.object_types.clone(),
+            )
         }
     };
     // `WP_Screen::get()` takes the requested post type when it exists, `post` without one.
@@ -77,30 +98,82 @@ pub fn tax_info(ctx: &Ctx<'_>, name: &str, post_type: Option<&str>) -> Option<Ta
         None => "post".to_owned(),
     };
     // `WP_Terms_List_Table::__construct()`: a type of `get_post_types( [ 'show_ui' => true ] )`, else `post`.
-    let shows_ui = matches!(screen_post_type.as_str(), "post" | "page" | "attachment" | "wp_block" | "wp_navigation") || (!rustpress_core::types::is_internal_post_type(&screen_post_type) && site.types.post_type(&screen_post_type).is_some());
-    let post_type = if !screen_post_type.is_empty() && shows_ui { screen_post_type.clone() } else { "post".to_owned() };
+    let shows_ui = matches!(
+        screen_post_type.as_str(),
+        "post" | "page" | "attachment" | "wp_block" | "wp_navigation"
+    ) || (!rustpress_core::types::is_internal_post_type(&screen_post_type)
+        && site.types.post_type(&screen_post_type).is_some());
+    let post_type = if !screen_post_type.is_empty() && shows_ui {
+        screen_post_type.clone()
+    } else {
+        "post".to_owned()
+    };
     let labels = TaxLabels::new(site, hierarchical);
-    Some(TaxInfo { name: name.to_owned(), hierarchical, plural, singular, query_var, post_type, screen_post_type, objects, labels })
+    Some(TaxInfo {
+        name: name.to_owned(),
+        hierarchical,
+        plural,
+        singular,
+        query_var,
+        post_type,
+        screen_post_type,
+        objects,
+        labels,
+    })
 }
 
 pub(super) fn messages(ctx: &Ctx<'_>, info: &TaxInfo) -> Vec<String> {
     let tr = |s: &str| ctx.tr(s);
     match info.name.as_str() {
-        "category" => vec![String::new(), tr("Category added."), tr("Category deleted."), tr("Category updated."), tr("Category not added."), tr("Category not updated."), tr("Categories deleted.")],
-        "post_tag" => vec![String::new(), tr("Tag added."), tr("Tag deleted."), tr("Tag updated."), tr("Tag not added."), tr("Tag not updated."), tr("Tags deleted.")],
-        _ => vec![String::new(), tr("Item added."), tr("Item deleted."), tr("Item updated."), tr("Item not added."), tr("Item not updated."), tr("Items deleted.")],
+        "category" => vec![
+            String::new(),
+            tr("Category added."),
+            tr("Category deleted."),
+            tr("Category updated."),
+            tr("Category not added."),
+            tr("Category not updated."),
+            tr("Categories deleted."),
+        ],
+        "post_tag" => vec![
+            String::new(),
+            tr("Tag added."),
+            tr("Tag deleted."),
+            tr("Tag updated."),
+            tr("Tag not added."),
+            tr("Tag not updated."),
+            tr("Tags deleted."),
+        ],
+        _ => vec![
+            String::new(),
+            tr("Item added."),
+            tr("Item deleted."),
+            tr("Item updated."),
+            tr("Item not added."),
+            tr("Item not updated."),
+            tr("Items deleted."),
+        ],
     }
 }
 
 /// `get_edit_term_link( $tag, $taxonomy, $this->screen->post_type )`: without a post type the first of the taxonomy.
 fn term_edit_url(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, referer: &str) -> String {
-    let object = if info.screen_post_type.is_empty() { info.objects.first().cloned().unwrap_or_default() } else { info.screen_post_type.clone() };
-    let mut url = ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={}&post_type={object}", info.name, term.term_id));
+    let object = if info.screen_post_type.is_empty() {
+        info.objects.first().cloned().unwrap_or_default()
+    } else {
+        info.screen_post_type.clone()
+    };
+    let mut url = ctx.admin_url(&format!(
+        "term.php?taxonomy={}&tag_ID={}&post_type={object}",
+        info.name, term.term_id
+    ));
     // `add_query_arg( 'wp_http_referer', urlencode( $uri ) )`: an Ajax request without a referer adds the bare key.
     if referer.is_empty() {
         url.push_str("&wp_http_referer");
     } else {
-        url.push_str(&format!("&wp_http_referer={}", rustpress_core::canonical::rawurlencode(referer)));
+        url.push_str(&format!(
+            "&wp_http_referer={}",
+            rustpress_core::canonical::rawurlencode(referer)
+        ));
     }
     url
 }
@@ -111,10 +184,18 @@ fn editable_slug(slug: &str) -> String {
 }
 
 /// One `<tr>` of the term list.
-async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level: usize, referer: &str) -> String {
+async fn row(
+    ctx: &Ctx<'_>,
+    info: &TaxInfo,
+    term: &Term,
+    level: usize,
+    pad_level: usize,
+    referer: &str,
+) -> String {
     let site = ctx.site();
     let tr = |s: &str| ctx.tr(s);
-    let default = info.name == "category" && site.options.u64("default_category", 1) == term.term_id;
+    let default =
+        info.name == "category" && site.options.u64("default_category", 1) == term.term_id;
     let can_edit = ctx.can("manage_categories");
     let name = site.term_name(term);
     let pad = "&#8212; ".repeat(pad_level);
@@ -122,30 +203,78 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
     let checkbox = if default || !can_edit {
         "&nbsp;".to_owned()
     } else {
-        format!("<input type=\"checkbox\" name=\"delete_tags[]\" value=\"{id}\" id=\"cb-select-{id}\" /><label for=\"cb-select-{id}\"><span class=\"screen-reader-text\">{}</span></label>", sprintf(&tr("Select %s"), &[&esc_html(&term.name)]), id = term.term_id)
+        format!(
+            "<input type=\"checkbox\" name=\"delete_tags[]\" value=\"{id}\" id=\"cb-select-{id}\" /><label for=\"cb-select-{id}\"><span class=\"screen-reader-text\">{}</span></label>",
+            sprintf(&tr("Select %s"), &[&esc_html(&term.name)]),
+            id = term.term_id
+        )
     };
-    let title = if can_edit { format!("<a class=\"row-title\" href=\"{}\">{pad}{}</a>", esc_url(&edit_url), esc_html(&name)) } else { format!("{pad}{}", esc_html(&name)) };
+    let title = if can_edit {
+        format!(
+            "<a class=\"row-title\" href=\"{}\">{pad}{}</a>",
+            esc_url(&edit_url),
+            esc_html(&name)
+        )
+    } else {
+        format!("{pad}{}", esc_html(&name))
+    };
     let mut actions: Vec<(String, String)> = Vec::new();
     if can_edit {
-        actions.push(("edit".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&edit_url), esc_attr(&sprintf(&tr("Edit &#8220;%s&#8221;"), &[&name])), tr("Edit"))));
+        actions.push((
+            "edit".into(),
+            format!(
+                "<a href=\"{}\" aria-label=\"{}\">{}</a>",
+                esc_url(&edit_url),
+                esc_attr(&sprintf(&tr("Edit &#8220;%s&#8221;"), &[&name])),
+                tr("Edit")
+            ),
+        ));
         actions.push((
             "inline hide-if-no-js".into(),
             format!("<button type=\"button\" class=\"button-link editinline\" aria-label=\"{}\" aria-expanded=\"false\">{}</button>", esc_attr(&sprintf(&tr("Quick edit &#8220;%s&#8221; inline"), &[&name])), tr("Quick&nbsp;Edit")),
         ));
         if !default {
-            let url = format!("edit-tags.php?action=delete&amp;taxonomy={}&amp;tag_ID={}&amp;_wpnonce={}", info.name, term.term_id, ctx.create_nonce(&format!("delete-tag_{}", term.term_id)));
+            let url = format!(
+                "edit-tags.php?action=delete&amp;taxonomy={}&amp;tag_ID={}&amp;_wpnonce={}",
+                info.name,
+                term.term_id,
+                ctx.create_nonce(&format!("delete-tag_{}", term.term_id))
+            );
             actions.push(("delete".into(), format!("<a href=\"{url}\" class=\"delete-tag aria-button-if-js\" aria-label=\"{}\">{}</a>", esc_attr(&sprintf(&tr("Delete &#8220;%s&#8221;"), &[&name])), tr("Delete"))));
         }
     }
     if let Ok(link) = site.term_link(term).await {
-        actions.push(("view".into(), format!("<a href=\"{}\" aria-label=\"{}\">{}</a>", esc_url(&link), esc_attr(&sprintf(&tr("View &#8220;%s&#8221; archive"), &[&name])), tr("View"))));
+        actions.push((
+            "view".into(),
+            format!(
+                "<a href=\"{}\" aria-label=\"{}\">{}</a>",
+                esc_url(&link),
+                esc_attr(&sprintf(&tr("View &#8220;%s&#8221; archive"), &[&name])),
+                tr("View")
+            ),
+        ));
     }
-    let description = if term.description.is_empty() { format!("<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>", tr("No description")) } else { term.description.clone() };
+    let description = if term.description.is_empty() {
+        format!(
+            "<span aria-hidden=\"true\">&#8212;</span><span class=\"screen-reader-text\">{}</span>",
+            tr("No description")
+        )
+    } else {
+        term.description.clone()
+    };
     let count_url = match &info.query_var {
         Some(var) => add_query_arg("edit.php", var, &term.slug),
-        None => add_query_arg(&add_query_arg("edit.php", "taxonomy", &info.name), "term", &term.slug),
+        None => add_query_arg(
+            &add_query_arg("edit.php", "taxonomy", &info.name),
+            "term",
+            &term.slug,
+        ),
     };
-    let count_url = if info.screen_post_type != "post" { add_query_arg(&count_url, "post_type", &info.screen_post_type) } else { count_url };
+    let count_url = if info.screen_post_type != "post" {
+        add_query_arg(&count_url, "post_type", &info.screen_post_type)
+    } else {
+        count_url
+    };
     format!(
         "<tr id=\"tag-{id}\" class=\"level-{level}\"><td class=\"check-column\">{checkbox}</td><th class='name column-name has-row-actions column-primary' data-colname=\"{n}\" scope=\"row\" aria-label=\"{label}\"><strong>{title}</strong><br /><div class=\"hidden\" id=\"inline_{id}\"><div class=\"name\">{ename}</div><div class=\"slug\">{eslug}</div><div class=\"parent\">{parent}</div></div>{actions}</th><td class='description column-description' data-colname=\"{d}\">{description}</td><td class='slug column-slug' data-colname=\"{s}\">{eslug}</td><td class='posts column-posts' data-colname=\"{c}\"><a href='{}'>{}</a></td></tr>",
         esc_url(&count_url),
@@ -164,9 +293,19 @@ async fn row(ctx: &Ctx<'_>, info: &TaxInfo, term: &Term, level: usize, pad_level
 }
 
 /// The terms in the order of the list: `(term, class level, dash level)`.
-fn ordered(terms: &[Term], tree: bool, orderby: &str, desc: bool, search: &str) -> Vec<(Term, usize, usize)> {
+fn ordered(
+    terms: &[Term],
+    tree: bool,
+    orderby: &str,
+    desc: bool,
+    search: &str,
+) -> Vec<(Term, usize, usize)> {
     let search = search.to_lowercase();
-    let matches = |t: &Term| search.is_empty() || t.name.to_lowercase().contains(&search) || t.slug.to_lowercase().contains(&search);
+    let matches = |t: &Term| {
+        search.is_empty()
+            || t.name.to_lowercase().contains(&search)
+            || t.slug.to_lowercase().contains(&search)
+    };
     let depth = |t: &Term| {
         let mut level = 0;
         let mut parent = t.parent;
@@ -182,7 +321,10 @@ fn ordered(terms: &[Term], tree: bool, orderby: &str, desc: bool, search: &str) 
         level
     };
     if tree && search.is_empty() {
-        let mut out: Vec<(Term, usize, usize)> = super::common::term_tree(terms, &[]).into_iter().map(|(t, l)| (t, l, l)).collect();
+        let mut out: Vec<(Term, usize, usize)> = super::common::term_tree(terms, &[])
+            .into_iter()
+            .map(|(t, l)| (t, l, l))
+            .collect();
         if desc {
             let mut roots: Vec<Vec<(Term, usize, usize)>> = Vec::new();
             for entry in out.drain(..) {
@@ -217,7 +359,16 @@ fn ordered(terms: &[Term], tree: bool, orderby: &str, desc: bool, search: &str) 
             flat.sort_by(|a, b| key(b).cmp(&key(a)).then(a.term_id.cmp(&b.term_id)));
         }
     }
-    flat.into_iter().map(|t| if search.is_empty() { let d = depth(&t); (t, d, 0) } else { (t, 0, 0) }).collect()
+    flat.into_iter()
+        .map(|t| {
+            if search.is_empty() {
+                let d = depth(&t);
+                (t, d, 0)
+            } else {
+                (t, 0, 0)
+            }
+        })
+        .collect()
 }
 
 /// The help of `edit-tags.php`: only categories, tags and link categories have one.
@@ -230,10 +381,25 @@ fn help(ctx: &Ctx<'_>, info: &TaxInfo) -> Option<Help> {
     let mut overview = match name {
         "category" => format!(
             "<p>{}</p>",
-            rustpress_core::i18n::sprintf(&tr("You can use categories to define sections of your site and group related posts. The default category is &#8220;Uncategorized&#8221; until you change it in your <a href=\"%s\">writing settings</a>."), &["options-writing.php"])
+            rustpress_core::i18n::sprintf(
+                &tr(
+                    "You can use categories to define sections of your site and group related posts. The default category is &#8220;Uncategorized&#8221; until you change it in your <a href=\"%s\">writing settings</a>."
+                ),
+                &["options-writing.php"]
+            )
         ),
-        "link_category" => format!("<p>{}</p>", tr("You can create groups of links by using Link Categories. Link Category names must be unique and Link Categories are separate from the categories you use for posts.")),
-        _ => format!("<p>{}</p>", tr("You can assign keywords to your posts using <strong>tags</strong>. Unlike categories, tags have no hierarchy, meaning there is no relationship from one tag to another.")),
+        "link_category" => format!(
+            "<p>{}</p>",
+            tr(
+                "You can create groups of links by using Link Categories. Link Category names must be unique and Link Categories are separate from the categories you use for posts."
+            )
+        ),
+        _ => format!(
+            "<p>{}</p>",
+            tr(
+                "You can assign keywords to your posts using <strong>tags</strong>. Unlike categories, tags have no hierarchy, meaning there is no relationship from one tag to another."
+            )
+        ),
     };
     overview.push_str(&format!(
         "<p>{}</p>",
@@ -243,14 +409,28 @@ fn help(ctx: &Ctx<'_>, info: &TaxInfo) -> Option<Help> {
             tr("What&#8217;s the difference between categories and tags? Normally, tags are ad-hoc keywords that identify important information in your post (names, subjects, etc) that may or may not recur in other posts, while categories are pre-determined sections. If you think of your site like a book, the categories are like the Table of Contents and the tags are like the terms in the index.")
         }
     ));
-    let mut tabs = vec![HelpTab { id: "overview".into(), title: tr("Overview"), content: overview }];
+    let mut tabs = vec![HelpTab {
+        id: "overview".into(),
+        title: tr("Overview"),
+        content: overview,
+    }];
     if name != "link_category" {
         let category = name == "category";
         let mut adding = format!(
             "<p>{}</p><ul><li>{}</li><li>{}</li>",
-            if category { tr("When adding a new category on this screen, you&#8217;ll fill in the following fields:") } else { tr("When adding a new tag on this screen, you&#8217;ll fill in the following fields:") },
+            if category {
+                tr(
+                    "When adding a new category on this screen, you&#8217;ll fill in the following fields:",
+                )
+            } else {
+                tr(
+                    "When adding a new tag on this screen, you&#8217;ll fill in the following fields:",
+                )
+            },
             tr("<strong>Name</strong> &mdash; The name is how it appears on your site."),
-            tr("<strong>Slug</strong> &mdash; The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")
+            tr(
+                "<strong>Slug</strong> &mdash; The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens."
+            )
         );
         if category {
             adding.push_str(&format!("<li>{}</li>", tr("<strong>Parent</strong> &mdash; Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have child categories for Bebop and Big Band. Totally optional. To create a subcategory, just choose another category from the Parent dropdown.")));
@@ -260,14 +440,35 @@ fn help(ctx: &Ctx<'_>, info: &TaxInfo) -> Option<Help> {
             tr("<strong>Description</strong> &mdash; The description is not prominent by default; however, some themes may display it."),
             tr("You can change the display of this screen using the Screen Options tab to set how many items are displayed per screen and to display/hide columns in the table.")
         ));
-        tabs.push(HelpTab { id: "adding-terms".into(), title: if category { tr("Adding Categories") } else { tr("Adding Tags") }, content: adding });
+        tabs.push(HelpTab {
+            id: "adding-terms".into(),
+            title: if category {
+                tr("Adding Categories")
+            } else {
+                tr("Adding Tags")
+            },
+            content: adding,
+        });
     }
     let documentation = match name {
-        "category" => tr("<a href=\"https://wordpress.org/documentation/article/posts-categories-screen/\">Documentation on Categories</a>"),
-        "link_category" => tr("<a href=\"https://codex.wordpress.org/Links_Link_Categories_Screen\">Documentation on Link Categories</a>"),
-        _ => tr("<a href=\"https://wordpress.org/documentation/article/posts-tags-screen/\">Documentation on Tags</a>"),
+        "category" => tr(
+            "<a href=\"https://wordpress.org/documentation/article/posts-categories-screen/\">Documentation on Categories</a>",
+        ),
+        "link_category" => tr(
+            "<a href=\"https://codex.wordpress.org/Links_Link_Categories_Screen\">Documentation on Link Categories</a>",
+        ),
+        _ => tr(
+            "<a href=\"https://wordpress.org/documentation/article/posts-tags-screen/\">Documentation on Tags</a>",
+        ),
     };
-    Some(Help { tabs, sidebar: format!("<p><strong>{}</strong></p><p>{documentation}</p><p>{}</p>", tr("For more information:"), tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")) })
+    Some(Help {
+        tabs,
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{documentation}</p><p>{}</p>",
+            tr("For more information:"),
+            tr("<a href=\"https://wordpress.org/support/forums/\">Support forums</a>")
+        ),
+    })
 }
 
 fn screen_for(info: &TaxInfo, title: String, help: Option<Help>, file: &str) -> Screen {
@@ -280,7 +481,16 @@ fn screen_for(info: &TaxInfo, title: String, help: Option<Help>, file: &str) -> 
         other => format!("edit-tags.php?taxonomy={}&amp;post_type={other}", info.name),
     };
     let id = format!("edit-{}", info.name);
-    Screen { file: file.into(), parent_file: parent, submenu_file: Some(submenu), post_type: info.screen_post_type.clone(), id, title, help, ..Default::default() }
+    Screen {
+        file: file.into(),
+        parent_file: parent,
+        submenu_file: Some(submenu),
+        post_type: info.screen_post_type.clone(),
+        id,
+        title,
+        help,
+        ..Default::default()
+    }
 }
 
 /// `edit-tags.php`.
@@ -289,57 +499,147 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let tr = |s: &str| ctx.tr(s);
     let site = ctx.site();
     // Without a taxonomy the screen is the one of the tags.
-    let taxonomy = request.request("taxonomy").filter(|t| !t.is_empty()).unwrap_or("post_tag").to_owned();
+    let taxonomy = request
+        .request("taxonomy")
+        .filter(|t| !t.is_empty())
+        .unwrap_or("post_tag")
+        .to_owned();
     // Taxonomies without a screen of their own.
-    if matches!(taxonomy.as_str(), "post_format" | "nav_menu" | "link_category" | "wp_theme" | "wp_template_part_area") {
-        return super::common::die_plain(ctx, "Sorry, you are not allowed to edit terms in this taxonomy.");
+    if matches!(
+        taxonomy.as_str(),
+        "post_format" | "nav_menu" | "link_category" | "wp_theme" | "wp_template_part_area"
+    ) {
+        return super::common::die_plain(
+            ctx,
+            "Sorry, you are not allowed to edit terms in this taxonomy.",
+        );
     }
     let Some(info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
         return super::common::die_plain(ctx, "Invalid taxonomy.");
     };
     if !ctx.can("manage_categories") {
-        return forbidden_heading(ctx, "Sorry, you are not allowed to manage terms in this taxonomy.");
+        return forbidden_heading(
+            ctx,
+            "Sorry, you are not allowed to manage terms in this taxonomy.",
+        );
     }
     let action = {
         let a = request.request("action").unwrap_or_default();
-        if a.is_empty() || a == "-1" { request.request("action2").unwrap_or_default().to_owned() } else { a.to_owned() }
+        if a.is_empty() || a == "-1" {
+            request.request("action2").unwrap_or_default().to_owned()
+        } else {
+            a.to_owned()
+        }
     };
     let referer = super::common::wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
-    let index_url = format!("edit-tags.php?taxonomy={}{}", info.name, if info.post_type == "post" { String::new() } else { format!("&post_type={}", info.post_type) });
+    let index_url = format!(
+        "edit-tags.php?taxonomy={}{}",
+        info.name,
+        if info.post_type == "post" {
+            String::new()
+        } else {
+            format!("&post_type={}", info.post_type)
+        }
+    );
     let messages = messages(ctx, &info);
 
     let back = |message: u32, error: bool| {
-        let base = ["message", "error", "action", "action2", "tag_ID", "_wpnonce", "_wp_http_referer", "delete_tags"].iter().fold(referer.clone(), |url, key| rustpress_core::urls::remove_query_arg(&url, key));
-        let base = if base.contains("edit-tags.php") || base.contains("term.php") { base } else { ctx.admin_url(&index_url) };
+        let base = [
+            "message",
+            "error",
+            "action",
+            "action2",
+            "tag_ID",
+            "_wpnonce",
+            "_wp_http_referer",
+            "delete_tags",
+        ]
+        .iter()
+        .fold(referer.clone(), |url, key| {
+            rustpress_core::urls::remove_query_arg(&url, key)
+        });
+        let base = if base.contains("edit-tags.php") || base.contains("term.php") {
+            base
+        } else {
+            ctx.admin_url(&index_url)
+        };
         let mut url = add_query_arg(&base, "message", &message.to_string());
         if error {
             url = add_query_arg(&url, "error", "1");
         }
         redirect(&url)
     };
-    let expired = || super::die(ctx.env, 403, &ctx.tr("An error occurred."), &ctx.tr("The link you followed has expired."));
+    let expired = || {
+        super::die(
+            ctx.env,
+            403,
+            &ctx.tr("An error occurred."),
+            &ctx.tr("The link you followed has expired."),
+        )
+    };
     // `edit`: the edit form lives in `term.php` (`get_edit_term_link()`).
     if action == "edit" && request.request("tag_ID").is_some() {
-        let id = request.request("tag_ID").and_then(|v| v.trim().parse::<i64>().ok()).unwrap_or(0).max(0) as u64;
-        if ctx.env.db.term_by_id(None, id).await.ok().flatten().is_none() {
-            return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
+        let id = request
+            .request("tag_ID")
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(0)
+            .max(0) as u64;
+        if ctx
+            .env
+            .db
+            .term_by_id(None, id)
+            .await
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            return super::common::die_plain(
+                ctx,
+                "You attempted to edit an item that does not exist. Perhaps it was deleted?",
+            );
         }
-        return redirect(&ctx.admin_url(&format!("term.php?taxonomy={}&tag_ID={id}&post_type={}", info.name, info.post_type)));
+        return redirect(&ctx.admin_url(&format!(
+            "term.php?taxonomy={}&tag_ID={id}&post_type={}",
+            info.name, info.post_type
+        )));
     }
     if request.post && action == "editedtag" {
         return edited_tag(ctx, &info).await;
     }
     if action == "add-tag" && request.post {
-        if request.post_field("_wpnonce_add-tag").is_none_or(|n| ctx.env.auth.verify_nonce(n, "add-tag", ctx.user.id, &ctx.token, ctx.env.now).is_none()) {
+        if request.post_field("_wpnonce_add-tag").is_none_or(|n| {
+            ctx.env
+                .auth
+                .verify_nonce(n, "add-tag", ctx.user.id, &ctx.token, ctx.env.now)
+                .is_none()
+        }) {
             return expired();
         }
-        let Some(writer) = ctx.env.writer else { return read_only(ctx) };
-        let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+        let Some(writer) = ctx.env.writer else {
+            return read_only(ctx);
+        };
+        let content = Content {
+            site,
+            db: ctx.env.db,
+            writer,
+            user: &ctx.user,
+            now: ctx.env.now,
+        };
         let data = TermData {
-            name: request.post_field("tag-name").unwrap_or_default().to_owned(),
+            name: request
+                .post_field("tag-name")
+                .unwrap_or_default()
+                .to_owned(),
             slug: request.post_field("slug").unwrap_or_default().to_owned(),
-            parent: request.post_field("parent").and_then(|p| p.parse::<i64>().ok()).filter(|p| *p > 0).unwrap_or(0) as u64,
-            description: request.post_field("description").unwrap_or_default().to_owned(),
+            parent: request
+                .post_field("parent")
+                .and_then(|p| p.parse::<i64>().ok())
+                .filter(|p| *p > 0)
+                .unwrap_or(0) as u64,
+            description: request
+                .post_field("description")
+                .unwrap_or_default()
+                .to_owned(),
         };
         return match content.insert_term(&info.name, &data).await {
             Ok(id) => match saved_term(ctx, "edit-tags.php", writer, id, &info.name, true).await {
@@ -350,9 +650,22 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         };
     }
     if action == "delete" {
-        let Some(writer) = ctx.env.writer else { return read_only(ctx) };
-        let content = Content { site, db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
-        let bulk_ids: Vec<u64> = request.form.iter().filter(|(k, _)| k == "delete_tags[]").filter_map(|(_, v)| v.parse().ok()).collect();
+        let Some(writer) = ctx.env.writer else {
+            return read_only(ctx);
+        };
+        let content = Content {
+            site,
+            db: ctx.env.db,
+            writer,
+            user: &ctx.user,
+            now: ctx.env.now,
+        };
+        let bulk_ids: Vec<u64> = request
+            .form
+            .iter()
+            .filter(|(k, _)| k == "delete_tags[]")
+            .filter_map(|(_, v)| v.parse().ok())
+            .collect();
         if request.post && !bulk_ids.is_empty() {
             if !ctx.verify_nonce("bulk-tags") {
                 return expired();
@@ -362,7 +675,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             }
             return back(6, false);
         }
-        let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let id: u64 = request
+            .request("tag_ID")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         if !ctx.verify_nonce(&format!("delete-tag_{id}")) {
             return expired();
         }
@@ -372,26 +688,42 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
 
     // The list
     let origin = super::request_origin(ctx.env, request);
-    let search = request.get("s").map(|s| s.trim().to_owned()).unwrap_or_default();
-    let orderby = request.get("orderby").filter(|o| ["name", "description", "slug", "count"].contains(o)).unwrap_or("name").to_owned();
+    let search = request
+        .get("s")
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default();
+    let orderby = request
+        .get("orderby")
+        .filter(|o| ["name", "description", "slug", "count"].contains(o))
+        .unwrap_or("name")
+        .to_owned();
     let order_inputs = {
         let mut inputs = String::new();
         for name in ["orderby", "order"] {
             if let Some(value) = request.get(name).filter(|v| !v.is_empty()) {
-                inputs.push_str(&format!("<input type=\"hidden\" name=\"{name}\" value=\"{}\" />
-", esc_attr(value)));
+                inputs.push_str(&format!(
+                    "<input type=\"hidden\" name=\"{name}\" value=\"{}\" />
+",
+                    esc_attr(value)
+                ));
             }
         }
         inputs
     };
-    let desc = request.get("order").is_some_and(|o| o.eq_ignore_ascii_case("desc"));
+    let desc = request
+        .get("order")
+        .is_some_and(|o| o.eq_ignore_ascii_case("desc"));
     let terms = ctx.env.db.terms(&info.name).await.unwrap_or_default();
     let hierarchical_view = info.hierarchical && request.get("orderby").is_none();
     let list = ordered(&terms, hierarchical_view, &orderby, desc, &search);
     // `edit_{$taxonomy}_per_page`.
     let per_page_option = format!("edit_{}_per_page", info.name);
     let per_page = super::common::items_per_page(ctx, &per_page_option, 20).await;
-    let paged = request.get("paged").and_then(|p| p.parse::<u64>().ok()).filter(|p| *p > 0).unwrap_or(1);
+    let paged = request
+        .get("paged")
+        .and_then(|p| p.parse::<u64>().ok())
+        .filter(|p| *p > 0)
+        .unwrap_or(1);
     let total = list.len() as u64;
     if let Some(response) = super::common::past_last_page(ctx, paged, total, per_page) {
         return response;
@@ -404,28 +736,54 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             if entry.1 == 0 {
                 root += 1;
             }
-            if root > (paged - 1).saturating_mul(per_page) && root <= paged.saturating_mul(per_page) {
+            if root > (paged - 1).saturating_mul(per_page) && root <= paged.saturating_mul(per_page)
+            {
                 out.push(entry);
             }
         }
         out
     } else {
-        list.iter().skip(((paged - 1).saturating_mul(per_page)) as usize).take(per_page as usize).cloned().collect()
+        list.iter()
+            .skip(((paged - 1).saturating_mul(per_page)) as usize)
+            .take(per_page as usize)
+            .cloned()
+            .collect()
     };
     let current_url = format!("{origin}{}", request.request_uri);
     let mut rows = String::new();
     for (term, level, pad) in page_rows.iter() {
         let r = row(ctx, &info, term, *level, *pad, &request.request_uri).await;
-        rows.push_str(&if hierarchical_view { format!("	{r}") } else { r });
+        rows.push_str(&if hierarchical_view {
+            format!("	{r}")
+        } else {
+            r
+        });
     }
     let mut columns = vec![
         Column::new("cb", ""),
         Column::new("name", &tr("Name")).sortable("name", false, Some(&tr("Name")), Some("asc")),
-        Column::new("description", &tr("Description")).sortable("description", false, Some(&tr("Description")), None),
+        Column::new("description", &tr("Description")).sortable(
+            "description",
+            false,
+            Some(&tr("Description")),
+            None,
+        ),
         Column::new("slug", &tr("Slug")).sortable("slug", false, Some(&tr("Slug")), None),
-        Column::new("posts", &ctx.site().trx("Count", "Number/count of items")).sortable("count", false, Some(&ctx.site().trx("Count", "Number/count of items")), None),
+        Column::new("posts", &ctx.site().trx("Count", "Number/count of items")).sortable(
+            "count",
+            false,
+            Some(&ctx.site().trx("Count", "Number/count of items")),
+            None,
+        ),
     ];
-    let screen_options = super::common::list_screen_options(ctx, &format!("edit-{}", info.name), &mut columns, (&per_page_option, per_page), None).await;
+    let screen_options = super::common::list_screen_options(
+        ctx,
+        &format!("edit-{}", info.name),
+        &mut columns,
+        (&per_page_option, per_page),
+        None,
+    )
+    .await;
     let mut table = Table {
         site,
         plural: "tags".into(),
@@ -447,7 +805,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         table.bulk_actions.clear();
     }
     let caption = if hierarchical_view {
-        format!("{} {}", tr("Table ordered hierarchically."), if desc { tr("Descending.") } else { tr("Ascending.") })
+        format!(
+            "{} {}",
+            tr("Table ordered hierarchically."),
+            if desc {
+                tr("Descending.")
+            } else {
+                tr("Ascending.")
+            }
+        )
     } else {
         let by = match orderby.as_str() {
             "slug" => tr("Table ordered by Slug."),
@@ -455,22 +821,57 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "count" => tr("Table ordered by Posts Count."),
             _ => tr("Table ordered by Name."),
         };
-        format!("{by} {}", if desc { tr("Descending.") } else { tr("Ascending.") })
+        format!(
+            "{by} {}",
+            if desc {
+                tr("Descending.")
+            } else {
+                tr("Ascending.")
+            }
+        )
     };
-    let nonce_field = format!("<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\n{}", info.name, info.post_type, ctx.nonce_field("bulk-tags"));
-    let table_html = table.display(&nonce_field, "", "", &caption, &rows, &info.labels.items_list);
+    let nonce_field = format!(
+        "<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\n{}",
+        info.name,
+        info.post_type,
+        ctx.nonce_field("bulk-tags")
+    );
+    let table_html = table.display(
+        &nonce_field,
+        "",
+        "",
+        &caption,
+        &rows,
+        &info.labels.items_list,
+    );
 
     // The page
     let title = info.plural.clone();
-    let mut h = format!("<div class=\"wrap nosubsub\">\n<h1 class=\"wp-heading-inline\">{}</h1>\n\n", esc_html(&title));
+    let mut h = format!(
+        "<div class=\"wrap nosubsub\">\n<h1 class=\"wp-heading-inline\">{}</h1>\n\n",
+        esc_html(&title)
+    );
     if !search.is_empty() {
-        h.push_str(&format!("<span class=\"subtitle\">{}</span>\n", sprintf(&tr("Search results for: %s"), &[&format!("<strong>{}</strong>", esc_html(&search))])));
+        h.push_str(&format!(
+            "<span class=\"subtitle\">{}</span>\n",
+            sprintf(
+                &tr("Search results for: %s"),
+                &[&format!("<strong>{}</strong>", esc_html(&search))]
+            )
+        ));
     }
     h.push_str("\n<hr class=\"wp-header-end\">\n\n");
-    let code = request.get("message").and_then(|m| m.parse::<usize>().ok()).filter(|m| *m > 0 && *m < messages.len());
+    let code = request
+        .get("message")
+        .and_then(|m| m.parse::<usize>().ok())
+        .filter(|m| *m > 0 && *m < messages.len());
     if let Some(code) = code {
         let error = request.get("error").is_some() || code == 4 || code == 5;
-        h.push_str(&format!("<div id=\"message\" class=\"{} notice is-dismissible\"><p>{}</p></div>\n", if error { "notice-error" } else { "updated" }, messages[code]));
+        h.push_str(&format!(
+            "<div id=\"message\" class=\"{} notice is-dismissible\"><p>{}</p></div>\n",
+            if error { "notice-error" } else { "updated" },
+            messages[code]
+        ));
     }
     h.push_str("<div id=\"ajax-response\"></div>\n\n");
     h.push_str(&format!(
@@ -488,7 +889,15 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     h.push_str("</div>\n</div><!-- /col-left -->\n\n<div id=\"col-right\">\n<div class=\"col-wrap\">\n\n\n<form id=\"posts-filter\" method=\"post\">\n");
     h.push_str(&table_html);
     h.push_str("\n</form>\n\n");
-    let default_name = if info.name == "category" { terms.iter().find(|t| t.term_id == site.options.u64("default_category", 1)).map(|t| t.name.clone()).unwrap_or_default() } else { String::new() };
+    let default_name = if info.name == "category" {
+        terms
+            .iter()
+            .find(|t| t.term_id == site.options.u64("default_category", 1))
+            .map(|t| t.name.clone())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
     // The converters belong to those who may import.
     let can_import = ctx.can("import");
     if info.name == "category" || (info.name == "post_tag" && can_import) {
@@ -510,11 +919,18 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         h.push_str("</div>\n");
     }
     h.push_str("</div><!-- /col-right -->\n\n</div><!-- /col-container -->\n\n</div><!-- /wrap -->\n\n<script>\ntry{document.forms.addtag['tag-name'].focus();}catch(e){}\n</script>\n\t\n");
-    h.push_str(&inline_edit(ctx, &info, table.columns.iter().filter(|c| !c.hidden).count()));
+    h.push_str(&inline_edit(
+        ctx,
+        &info,
+        table.columns.iter().filter(|c| !c.hidden).count(),
+    ));
     let mut screen = screen_for(&info, title, help(ctx, &info), "edit-tags.php");
     screen.options = Some(screen_options);
     screen.taxonomy = Some(info.name.clone());
-    let mut assets = Assets { scripts: vec!["admin-tags".into(), "inline-edit-tax".into()], ..Default::default() };
+    let mut assets = Assets {
+        scripts: vec!["admin-tags".into(), "inline-edit-tax".into()],
+        ..Default::default()
+    };
     super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     render(ctx, &screen, &h, &assets).await
 }
@@ -524,10 +940,7 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo, plugin_fields: &str) -> String 
     let singular = &info.labels.add_new_item;
     let mut h = format!(
         "<div class=\"form-wrap\">\n<h2>{}</h2>\n<form id=\"addtag\" method=\"post\" action=\"edit-tags.php\" class=\"validate\"\n\t>\n<input type=\"hidden\" name=\"action\" value=\"add-tag\" />\n<input type=\"hidden\" name=\"screen\" value=\"edit-{}\" />\n<input type=\"hidden\" name=\"taxonomy\" value=\"{}\" />\n<input type=\"hidden\" name=\"post_type\" value=\"{}\" />\n\t",
-        singular,
-        info.name,
-        info.name,
-        info.post_type
+        singular, info.name, info.name, info.post_type
     );
     h.push_str(&format!(
         "<input type=\"hidden\" id=\"_wpnonce_add-tag\" name=\"_wpnonce_add-tag\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />\n",
@@ -545,8 +958,31 @@ async fn add_form(ctx: &Ctx<'_>, info: &TaxInfo, plugin_fields: &str) -> String 
         tr("The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")
     ));
     if info.hierarchical {
-        let dropdown = dropdown_terms(ctx, &info.name, "parent", "parent", 0, "postform", Some(("-1", &tr("None"))), &[]).await.replacen("class='postform'>", "class='postform' aria-describedby=\"parent-description\">", 1);
-        let help_text = if info.name == "category" { tr("Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.") } else { tr("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.") };
+        let dropdown = dropdown_terms(
+            ctx,
+            &info.name,
+            "parent",
+            "parent",
+            0,
+            "postform",
+            Some(("-1", &tr("None"))),
+            &[],
+        )
+        .await
+        .replacen(
+            "class='postform'>",
+            "class='postform' aria-describedby=\"parent-description\">",
+            1,
+        );
+        let help_text = if info.name == "category" {
+            tr(
+                "Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.",
+            )
+        } else {
+            tr(
+                "Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.",
+            )
+        };
         h.push_str(&format!(
             "\t<div class=\"form-field term-parent-wrap\">\n\t<label for=\"parent\">{}</label>\n\t\t{dropdown}\t\t\t\t<p id=\"parent-description\">{help_text}</p>\n\t</div>\n",
             info.labels.parent_item.clone()
@@ -582,7 +1018,10 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
     let taxonomy = request.request("taxonomy").unwrap_or_default().to_owned();
-    let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let id: u64 = request
+        .request("tag_ID")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     // Without a term the list of the taxonomy is the place to go to: the tags if none is named, none if it is unknown.
     if id == 0 {
         let target = if taxonomy.is_empty() {
@@ -600,28 +1039,62 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     } else if tax_info(ctx, &taxonomy, request.request("post_type")).is_some() {
         taxonomy
     } else {
-        ctx.env.db.term_by_id(None, id).await.ok().flatten().map(|t| t.taxonomy).unwrap_or_default()
+        ctx.env
+            .db
+            .term_by_id(None, id)
+            .await
+            .ok()
+            .flatten()
+            .map(|t| t.taxonomy)
+            .unwrap_or_default()
     };
     let Some(mut info) = tax_info(ctx, &taxonomy, request.request("post_type")) else {
-        return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
+        return super::common::die_plain(
+            ctx,
+            "You attempted to edit an item that does not exist. Perhaps it was deleted?",
+        );
     };
     // `term.php`: the screen's post type, else the first of the taxonomy.
-    info.post_type = if info.screen_post_type.is_empty() { info.objects.first().cloned().unwrap_or_default() } else { info.screen_post_type.clone() };
+    info.post_type = if info.screen_post_type.is_empty() {
+        info.objects.first().cloned().unwrap_or_default()
+    } else {
+        info.screen_post_type.clone()
+    };
     if !ctx.can("manage_categories") {
         return forbidden_heading(ctx, "Sorry, you are not allowed to edit this item.");
     }
-    let Some(term) = ctx.env.db.term_by_id(Some(&info.name), id).await.ok().flatten() else {
-        return super::common::die_plain(ctx, "You attempted to edit an item that does not exist. Perhaps it was deleted?");
+    let Some(term) = ctx
+        .env
+        .db
+        .term_by_id(Some(&info.name), id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return super::common::die_plain(
+            ctx,
+            "You attempted to edit an item that does not exist. Perhaps it was deleted?",
+        );
     };
     let site = ctx.site();
 
     // The form posts to edit-tags.php with `editedtag`; this screen is reached by GET only.
-    let mut h = format!("<div class=\"wrap\">\n<h1>{}</h1>\n\n", info.labels.edit_item);
-    if let Some(code) = request.get("message").and_then(|m| m.parse::<usize>().ok()).filter(|m| *m > 0) {
+    let mut h = format!(
+        "<div class=\"wrap\">\n<h1>{}</h1>\n\n",
+        info.labels.edit_item
+    );
+    if let Some(code) = request
+        .get("message")
+        .and_then(|m| m.parse::<usize>().ok())
+        .filter(|m| *m > 0)
+    {
         let list = messages(ctx, &info);
         if let Some(text) = list.get(code) {
             let error = request.get("error").is_some() || code == 5;
-            h.push_str(&format!("<div id=\"message\" class=\"{} notice is-dismissible\"><p>{text}</p></div>\n", if error { "notice-error" } else { "updated" }));
+            h.push_str(&format!(
+                "<div id=\"message\" class=\"{} notice is-dismissible\"><p>{text}</p></div>\n",
+                if error { "notice-error" } else { "updated" }
+            ));
         }
     }
     let original = request.get("wp_http_referer").unwrap_or_default();
@@ -647,8 +1120,31 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
         tr("The &#8220;slug&#8221; is the URL-friendly version of the name. It is usually all lowercase and contains only letters, numbers, and hyphens.")
     ));
     if info.hierarchical {
-        let dropdown = dropdown_terms(ctx, &info.name, "parent", "parent", term.parent, "postform", Some(("-1", &tr("None"))), &[term.term_id]).await.replacen("class='postform'>", "class='postform' aria-describedby=\"parent-description\">", 1);
-        let help_text = if info.name == "category" { tr("Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.") } else { tr("Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.") };
+        let dropdown = dropdown_terms(
+            ctx,
+            &info.name,
+            "parent",
+            "parent",
+            term.parent,
+            "postform",
+            Some(("-1", &tr("None"))),
+            &[term.term_id],
+        )
+        .await
+        .replacen(
+            "class='postform'>",
+            "class='postform' aria-describedby=\"parent-description\">",
+            1,
+        );
+        let help_text = if info.name == "category" {
+            tr(
+                "Categories, unlike tags, can have a hierarchy. You might have a Jazz category, and under that have children categories for Bebop and Big Band. Totally optional.",
+            )
+        } else {
+            tr(
+                "Assign a parent term to create a hierarchy. The term Jazz, for example, would be the parent of Bebop and Big Band.",
+            )
+        };
         h.push_str(&format!(
             "\t\t<tr class=\"form-field term-parent-wrap\">\n\t\t\t<th scope=\"row\"><label for=\"parent\">{}</label></th>\n\t\t\t<td>\n\t\t\t\t{dropdown}\t\t\t\t\t\t\t\t\t<p class=\"description\" id=\"parent-description\">{help_text}</p>\n\t\t\t\t\t\t\t</td>\n\t\t</tr>\n",
             info.labels.parent_item.clone()
@@ -664,10 +1160,16 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     let fields = term_form(ctx, "term.php", &info.name, Some(&term)).await;
     h.push_str(&fields.html);
     h.push('\n');
-    let default = info.name == "category" && site.options.u64("default_category", 1) == term.term_id;
+    let default =
+        info.name == "category" && site.options.u64("default_category", 1) == term.term_id;
     h.push_str(&format!("<div class=\"edit-tag-actions\">\n\n\t<input type=\"submit\" class=\"button button-primary\" value=\"{}\"  />\n\t", tr("Update")));
     if !default {
-        let url = ctx.admin_url(&format!("edit-tags.php?action=delete&taxonomy={}&tag_ID={}&_wpnonce={}", info.name, term.term_id, ctx.create_nonce(&format!("delete-tag_{}", term.term_id))));
+        let url = ctx.admin_url(&format!(
+            "edit-tags.php?action=delete&taxonomy={}&tag_ID={}&_wpnonce={}",
+            info.name,
+            term.term_id,
+            ctx.create_nonce(&format!("delete-tag_{}", term.term_id))
+        ));
         h.push_str(&format!("\t\t<span id=\"delete-link\">\n\t\t\t<a class=\"delete\" href=\"{}\">{}</a>\n\t\t</span>\n\t", esc_url(&url), tr("Delete")));
     }
     h.push_str("\n</div>\n\n</form>\n</div>\n\n");
@@ -681,7 +1183,10 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
     }
     screen.taxonomy = Some(info.name.clone());
     screen.edited_term = Some(term);
-    let mut assets = Assets { early_scripts: vec!["admin-tags".into()], ..Default::default() };
+    let mut assets = Assets {
+        early_scripts: vec!["admin-tags".into()],
+        ..Default::default()
+    };
     super::meta_boxes::plugin_box_assets(ctx, &fields, &mut assets, Vec::new(), true, None).await;
     // The empty help of the screen ends without a line break.
     render(ctx, &screen, &format!("\n{h}"), &assets).await
@@ -691,31 +1196,69 @@ pub async fn edit_page(ctx: &Ctx<'_>) -> AdminResponse {
 async fn edited_tag(ctx: &Ctx<'_>, info: &TaxInfo) -> AdminResponse {
     let request = ctx.request;
     let tr = |s: &str| ctx.tr(s);
-    let id: u64 = request.request("tag_ID").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let id: u64 = request
+        .request("tag_ID")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     if !ctx.verify_nonce(&format!("update-tag_{id}")) {
-        return super::die(ctx.env, 403, &tr("An error occurred."), &tr("The link you followed has expired."));
+        return super::die(
+            ctx.env,
+            403,
+            &tr("An error occurred."),
+            &tr("The link you followed has expired."),
+        );
     }
-    let Some(writer) = ctx.env.writer else { return read_only(ctx) };
-    let content = Content { site: ctx.site(), db: ctx.env.db, writer, user: &ctx.user, now: ctx.env.now };
+    let Some(writer) = ctx.env.writer else {
+        return read_only(ctx);
+    };
+    let content = Content {
+        site: ctx.site(),
+        db: ctx.env.db,
+        writer,
+        user: &ctx.user,
+        now: ctx.env.now,
+    };
     let data = TermData {
         name: request.post_field("name").unwrap_or_default().to_owned(),
         slug: request.post_field("slug").unwrap_or_default().to_owned(),
-        parent: request.post_field("parent").and_then(|p| p.parse::<i64>().ok()).filter(|p| *p > 0).unwrap_or(0) as u64,
-        description: request.post_field("description").unwrap_or_default().to_owned(),
+        parent: request
+            .post_field("parent")
+            .and_then(|p| p.parse::<i64>().ok())
+            .filter(|p| *p > 0)
+            .unwrap_or(0) as u64,
+        description: request
+            .post_field("description")
+            .unwrap_or_default()
+            .to_owned(),
     };
     let ok = content.update_term(id, &info.name, &data).await.is_ok();
-    if ok && let Some(failed) = saved_term(ctx, "edit-tags.php", writer, id, &info.name, false).await {
+    if ok
+        && let Some(failed) = saved_term(ctx, "edit-tags.php", writer, id, &info.name, false).await
+    {
         return super::die(ctx.env, failed.status, &failed.title, &failed.message);
     }
     // Back to `wp_get_referer()` (the edit form), else the request, with the message.
     let referer = super::common::wp_get_referer(ctx).unwrap_or_else(|| request.request_uri.clone());
-    let referer = ["_wp_http_referer", "_wpnonce", "error", "message", "paged"].iter().fold(referer, |url, key| rustpress_core::urls::remove_query_arg(&url, key));
-    let url = if ok { add_query_arg(&referer, "message", "3") } else { add_query_arg(&add_query_arg(&referer, "error", "1"), "message", "5") };
+    let referer = ["_wp_http_referer", "_wpnonce", "error", "message", "paged"]
+        .iter()
+        .fold(referer, |url, key| {
+            rustpress_core::urls::remove_query_arg(&url, key)
+        });
+    let url = if ok {
+        add_query_arg(&referer, "message", "3")
+    } else {
+        add_query_arg(&add_query_arg(&referer, "error", "1"), "message", "5")
+    };
     redirect(&url)
 }
 
 /// `{$taxonomy}_add_form_fields`/`{$taxonomy}_edit_form` of the plugins.
-async fn term_form(ctx: &Ctx<'_>, hook_suffix: &str, taxonomy: &str, term: Option<&Term>) -> rustpress_core::native::MetaBoxes {
+async fn term_form(
+    ctx: &Ctx<'_>,
+    hook_suffix: &str,
+    taxonomy: &str,
+    term: Option<&Term>,
+) -> rustpress_core::native::MetaBoxes {
     if ctx.site().plugins.is_empty() {
         return Default::default();
     }
@@ -723,31 +1266,55 @@ async fn term_form(ctx: &Ctx<'_>, hook_suffix: &str, taxonomy: &str, term: Optio
     let mut plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
     plugin_ctx.taxonomy = Some(taxonomy);
     plugin_ctx.edited_term = term;
-    ctx.site().plugins.term_form(&plugin_ctx, taxonomy, term).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "plugin term form failed");
-        Default::default()
-    })
+    ctx.site()
+        .plugins
+        .term_form(&plugin_ctx, taxonomy, term)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "plugin term form failed");
+            Default::default()
+        })
 }
 
 /// `create_term`/`edit_term` of the plugins after a term was saved; a `wp_die()` of one of them.
-pub async fn saved_term(ctx: &Ctx<'_>, hook_suffix: &str, writer: &rustpress_db::Writer, term_id: u64, taxonomy: &str, created: bool) -> Option<rustpress_core::native::Die> {
+pub async fn saved_term(
+    ctx: &Ctx<'_>,
+    hook_suffix: &str,
+    writer: &rustpress_db::Writer,
+    term_id: u64,
+    taxonomy: &str,
+    created: bool,
+) -> Option<rustpress_core::native::Die> {
     if ctx.site().plugins.is_empty() {
         return None;
     }
     let parts = ctx.plugin_parts();
     let mut plugin_ctx = ctx.plugin_context(&parts, hook_suffix);
     plugin_ctx.taxonomy = Some(taxonomy);
-    let saved = rustpress_core::native::TermSaved { ctx: &plugin_ctx, writer, term_id, taxonomy, created };
-    ctx.site().plugins.saved_term(&saved).await.unwrap_or_else(|e| {
-        tracing::error!(error = %e, "a plugin failed on create_term/edit_term");
-        None
-    })
+    let saved = rustpress_core::native::TermSaved {
+        ctx: &plugin_ctx,
+        writer,
+        term_id,
+        taxonomy,
+        created,
+    };
+    ctx.site()
+        .plugins
+        .saved_term(&saved)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "a plugin failed on create_term/edit_term");
+            None
+        })
 }
 
 /// The row HTML for the Ajax handlers (`add-tag`, `inline-save-tax`): the screen `edit-{$taxonomy}` has the requested
 /// post type if it exists, else `post`, and the edit links go back to `wp_get_referer()`.
 pub async fn row_html(ctx: &Ctx<'_>, taxonomy: &str, term: &Term, level: usize) -> Option<String> {
-    let post_type = ctx.request.request("post_type").filter(|p| ctx.site().types.is_post_type(p));
+    let post_type = ctx
+        .request
+        .request("post_type")
+        .filter(|p| ctx.site().types.is_post_type(p));
     let info = tax_info(ctx, taxonomy, post_type)?;
     let referer = super::common::wp_get_referer(ctx).unwrap_or_default();
     Some(row(ctx, &info, term, level, level, &referer).await)

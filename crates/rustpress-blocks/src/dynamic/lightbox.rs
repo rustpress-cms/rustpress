@@ -16,7 +16,12 @@ pub(super) fn is_enabled(env: &Env<'_>, block_attrs: &Map<String, Value>) -> boo
     let settings = block_attrs
         .get("lightbox")
         .filter(|v| !v.is_null())
-        .or_else(|| global.get("blocks").and_then(|b| b.get("core/image")).and_then(|i| i.get("lightbox")))
+        .or_else(|| {
+            global
+                .get("blocks")
+                .and_then(|b| b.get("core/image"))
+                .and_then(|i| i.get("lightbox"))
+        })
         .or_else(|| global.get("lightbox"));
     settings.and_then(|s| s.get("enabled")) == Some(&Value::Bool(true))
 }
@@ -30,17 +35,27 @@ fn attribute(tag: &Tag, name: &str) -> Value {
 }
 
 fn opening(html: &str, from: usize, name: &str) -> Option<Tag> {
-    tags(html, from).into_iter().find(|t| !t.is_closer && t.name == name)
+    tags(html, from)
+        .into_iter()
+        .find(|t| !t.is_closer && t.name == name)
 }
 
 /// `wp_get_attachment_url()`.
-async fn attachment_url(env: &Env<'_>, id: u64) -> Result<Option<(String, Option<images::Metadata>)>> {
-    let Some(post) = env.site.db.post(id).await? else { return Ok(None) };
+async fn attachment_url(
+    env: &Env<'_>,
+    id: u64,
+) -> Result<Option<(String, Option<images::Metadata>)>> {
+    let Some(post) = env.site.db.post(id).await? else {
+        return Ok(None);
+    };
     if post.post_type != "attachment" {
         return Ok(None);
     }
     let (meta, attached) = images::load_metadata(env.site, &post).await?;
-    let url = attached.map_or_else(|| post.guid.clone(), |file| images::attachment_url(env.site, &file));
+    let url = attached.map_or_else(
+        || post.guid.clone(),
+        |file| images::attachment_url(env.site, &file),
+    );
     Ok(Some((url, meta)))
 }
 
@@ -48,20 +63,34 @@ async fn attachment_url(env: &Env<'_>, id: u64) -> Result<Option<(String, Option
 /// dimensions are known, else `large`.
 fn lightbox_srcset(env: &Env<'_>, full_url: &str, meta: &images::Metadata) -> Option<String> {
     let large = images::image_downsize(full_url, meta, "large");
-    let (src, width, height) = if meta.width() != 0 && meta.height() != 0 { (full_url.to_owned(), meta.width(), meta.height()) } else { (large.url, large.width, large.height) };
+    let (src, width, height) = if meta.width() != 0 && meta.height() != 0 {
+        (full_url.to_owned(), meta.width(), meta.height())
+    } else {
+        (large.url, large.width, large.height)
+    };
     images::srcset(env.site, width, height, &src, meta)
 }
 
 /// `block_core_image_render_lightbox()`, the `render_block_core/image` filter. The markup of an image block always
 /// has a `figure`; one without stays as it is.
-pub(crate) async fn render(env: &Env<'_>, block: &Block, context: &Context, content: String) -> Result<String> {
-    let Some(figure) = opening(&content, 0, "figure") else { return Ok(content) };
-    let Some(img) = opening(&content, figure.end, "img") else { return Ok(content) };
+pub(crate) async fn render(
+    env: &Env<'_>,
+    block: &Block,
+    context: &Context,
+    content: String,
+) -> Result<String> {
+    let Some(figure) = opening(&content, 0, "figure") else {
+        return Ok(content);
+    };
+    let Some(img) = opening(&content, figure.end, "img") else {
+        return Ok(content);
+    };
     let site = env.site;
 
     let alt = attribute(&img, "alt");
     let mut uploaded_src = attribute(&img, "src");
-    let (mut srcset, mut width, mut height) = (Value::Bool(false), Value::from("none"), Value::from("none"));
+    let (mut srcset, mut width, mut height) =
+        (Value::Bool(false), Value::from("none"), Value::from("none"));
     env.with_state(|s| {
         s.interactivity.config(
             "core/image",
@@ -74,8 +103,14 @@ pub(crate) async fn render(env: &Env<'_>, block: &Block, context: &Context, cont
         );
     });
     let aria_label = match alt.as_str().filter(|alt| !alt.is_empty() && *alt != "0") {
-        Some(alt) => Value::String(rustpress_core::i18n::sprintf(&site.tr("Enlarged image: %s"), &[alt])),
-        None if alt == Value::Bool(true) => Value::String(rustpress_core::i18n::sprintf(&site.tr("Enlarged image: %s"), &["1"])),
+        Some(alt) => Value::String(rustpress_core::i18n::sprintf(
+            &site.tr("Enlarged image: %s"),
+            &[alt],
+        )),
+        None if alt == Value::Bool(true) => Value::String(rustpress_core::i18n::sprintf(
+            &site.tr("Enlarged image: %s"),
+            &["1"],
+        )),
         None => Value::Null,
     };
 
@@ -83,9 +118,20 @@ pub(crate) async fn render(env: &Env<'_>, block: &Block, context: &Context, cont
         match attachment_url(env, images::php_int(id)).await? {
             Some((url, meta)) => {
                 if let Some(meta) = &meta {
-                    srcset = lightbox_srcset(env, &url, meta).map_or(Value::Bool(false), Value::String);
-                    width = meta.0.get("width").filter(|v| !v.is_null()).cloned().unwrap_or(width);
-                    height = meta.0.get("height").filter(|v| !v.is_null()).cloned().unwrap_or(height);
+                    srcset =
+                        lightbox_srcset(env, &url, meta).map_or(Value::Bool(false), Value::String);
+                    width = meta
+                        .0
+                        .get("width")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .unwrap_or(width);
+                    height = meta
+                        .0
+                        .get("height")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .unwrap_or(height);
                 }
                 uploaded_src = Value::String(url);
             }
@@ -114,17 +160,27 @@ pub(crate) async fn render(env: &Env<'_>, block: &Block, context: &Context, cont
             "triggerButtonAriaLabel": site.tr("Enlarge"),
         }),
     );
-    env.with_state(|s| s.interactivity.state("core/image", json!({ "metadata": metadata })));
+    env.with_state(|s| {
+        s.interactivity
+            .state("core/image", json!({ "metadata": metadata }))
+    });
 
     let mut editor = TagEditor::from_tag(&content, figure);
     editor.add_class("wp-lightbox-container");
     editor.set_attribute("data-wp-interactive", "core/image");
-    editor.set_attribute("data-wp-context", &crate::php_json::encode(&json!({ "imageId": image_id })));
+    editor.set_attribute(
+        "data-wp-context",
+        &crate::php_json::encode(&json!({ "imageId": image_id })),
+    );
     editor.set_attribute("data-wp-key", &image_id);
     let html = editor.finish();
 
-    let Some(figure) = opening(&html, 0, "figure") else { return Ok(html) };
-    let Some(img) = opening(&html, figure.end, "img") else { return Ok(html) };
+    let Some(figure) = opening(&html, 0, "figure") else {
+        return Ok(html);
+    };
+    let Some(img) = opening(&html, figure.end, "img") else {
+        return Ok(html);
+    };
     let mut editor = TagEditor::from_tag(&html, img);
     for (name, value) in [
         ("data-wp-init", "callbacks.setButtonStyles"),
@@ -154,7 +210,13 @@ pub fn overlay(site: &rustpress_core::Site, theme: &dyn crate::env::ThemeAccess)
     // `wp_theme_has_theme_json()`.
     if theme.is_block_theme() {
         let color = theme.global_styles().get("color");
-        let value = |key: &str| color.and_then(|c| c.get(key)).and_then(Value::as_str).filter(|v| !v.is_empty() && *v != "0").map(esc_attr);
+        let value = |key: &str| {
+            color
+                .and_then(|c| c.get(key))
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty() && *v != "0")
+                .map(esc_attr)
+        };
         background = value("background").unwrap_or(background);
         close_color = value("text").unwrap_or(close_color);
     }
@@ -164,8 +226,14 @@ pub fn overlay(site: &rustpress_core::Site, theme: &dyn crate::env::ThemeAccess)
     include_str!("lightbox_overlay.html")
         .replace("{$dialog_label}", &esc_attr(&site.tr("Enlarged images")))
         .replace("{$close_button_text}", &esc_attr(&site.tr("Close")))
-        .replace("{$prev_button_text}", &esc_attr(&site.trx("Previous", "previous image in lightbox")))
-        .replace("{$next_button_text}", &esc_attr(&site.trx("Next", "next image in lightbox")))
+        .replace(
+            "{$prev_button_text}",
+            &esc_attr(&site.trx("Previous", "previous image in lightbox")),
+        )
+        .replace(
+            "{$next_button_text}",
+            &esc_attr(&site.trx("Next", "next image in lightbox")),
+        )
         .replace("{$close_button_icon}", close_icon)
         .replace("{$prev_button_icon}", prev_icon)
         .replace("{$next_button_icon}", next_icon)

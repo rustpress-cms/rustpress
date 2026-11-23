@@ -38,7 +38,10 @@ pub struct CommentCounts {
 
 impl Db {
     fn push_comment_filters(&self, qb: &mut QueryBuilder<MySql>, query: &CommentListQuery) {
-        qb.push(format!(" FROM {} c WHERE 1=1", self.prefix.table("comments")));
+        qb.push(format!(
+            " FROM {} c WHERE 1=1",
+            self.prefix.table("comments")
+        ));
         match query.status.as_str() {
             "0" | "moderated" => {
                 qb.push(" AND c.comment_approved = '0'");
@@ -63,7 +66,8 @@ impl Db {
             qb.push(" AND c.user_id = ").push_bind(user);
         }
         if let Some(email) = &query.author_email {
-            qb.push(" AND c.comment_author_email = ").push_bind(email.clone());
+            qb.push(" AND c.comment_author_email = ")
+                .push_bind(email.clone());
         }
         match query.kind.as_str() {
             "comment" => {
@@ -74,21 +78,37 @@ impl Db {
             }
             "" => {}
             other => {
-                qb.push(" AND c.comment_type = ").push_bind(other.to_owned());
+                qb.push(" AND c.comment_type = ")
+                    .push_bind(other.to_owned());
             }
         }
         if let Some(search) = query.search.as_deref().filter(|s| !s.is_empty()) {
-            let like = format!("%{}%", search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-            qb.push(" AND (c.comment_author LIKE ").push_bind(like.clone());
-            qb.push(" OR c.comment_author_email LIKE ").push_bind(like.clone());
-            qb.push(" OR c.comment_author_url LIKE ").push_bind(like.clone());
-            qb.push(" OR c.comment_author_IP LIKE ").push_bind(like.clone());
-            qb.push(" OR c.comment_content LIKE ").push_bind(like).push(")");
+            let like = format!(
+                "%{}%",
+                search
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            );
+            qb.push(" AND (c.comment_author LIKE ")
+                .push_bind(like.clone());
+            qb.push(" OR c.comment_author_email LIKE ")
+                .push_bind(like.clone());
+            qb.push(" OR c.comment_author_url LIKE ")
+                .push_bind(like.clone());
+            qb.push(" OR c.comment_author_IP LIKE ")
+                .push_bind(like.clone());
+            qb.push(" OR c.comment_content LIKE ")
+                .push_bind(like)
+                .push(")");
         }
     }
 
     /// The comments of the list and the number of all that match.
-    pub async fn list_comments_admin(&self, query: &CommentListQuery) -> Result<(Vec<Comment>, u64)> {
+    pub async fn list_comments_admin(
+        &self,
+        query: &CommentListQuery,
+    ) -> Result<(Vec<Comment>, u64)> {
         let mut count = QueryBuilder::<MySql>::new("SELECT COUNT(*)");
         self.push_comment_filters(&mut count, query);
         let total: i64 = count.build_query_scalar().fetch_one(&self.pool).await?;
@@ -101,9 +121,14 @@ impl Db {
             _ => "c.comment_date_gmt",
         };
         let direction = if query.desc { "DESC" } else { "ASC" };
-        qb.push(format!(" ORDER BY {column} {direction}, c.comment_ID {direction}"));
+        qb.push(format!(
+            " ORDER BY {column} {direction}, c.comment_ID {direction}"
+        ));
         if query.limit > 0 {
-            qb.push(" LIMIT ").push_bind(query.limit as i64).push(" OFFSET ").push_bind(query.offset as i64);
+            qb.push(" LIMIT ")
+                .push_bind(query.limit as i64)
+                .push(" OFFSET ")
+                .push_bind(query.offset as i64);
         }
         let comments: Vec<Comment> = qb.build_query_as().fetch_all(&self.pool).await?;
         Ok((comments, total as u64))
@@ -112,7 +137,10 @@ impl Db {
     /// `wp_count_comments( $post_id )`.
     pub async fn comment_counts(&self, post_id: Option<u64>) -> Result<CommentCounts> {
         let posts = self.prefix.table("posts");
-        let mut sql = format!("SELECT c.comment_approved, COUNT(*) FROM {} c", self.prefix.table("comments"));
+        let mut sql = format!(
+            "SELECT c.comment_approved, COUNT(*) FROM {} c",
+            self.prefix.table("comments")
+        );
         if post_id.is_none() {
             sql.push_str(&format!(" LEFT JOIN {posts} p ON p.ID = c.comment_post_ID"));
         }
@@ -121,7 +149,9 @@ impl Db {
             sql.push_str(&format!(" AND c.comment_post_ID = {post}"));
         }
         sql.push_str(" GROUP BY c.comment_approved");
-        let rows: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
+        let rows: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?;
         let mut counts = CommentCounts::default();
         for (status, n) in rows {
             let n = n as u64;
@@ -141,24 +171,50 @@ impl Db {
 
     /// The columns `Comment` leaves out: author IP, agent and karma are for the edit screen.
     pub async fn comment_extra(&self, id: u64) -> Result<Option<(String, String)>> {
-        let sql = format!("SELECT comment_author_IP, comment_agent FROM {} WHERE comment_ID = ?", self.prefix.table("comments"));
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(id).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT comment_author_IP, comment_agent FROM {} WHERE comment_ID = ?",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     pub async fn comment_meta_value(&self, comment_id: u64, key: &str) -> Result<Option<String>> {
-        let sql = format!("SELECT meta_value FROM {} WHERE comment_id = ? AND meta_key = ? ORDER BY meta_id LIMIT 1", self.prefix.table("commentmeta"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(comment_id).bind(key).fetch_optional(&self.pool).await?)
+        let sql = format!(
+            "SELECT meta_value FROM {} WHERE comment_id = ? AND meta_key = ? ORDER BY meta_id LIMIT 1",
+            self.prefix.table("commentmeta")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(comment_id)
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     /// The comments with a `comment_approved` value that are older than `before` (GMT): what "Empty Spam" deletes.
     pub async fn comment_ids_before(&self, approved: &str, before: &str) -> Result<Vec<u64>> {
-        let sql = format!("SELECT comment_ID FROM {} WHERE comment_approved = ? AND ? > comment_date_gmt", self.prefix.table("comments"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(approved).bind(before).fetch_all(&self.pool).await?)
+        let sql = format!(
+            "SELECT comment_ID FROM {} WHERE comment_approved = ? AND ? > comment_date_gmt",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(approved)
+            .bind(before)
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     /// Comment IDs whose parent is `parent`.
     pub async fn comment_children(&self, parent: u64) -> Result<Vec<u64>> {
-        let sql = format!("SELECT comment_ID FROM {} WHERE comment_parent = ?", self.prefix.table("comments"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(parent).fetch_all(&self.pool).await?)
+        let sql = format!(
+            "SELECT comment_ID FROM {} WHERE comment_parent = ?",
+            self.prefix.table("comments")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(parent)
+            .fetch_all(&self.pool)
+            .await?)
     }
 }

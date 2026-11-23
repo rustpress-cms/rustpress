@@ -13,7 +13,10 @@ use crate::style_engine::{get_styles, spacing_preset_to_var};
 type Decls = Vec<(String, String)>;
 
 fn d(items: &[(&str, &str)]) -> Decls {
-    items.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
+    items
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
 }
 
 /// `className` of a layout type (`wp_get_layout_definitions`).
@@ -29,7 +32,8 @@ pub fn layout_class_name(layout_type: &str) -> Option<&'static str> {
 
 /// `wp_sanitize_block_gap_value`.
 pub fn sanitize_block_gap_value(gap: Option<&Value>) -> Option<Value> {
-    let unsafe_value = |s: &str| !s.is_empty() && (s.contains(['\\', '(', '&', '=', '}']) || s.contains("/*"));
+    let unsafe_value =
+        |s: &str| !s.is_empty() && (s.contains(['\\', '(', '&', '=', '}']) || s.contains("/*"));
     match gap? {
         Value::Object(map) => {
             let mut out = Map::new();
@@ -59,16 +63,28 @@ fn value_to_string(v: &Value) -> String {
 
 /// Combines a (possibly two-sided) gap value into `top left`.
 fn combined_gap(gap_value: &Value, fallback: &Value) -> String {
-    let sides: &[&str] = if gap_value.is_object() { &["top", "left"] } else { &["top"] };
+    let sides: &[&str] = if gap_value.is_object() {
+        &["top", "left"]
+    } else {
+        &["top"]
+    };
     let mut combined = String::new();
     for side in sides {
         let mut process = gap_value.clone();
         if let Some(map) = gap_value.as_object() {
             let fallback_value = match fallback {
-                Value::Object(f) => f.get(*side).or_else(|| f.values().next()).cloned().unwrap_or(Value::Null),
+                Value::Object(f) => f
+                    .get(*side)
+                    .or_else(|| f.values().next())
+                    .cloned()
+                    .unwrap_or(Value::Null),
                 other => other.clone(),
             };
-            process = map.get(*side).filter(|v| !v.is_null()).cloned().unwrap_or(fallback_value);
+            process = map
+                .get(*side)
+                .filter(|v| !v.is_null())
+                .cloned()
+                .unwrap_or(fallback_value);
         }
         combined.push_str(&spacing_preset_to_var(&value_to_string(&process)));
         combined.push(' ');
@@ -109,22 +125,43 @@ pub fn get_layout_style(
         }
         None => base_layout,
     };
-    let layout_type = base_layout.get("type").and_then(Value::as_str).unwrap_or("default");
+    let layout_type = base_layout
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("default");
     let output_block_gap = !is_viewport || options.has_block_gap_override;
     let overridden = |key: &str| overrides.is_some_and(|o| o.contains_key(key));
-    let not_empty = |map: &Map<String, Value>, key: &str| map.get(key).is_some_and(|v| !crate::style_engine::is_empty(v));
+    let not_empty = |map: &Map<String, Value>, key: &str| {
+        map.get(key)
+            .is_some_and(|v| !crate::style_engine::is_empty(v))
+    };
     let mut rules: Vec<(String, Decls)> = Vec::new();
     let lget = |k: &str| layout.get(k).filter(|v| !v.is_null());
     let lstr = |k: &str| lget(k).and_then(Value::as_str).unwrap_or("");
 
     let zero_gap_rules = |rules: &mut Vec<(String, Decls)>, gap: &Value| {
         let gap = spacing_preset_to_var(&value_to_string(gap));
-        rules.push((format!("{selector} > *"), d(&[("margin-block-start", "0"), ("margin-block-end", "0")])));
-        rules.push((format!("{selector} > * + *"), vec![("margin-block-start".into(), gap), ("margin-block-end".into(), "0".into())]));
+        rules.push((
+            format!("{selector} > *"),
+            d(&[("margin-block-start", "0"), ("margin-block-end", "0")]),
+        ));
+        rules.push((
+            format!("{selector} > * + *"),
+            vec![
+                ("margin-block-start".into(), gap),
+                ("margin-block-end".into(), "0".into()),
+            ],
+        ));
     };
     let block_gap_rules = |rules: &mut Vec<(String, Decls)>| {
         if has_block_gap_support && output_block_gap {
-            let gap = gap_value.map(|g| if let Value::Object(m) = g { m.get("top").cloned().unwrap_or(Value::Null) } else { g.clone() });
+            let gap = gap_value.map(|g| {
+                if let Value::Object(m) = g {
+                    m.get("top").cloned().unwrap_or(Value::Null)
+                } else {
+                    g.clone()
+                }
+            });
             if let Some(gap) = gap.filter(|g| !g.is_null())
                 && !skip_gap_serialization
             {
@@ -138,12 +175,16 @@ pub fn get_layout_style(
         "constrained" => {
             let content_size = lstr("contentSize");
             let wide_size = lstr("wideSize");
-            let justify = lget("justifyContent").and_then(Value::as_str).unwrap_or("center");
+            let justify = lget("justifyContent")
+                .and_then(Value::as_str)
+                .unwrap_or("center");
             let content_override = overridden("contentSize");
             let wide_override = overridden("wideSize");
             let justify_override = overridden("justifyContent");
             let output_sizes = !is_viewport || content_override || wide_override;
-            let resetting = is_viewport && ((content_override && content_size.is_empty()) || (wide_override && wide_size.is_empty()));
+            let resetting = is_viewport
+                && ((content_override && content_size.is_empty())
+                    || (wide_override && wide_size.is_empty()));
             let all_max = if !content_size.is_empty() {
                 content_size.to_owned()
             } else if !wide_size.is_empty() && !content_override {
@@ -159,9 +200,18 @@ pub fn get_layout_style(
                 "var(--wp--style--global--wide-size, none)".to_owned()
             };
             let first_rule = |s: &str| s.split(';').next().unwrap_or("").trim().to_owned();
-            let margin_left = if justify == "left" { "0 !important" } else { "auto !important" };
-            let margin_right = if justify == "right" { "0 !important" } else { "auto !important" };
-            let inner = format!("{selector} > :where(:not(.alignleft):not(.alignright):not(.alignfull))");
+            let margin_left = if justify == "left" {
+                "0 !important"
+            } else {
+                "auto !important"
+            };
+            let margin_right = if justify == "right" {
+                "0 !important"
+            } else {
+                "auto !important"
+            };
+            let inner =
+                format!("{selector} > :where(:not(.alignleft):not(.alignright):not(.alignfull))");
             if output_sizes && (!content_size.is_empty() || !wide_size.is_empty() || resetting) {
                 let mut declarations: Decls = vec![("max-width".into(), first_rule(&all_max))];
                 if !is_viewport || justify_override {
@@ -169,20 +219,38 @@ pub fn get_layout_style(
                     declarations.push(("margin-right".into(), margin_right.into()));
                 }
                 rules.push((inner.clone(), declarations));
-                rules.push((format!("{selector} > .alignwide"), vec![("max-width".into(), first_rule(&wide_max))]));
-                rules.push((format!("{selector} .alignfull"), d(&[("max-width", "none")])));
+                rules.push((
+                    format!("{selector} > .alignwide"),
+                    vec![("max-width".into(), first_rule(&wide_max))],
+                ));
+                rules.push((
+                    format!("{selector} .alignfull"),
+                    d(&[("max-width", "none")]),
+                ));
             }
             if let (false, Some(spacing)) = (is_viewport, block_spacing) {
                 let styles = get_styles(&json!({ "spacing": spacing }), false);
-                for (side, property) in [("padding-right", "margin-right"), ("padding-left", "margin-left")] {
+                for (side, property) in [
+                    ("padding-right", "margin-right"),
+                    ("padding-left", "margin-left"),
+                ] {
                     if let Some(padding) = styles.declaration(side) {
                         let padding = if padding == "0" { "0px" } else { padding };
-                        rules.push((format!("{selector} > .alignfull"), vec![(property.into(), format!("calc({padding} * -1)"))]));
+                        rules.push((
+                            format!("{selector} > .alignfull"),
+                            vec![(property.into(), format!("calc({padding} * -1)"))],
+                        ));
                     }
                 }
             }
             if justify_override && !output_sizes {
-                rules.push((inner, vec![("margin-left".into(), margin_left.into()), ("margin-right".into(), margin_right.into())]));
+                rules.push((
+                    inner,
+                    vec![
+                        ("margin-left".into(), margin_left.into()),
+                        ("margin-right".into(), margin_right.into()),
+                    ],
+                ));
             } else if !is_viewport {
                 if justify == "left" {
                     rules.push((inner.clone(), d(&[("margin-left", "0 !important")])));
@@ -194,17 +262,39 @@ pub fn get_layout_style(
             block_gap_rules(&mut rules);
         }
         "flex" => {
-            let orientation = lget("orientation").and_then(Value::as_str).unwrap_or("horizontal");
+            let orientation = lget("orientation")
+                .and_then(Value::as_str)
+                .unwrap_or("horizontal");
             let horizontal = orientation == "horizontal";
             let justify_options: &[(&str, &str)] = if horizontal {
-                &[("left", "flex-start"), ("right", "flex-end"), ("center", "center"), ("space-between", "space-between")]
+                &[
+                    ("left", "flex-start"),
+                    ("right", "flex-end"),
+                    ("center", "center"),
+                    ("space-between", "space-between"),
+                ]
             } else {
-                &[("left", "flex-start"), ("right", "flex-end"), ("center", "center"), ("stretch", "stretch")]
+                &[
+                    ("left", "flex-start"),
+                    ("right", "flex-end"),
+                    ("center", "center"),
+                    ("stretch", "stretch"),
+                ]
             };
             let vertical_options: &[(&str, &str)] = if horizontal {
-                &[("top", "flex-start"), ("center", "center"), ("bottom", "flex-end"), ("stretch", "stretch")]
+                &[
+                    ("top", "flex-start"),
+                    ("center", "center"),
+                    ("bottom", "flex-end"),
+                    ("stretch", "stretch"),
+                ]
             } else {
-                &[("top", "flex-start"), ("center", "center"), ("bottom", "flex-end"), ("space-between", "space-between")]
+                &[
+                    ("top", "flex-start"),
+                    ("center", "center"),
+                    ("bottom", "flex-end"),
+                    ("space-between", "space-between"),
+                ]
             };
             fn option<'a>(list: &[(&str, &'a str)], key: &str) -> Option<&'a str> {
                 list.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
@@ -212,8 +302,10 @@ pub fn get_layout_style(
 
             let output_wrap = !is_viewport || overridden("flexWrap");
             let output_orientation = !is_viewport || overridden("orientation");
-            let output_justification = !is_viewport || overridden("justifyContent") || overridden("orientation");
-            let output_alignment = !is_viewport || overridden("verticalAlignment") || overridden("orientation");
+            let output_justification =
+                !is_viewport || overridden("justifyContent") || overridden("orientation");
+            let output_alignment =
+                !is_viewport || overridden("verticalAlignment") || overridden("orientation");
 
             if output_wrap && lstr("flexWrap") == "nowrap" {
                 rules.push((selector.to_owned(), d(&[("flex-wrap", "nowrap")])));
@@ -223,10 +315,15 @@ pub fn get_layout_style(
                 && let Some(gap) = gap_value.filter(|g| !g.is_null())
                 && !skip_gap_serialization
             {
-                rules.push((selector.to_owned(), vec![("gap".into(), combined_gap(gap, fallback_gap))]));
+                rules.push((
+                    selector.to_owned(),
+                    vec![("gap".into(), combined_gap(gap, fallback_gap))],
+                ));
             }
             let justify = lget("justifyContent").and_then(Value::as_str).unwrap_or("");
-            let vertical = lget("verticalAlignment").and_then(Value::as_str).unwrap_or("");
+            let vertical = lget("verticalAlignment")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             if horizontal {
                 if let (true, Some(v)) = (output_justification, option(justify_options, justify)) {
                     rules.push((selector.to_owned(), d(&[("justify-content", v)])));
@@ -240,7 +337,9 @@ pub fn get_layout_style(
                 }
                 if output_justification {
                     match option(justify_options, justify) {
-                        Some(v) if !justify.is_empty() => rules.push((selector.to_owned(), d(&[("align-items", v)]))),
+                        Some(v) if !justify.is_empty() => {
+                            rules.push((selector.to_owned(), d(&[("align-items", v)])))
+                        }
                         _ => rules.push((selector.to_owned(), d(&[("align-items", "flex-start")]))),
                     }
                 }
@@ -251,13 +350,15 @@ pub fn get_layout_style(
         }
         "grid" => {
             let mut responsive_gap = match fallback_gap {
-                Value::Object(f) => f.get("left").or_else(|| f.values().next()).map(value_to_string).unwrap_or_default(),
+                Value::Object(f) => f
+                    .get("left")
+                    .or_else(|| f.values().next())
+                    .map(value_to_string)
+                    .unwrap_or_default(),
                 other => value_to_string(other),
             };
             let mut gap_string = None;
-            if has_block_gap_support
-                && let Some(gap) = gap_value.filter(|g| !g.is_null())
-            {
+            if has_block_gap_support && let Some(gap) = gap_value.filter(|g| !g.is_null()) {
                 let combined = combined_gap(gap, fallback_gap);
                 responsive_gap = combined.clone();
                 gap_string = Some(combined);
@@ -265,38 +366,74 @@ pub fn get_layout_style(
             if responsive_gap == "0" {
                 responsive_gap = "0px".into();
             }
-            let column_count = lget("columnCount").map(value_to_string).filter(|c| !c.is_empty() && c != "0");
-            let min_width = lget("minimumColumnWidth").map(value_to_string).filter(|c| !c.is_empty() && c != "0");
-            let mut output_columns = !is_viewport || overridden("minimumColumnWidth") || overridden("columnCount") || overridden("autoFit");
+            let column_count = lget("columnCount")
+                .map(value_to_string)
+                .filter(|c| !c.is_empty() && c != "0");
+            let min_width = lget("minimumColumnWidth")
+                .map(value_to_string)
+                .filter(|c| !c.is_empty() && c != "0");
+            let mut output_columns = !is_viewport
+                || overridden("minimumColumnWidth")
+                || overridden("columnCount")
+                || overridden("autoFit");
             if options.has_block_gap_override && column_count.is_some() && min_width.is_some() {
                 output_columns = true;
             }
-            let rows = lget("rowCount").map(value_to_string).filter(|r| !r.is_empty() && r != "0");
-            let output_rows = (!is_viewport || overridden("rowCount")) && column_count.is_some() && rows.is_some();
-            let auto_placement = if lget("autoFit").is_some_and(|v| !crate::style_engine::is_empty(v)) { "auto-fit" } else { "auto-fill" };
+            let rows = lget("rowCount")
+                .map(value_to_string)
+                .filter(|r| !r.is_empty() && r != "0");
+            let output_rows = (!is_viewport || overridden("rowCount"))
+                && column_count.is_some()
+                && rows.is_some();
+            let auto_placement =
+                if lget("autoFit").is_some_and(|v| !crate::style_engine::is_empty(v)) {
+                    "auto-fit"
+                } else {
+                    "auto-fill"
+                };
             let mut grid: Decls = Vec::new();
             if output_columns {
                 match (&column_count, &min_width) {
                     (Some(count), Some(min)) => {
-                        let max_value = format!("max(min({min}, 100%), (100% - ({responsive_gap} * ({count} - 1))) /{count})");
-                        grid.push(("grid-template-columns".into(), format!("repeat({auto_placement}, minmax({max_value}, 1fr))")));
+                        let max_value = format!(
+                            "max(min({min}, 100%), (100% - ({responsive_gap} * ({count} - 1))) /{count})"
+                        );
+                        grid.push((
+                            "grid-template-columns".into(),
+                            format!("repeat({auto_placement}, minmax({max_value}, 1fr))"),
+                        ));
                     }
-                    (Some(count), None) => grid.push(("grid-template-columns".into(), format!("repeat({count}, minmax(0, 1fr))"))),
+                    (Some(count), None) => grid.push((
+                        "grid-template-columns".into(),
+                        format!("repeat({count}, minmax(0, 1fr))"),
+                    )),
                     (None, min) => {
                         let min = min.clone().unwrap_or_else(|| "12rem".into());
-                        grid.push(("grid-template-columns".into(), format!("repeat({auto_placement}, minmax(min({min}, 100%), 1fr))")));
+                        grid.push((
+                            "grid-template-columns".into(),
+                            format!("repeat({auto_placement}, minmax(min({min}, 100%), 1fr))"),
+                        ));
                     }
                 }
             }
             if !grid.is_empty() {
-                let base_has_container_type = !not_empty(base_layout, "columnCount") || not_empty(base_layout, "minimumColumnWidth");
-                if (column_count.is_none() || min_width.is_some()) && (!is_viewport || !base_has_container_type) {
+                let base_has_container_type = !not_empty(base_layout, "columnCount")
+                    || not_empty(base_layout, "minimumColumnWidth");
+                if (column_count.is_none() || min_width.is_some())
+                    && (!is_viewport || !base_has_container_type)
+                {
                     grid.push(("container-type".into(), "inline-size".into()));
                 }
                 rules.push((selector.to_owned(), grid));
             }
             if let (true, Some(rows)) = (output_rows, rows) {
-                rules.push((selector.to_owned(), vec![("grid-template-rows".into(), format!("repeat({rows}, minmax(1rem, auto))"))]));
+                rules.push((
+                    selector.to_owned(),
+                    vec![(
+                        "grid-template-rows".into(),
+                        format!("repeat({rows}, minmax(1rem, auto))"),
+                    )],
+                ));
             }
             if let Some(gap) = gap_string.filter(|_| output_block_gap && !skip_gap_serialization) {
                 rules.push((selector.to_owned(), vec![("gap".into(), gap)]));
@@ -307,7 +444,9 @@ pub fn get_layout_style(
 
     let any = !rules.is_empty();
     for (sel, decls) in rules {
-        state.block_supports_css.add(&sel, &decls, options.rules_group);
+        state
+            .block_supports_css
+            .add(&sel, &decls, options.rules_group);
     }
     any
 }
@@ -315,7 +454,12 @@ pub fn get_layout_style(
 /// `wp_get_child_layout_style_rules()`: child layout rules (`selfStretch`, grid placement) and, for a child of a
 /// responsive grid, the container query that resets the placement. The third element is the `@container` group.
 /// `viewport` holds the values of one viewport, which only print what they change.
-fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<String, Value>, viewport: Option<&Map<String, Value>>) -> Vec<(String, Decls, Option<String>)> {
+fn child_layout_rules(
+    selector: &str,
+    base: &Map<String, Value>,
+    parent: &Map<String, Value>,
+    viewport: Option<&Map<String, Value>>,
+) -> Vec<(String, Decls, Option<String>)> {
     let merged;
     let child = match viewport {
         Some(overrides) => {
@@ -326,9 +470,14 @@ fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<St
         }
         None => base,
     };
-    let changed = |keys: &[&str]| viewport.is_none_or(|overrides| keys.iter().any(|key| overrides.contains_key(*key)));
+    let changed = |keys: &[&str]| {
+        viewport.is_none_or(|overrides| keys.iter().any(|key| overrides.contains_key(*key)))
+    };
     let mut decls: Decls = Vec::new();
-    let set = |decls: &mut Decls, property: &str, value: String| match decls.iter_mut().find(|(p, _)| p == property) {
+    let set = |decls: &mut Decls, property: &str, value: String| match decls
+        .iter_mut()
+        .find(|(p, _)| p == property)
+    {
         Some(slot) => slot.1 = value,
         None => decls.push((property.to_owned(), value)),
     };
@@ -337,7 +486,11 @@ fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<St
     let is_fixed = |value: Option<&str>| matches!(value, Some("fixed" | "fixedNoShrink"));
     let flex_size = child.get("flexSize").filter(|v| !v.is_null());
     if changed(&["selfStretch", "flexSize"]) {
-        if viewport.is_some() && matches!(self_stretch, Some("fit" | "fill")) && is_fixed(base_stretch) && base.get("flexSize").is_some_and(|v| !v.is_null()) {
+        if viewport.is_some()
+            && matches!(self_stretch, Some("fit" | "fill"))
+            && is_fixed(base_stretch)
+            && base.get("flexSize").is_some_and(|v| !v.is_null())
+        {
             set(&mut decls, "flex-basis", "unset".into());
             if base_stretch == Some("fixedNoShrink") {
                 set(&mut decls, "flex-shrink", "unset".into());
@@ -361,11 +514,20 @@ fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<St
         (None, Some(n)) => Some(format!("span {n}")),
         _ => None,
     };
-    let get = |k: &str| child.get(k).filter(|v| !crate::style_engine::is_empty(v)).map(value_to_string);
-    if changed(&["columnStart", "columnSpan"]) && let Some(v) = place(get("columnStart"), get("columnSpan")) {
+    let get = |k: &str| {
+        child
+            .get(k)
+            .filter(|v| !crate::style_engine::is_empty(v))
+            .map(value_to_string)
+    };
+    if changed(&["columnStart", "columnSpan"])
+        && let Some(v) = place(get("columnStart"), get("columnSpan"))
+    {
         decls.push(("grid-column".into(), v));
     }
-    if changed(&["rowStart", "rowSpan"]) && let Some(v) = place(get("rowStart"), get("rowSpan")) {
+    if changed(&["rowStart", "rowSpan"])
+        && let Some(v) = place(get("rowStart"), get("rowSpan"))
+    {
         decls.push(("grid-row".into(), v));
     }
     let mut rules = Vec::new();
@@ -373,16 +535,30 @@ fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<St
         rules.push((selector.to_owned(), decls, None));
     }
     // A span or start of a responsive grid (minimum column width, or no column count) is dropped when the grid is narrower.
-    let column_start = child.get("columnStart").filter(|v| !crate::style_engine::is_empty(v));
-    let column_span = child.get("columnSpan").filter(|v| !crate::style_engine::is_empty(v));
-    let minimum = parent.get("minimumColumnWidth").filter(|v| !crate::style_engine::is_empty(v)).and_then(Value::as_str);
-    let has_count = parent.get("columnCount").is_some_and(|v| !crate::style_engine::is_empty(v));
-    if viewport.is_none() && (column_start.is_some() || column_span.is_some()) && (minimum.is_some() || !has_count) {
-        let number = |v: Option<&Value>| v.map_or(0.0, |v| match v {
-            Value::Number(n) => n.as_f64().unwrap_or(0.0),
-            Value::String(s) => crate::general::floatval(s),
-            _ => 0.0,
-        });
+    let column_start = child
+        .get("columnStart")
+        .filter(|v| !crate::style_engine::is_empty(v));
+    let column_span = child
+        .get("columnSpan")
+        .filter(|v| !crate::style_engine::is_empty(v));
+    let minimum = parent
+        .get("minimumColumnWidth")
+        .filter(|v| !crate::style_engine::is_empty(v))
+        .and_then(Value::as_str);
+    let has_count = parent
+        .get("columnCount")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
+    if viewport.is_none()
+        && (column_start.is_some() || column_span.is_some())
+        && (minimum.is_some() || !has_count)
+    {
+        let number = |v: Option<&Value>| {
+            v.map_or(0.0, |v| match v {
+                Value::Number(n) => n.as_f64().unwrap_or(0.0),
+                Value::String(s) => crate::general::floatval(s),
+                _ => 0.0,
+            })
+        };
         let (span_number, start_number) = (number(column_span), number(column_start));
         let width = minimum.unwrap_or("12rem");
         let value = crate::general::floatval(width);
@@ -399,28 +575,53 @@ fn child_layout_rules(selector: &str, base: &Map<String, Value>, parent: &Map<St
             start_number
         };
         let gap = if parent_unit == "px" { 24.0 } else { 1.5 };
-        let query = (break_at * parent_value + (break_at - 1.0) * gap).max(parent_value * 2.0 + gap - 1.0);
+        let query =
+            (break_at * parent_value + (break_at - 1.0) * gap).max(parent_value * 2.0 + gap - 1.0);
         let grid_column = if span_number > 1.0 { "1/-1" } else { "auto" };
         rules.push((
             selector.to_owned(),
-            vec![("grid-column".to_owned(), grid_column.to_owned()), ("grid-row".to_owned(), "auto".to_owned())],
-            Some(format!("@container (max-width: {}{parent_unit} )", crate::general::php_float(query))),
+            vec![
+                ("grid-column".to_owned(), grid_column.to_owned()),
+                ("grid-row".to_owned(), "auto".to_owned()),
+            ],
+            Some(format!(
+                "@container (max-width: {}{parent_unit} )",
+                crate::general::php_float(query)
+            )),
         ));
     }
     rules
 }
 
 /// `wp_render_position_support()`: sticky (and fixed) positioning gets a container class and its rules.
-pub fn render_position_support(env: &Env<'_>, bt: &BlockType, attrs: &Map<String, Value>, content: String) -> String {
-    let position = attrs.get("style").and_then(|s| s.get("position")).filter(|p| !crate::style_engine::is_empty(p));
+pub fn render_position_support(
+    env: &Env<'_>,
+    bt: &BlockType,
+    attrs: &Map<String, Value>,
+    content: String,
+) -> String {
+    let position = attrs
+        .get("style")
+        .and_then(|s| s.get("position"))
+        .filter(|p| !crate::style_engine::is_empty(p));
     if !bt.has_support(&["position"], false) || position.is_none() {
         return content;
     }
-    let position = position.and_then(Value::as_object).cloned().unwrap_or_default();
+    let position = position
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
     let settings = env.theme.global_settings();
-    let allowed = |kind: &str| settings.get("position").and_then(|p| p.get(kind)) == Some(&Value::Bool(true));
-    let position_type = position.get("type").and_then(Value::as_str).unwrap_or_default().to_owned();
-    if !(position_type == "sticky" && allowed("sticky") || position_type == "fixed" && allowed("fixed")) {
+    let allowed =
+        |kind: &str| settings.get("position").and_then(|p| p.get(kind)) == Some(&Value::Bool(true));
+    let position_type = position
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    if !(position_type == "sticky" && allowed("sticky")
+        || position_type == "fixed" && allowed("fixed"))
+    {
         // The class name is taken even if nothing is output.
         env.with_state(|s| s.unique_id("wp-container-"));
         return content;
@@ -429,7 +630,9 @@ pub fn render_position_support(env: &Env<'_>, bt: &BlockType, attrs: &Map<String
     let selector = format!(".{class}");
     env.with_state(|s| {
         for side in ["top", "right", "bottom", "left"] {
-            let Some(value) = position.get(side).filter(|v| !v.is_null()) else { continue };
+            let Some(value) = position.get(side).filter(|v| !v.is_null()) else {
+                continue;
+            };
             let mut value = value_to_string(value);
             if side == "top" {
                 if value == "0" {
@@ -437,9 +640,17 @@ pub fn render_position_support(env: &Env<'_>, bt: &BlockType, attrs: &Map<String
                 }
                 value = format!("calc({value} + var(--wp-admin--admin-bar--position-offset, 0px))");
             }
-            s.block_supports_css.add(&selector, &[(side.to_owned(), value)], None);
+            s.block_supports_css
+                .add(&selector, &[(side.to_owned(), value)], None);
         }
-        s.block_supports_css.add(&selector, &[("position".to_owned(), position_type.clone()), ("z-index".to_owned(), "10".to_owned())], None);
+        s.block_supports_css.add(
+            &selector,
+            &[
+                ("position".to_owned(), position_type.clone()),
+                ("z-index".to_owned(), "10".to_owned()),
+            ],
+            None,
+        );
     });
     match TagEditor::first(&content) {
         Some(mut editor) => {
@@ -451,7 +662,14 @@ pub fn render_position_support(env: &Env<'_>, bt: &BlockType, attrs: &Map<String
     }
 }
 
-const CHILD_KEYS: [&str; 6] = ["selfStretch", "flexSize", "columnStart", "columnSpan", "rowStart", "rowSpan"];
+const CHILD_KEYS: [&str; 6] = [
+    "selfStretch",
+    "flexSize",
+    "columnStart",
+    "columnSpan",
+    "rowStart",
+    "rowSpan",
+];
 
 /// `wp_render_layout_support_flag`: adds the layout classes to the block's
 /// outermost tag, or to the inner wrapper for blocks with inner blocks.
@@ -464,19 +682,38 @@ pub fn render_layout_support(
     has_inner_blocks: bool,
     content: String,
 ) -> String {
-    let supports_layout = bt.has_support(&["layout"], false) || bt.has_support(&["__experimentalLayout"], false);
+    let supports_layout =
+        bt.has_support(&["layout"], false) || bt.has_support(&["__experimentalLayout"], false);
     let style_attr = attrs.get("style").and_then(Value::as_object);
     if !supports_layout && style_attr.is_none_or(|s| s.is_empty()) {
         return content;
     }
-    let queries = crate::states::viewport_media_queries(env.theme.global_settings().get("viewport"), false);
-    let child_layout = style_attr.and_then(|s| s.get("layout")).and_then(Value::as_object).filter(|l| !l.is_empty());
+    let queries =
+        crate::states::viewport_media_queries(env.theme.global_settings().get("viewport"), false);
+    let child_layout = style_attr
+        .and_then(|s| s.get("layout"))
+        .and_then(Value::as_object)
+        .filter(|l| !l.is_empty());
     // Viewport child layouts, so that a block with only those is still processed.
-    let child_values = |layout: Option<&Value>| -> Map<String, Value> { layout.and_then(Value::as_object).map(|l| l.iter().filter(|(k, _)| CHILD_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default() };
+    let child_values = |layout: Option<&Value>| -> Map<String, Value> {
+        layout
+            .and_then(Value::as_object)
+            .map(|l| {
+                l.iter()
+                    .filter(|(k, _)| CHILD_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let viewport_children: Vec<(&str, &str, Map<String, Value>)> = queries
         .iter()
         .filter_map(|(breakpoint, query)| {
-            let child = child_values(style_attr.and_then(|s| s.get(*breakpoint)).and_then(|v| v.get("layout")));
+            let child = child_values(
+                style_attr
+                    .and_then(|s| s.get(*breakpoint))
+                    .and_then(|v| v.get("layout")),
+            );
             (!child.is_empty()).then_some((*breakpoint, query.as_str(), child))
         })
         .collect();
@@ -489,7 +726,12 @@ pub fn render_layout_support(
         let base = child_values(style_attr.and_then(|s| s.get("layout")));
         let parent_subset: Map<String, Value> = parent_layout
             .and_then(Value::as_object)
-            .map(|p| p.iter().filter(|(k, _)| matches!(k.as_str(), "minimumColumnWidth" | "columnCount")).map(|(k, v)| (k.clone(), v.clone())).collect())
+            .map(|p| {
+                p.iter()
+                    .filter(|(k, _)| matches!(k.as_str(), "minimumColumnWidth" | "columnCount"))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
             .unwrap_or_default();
         let mut hash_input = json!({ "layout": base, "parentLayout": parent_subset });
         for (breakpoint, _, child) in &viewport_children {
@@ -498,7 +740,11 @@ pub fn render_layout_support(
         let class = unique_id_from_values(&hash_input, "wp-container-content-");
         let mut rules = child_layout_rules(&format!(".{class}"), &base, &parent_subset, None);
         for (_, query, child) in &viewport_children {
-            rules.extend(child_layout_rules(&format!(".{class}"), &base, &parent_subset, Some(child)).into_iter().map(|(sel, decls, _)| (sel, decls, Some((*query).to_owned()))));
+            rules.extend(
+                child_layout_rules(&format!(".{class}"), &base, &parent_subset, Some(child))
+                    .into_iter()
+                    .map(|(sel, decls, _)| (sel, decls, Some((*query).to_owned()))),
+            );
         }
         if !rules.is_empty() {
             env.with_state(|s| {
@@ -510,7 +756,9 @@ pub fn render_layout_support(
         }
     }
 
-    let Some(mut editor) = TagEditor::first(&content) else { return content };
+    let Some(mut editor) = TagEditor::first(&content) else {
+        return content;
+    };
     if !supports_layout && !outer_class_names.is_empty() {
         for class in &outer_class_names {
             editor.add_class(class);
@@ -531,27 +779,47 @@ pub fn render_layout_support(
         Some(Value::Object(o)) => o.clone(),
         _ => fallback_layout,
     };
-    if used_layout.get("inherit").is_some_and(|v| !crate::style_engine::is_empty(v))
-        || used_layout.get("contentSize").is_some_and(|v| !crate::style_engine::is_empty(v))
+    if used_layout
+        .get("inherit")
+        .is_some_and(|v| !crate::style_engine::is_empty(v))
+        || used_layout
+            .get("contentSize")
+            .is_some_and(|v| !crate::style_engine::is_empty(v))
     {
         used_layout.insert("type".into(), Value::from("constrained"));
     }
 
     let settings = env.theme.global_settings();
     let mut class_names: Vec<String> = Vec::new();
-    let root_padding_aware = settings.get("useRootPaddingAwareAlignments").and_then(Value::as_bool).unwrap_or(false);
-    if root_padding_aware && used_layout.get("type").and_then(Value::as_str) == Some("constrained") {
+    let root_padding_aware = settings
+        .get("useRootPaddingAwareAlignments")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if root_padding_aware && used_layout.get("type").and_then(Value::as_str) == Some("constrained")
+    {
         class_names.push("has-global-padding".into());
     }
     let attr_layout = attrs.get("layout").and_then(Value::as_object);
     let sanitize = |s: &str| rustpress_core::slug::sanitize_title(s);
-    if let Some(o) = attr_layout.and_then(|l| l.get("orientation")).and_then(Value::as_str).filter(|s| !s.is_empty()) {
+    if let Some(o) = attr_layout
+        .and_then(|l| l.get("orientation"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
         class_names.push(format!("is-{}", sanitize(o)));
     }
-    if let Some(j) = attr_layout.and_then(|l| l.get("justifyContent")).and_then(Value::as_str).filter(|s| !s.is_empty()) {
+    if let Some(j) = attr_layout
+        .and_then(|l| l.get("justifyContent"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
         class_names.push(format!("is-content-justification-{}", sanitize(j)));
     }
-    if attr_layout.and_then(|l| l.get("flexWrap")).and_then(Value::as_str) == Some("nowrap") {
+    if attr_layout
+        .and_then(|l| l.get("flexWrap"))
+        .and_then(Value::as_str)
+        == Some("nowrap")
+    {
         class_names.push("is-nowrap".into());
     }
     let layout_classname = used_layout
@@ -564,22 +832,49 @@ pub fn render_layout_support(
     }
 
     // Container class and CSS.
-    let gap_value = sanitize_block_gap_value(style_attr.and_then(|s| s.get("spacing")).and_then(|s| s.get("blockGap")));
-    let mut fallback_gap = bt.support(&["spacing", "blockGap", "__experimentalDefault"]).cloned().unwrap_or(Value::from("0.5em"));
-    let block_spacing = style_attr.and_then(|s| s.get("spacing")).filter(|v| !v.is_null());
+    let gap_value = sanitize_block_gap_value(
+        style_attr
+            .and_then(|s| s.get("spacing"))
+            .and_then(|s| s.get("blockGap")),
+    );
+    let mut fallback_gap = bt
+        .support(&["spacing", "blockGap", "__experimentalDefault"])
+        .cloned()
+        .unwrap_or(Value::from("0.5em"));
+    let block_spacing = style_attr
+        .and_then(|s| s.get("spacing"))
+        .filter(|v| !v.is_null());
     let skip_gap = bt.skips_serialization("spacing", Some("blockGap"));
-    let has_block_gap_support = settings.get("spacing").and_then(|s| s.get("blockGap")).is_some_and(|v| !v.is_null());
+    let has_block_gap_support = settings
+        .get("spacing")
+        .and_then(|s| s.get("blockGap"))
+        .is_some_and(|v| !v.is_null());
 
     let styles = env.theme.global_styles();
     let block_styles = styles.get("blocks").and_then(|b| b.get(&bt.name));
-    let gap_of = |of: Option<&Value>| of.and_then(|o| o.get("spacing")).and_then(|s| s.get("blockGap")).filter(|v| !v.is_null()).cloned();
+    let gap_of = |of: Option<&Value>| {
+        of.and_then(|o| o.get("spacing"))
+            .and_then(|s| s.get("blockGap"))
+            .filter(|v| !v.is_null())
+            .cloned()
+    };
     // The style variation of the block first (`wp_get_block_style_variation_name_from_registered_style()`).
-    let variation_gap = attrs.get("className").and_then(Value::as_str).filter(|c| c.contains("is-style-")).and_then(|class_name| {
-        let variations = block_styles?.get("variations")?.as_object()?;
-        let name = class_name.split(' ').filter_map(|c| c.strip_prefix("is-style-")).find(|name| *name != "default" && variations.contains_key(*name))?;
-        gap_of(variations.get(name))
-    });
-    if let Some(gap) = variation_gap.or_else(|| gap_of(block_styles)).or_else(|| gap_of(Some(styles))) {
+    let variation_gap = attrs
+        .get("className")
+        .and_then(Value::as_str)
+        .filter(|c| c.contains("is-style-"))
+        .and_then(|class_name| {
+            let variations = block_styles?.get("variations")?.as_object()?;
+            let name = class_name
+                .split(' ')
+                .filter_map(|c| c.strip_prefix("is-style-"))
+                .find(|name| *name != "default" && variations.contains_key(*name))?;
+            gap_of(variations.get(name))
+        });
+    if let Some(gap) = variation_gap
+        .or_else(|| gap_of(block_styles))
+        .or_else(|| gap_of(Some(styles)))
+    {
         fallback_gap = gap;
     }
 
@@ -591,9 +886,35 @@ pub fn render_layout_support(
         fallback_gap.clone(),
         block_spacing.cloned().unwrap_or(Value::Null),
     ];
-    let container_values = |viewport: &Value| -> Map<String, Value> { viewport.get("layout").and_then(Value::as_object).map(|l| l.iter().filter(|(k, _)| !CHILD_KEYS.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default() };
-    let viewport_gap = |viewport: &Value| viewport.get("spacing").and_then(|s| s.get("blockGap")).filter(|v| !v.is_null()).cloned();
-    let viewports: Vec<(&str, &str, &Value)> = queries.iter().filter_map(|(breakpoint, query)| Some((*breakpoint, query.as_str(), style_attr?.get(*breakpoint).filter(|v| v.is_object())?))).collect();
+    let container_values = |viewport: &Value| -> Map<String, Value> {
+        viewport
+            .get("layout")
+            .and_then(Value::as_object)
+            .map(|l| {
+                l.iter()
+                    .filter(|(k, _)| !CHILD_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let viewport_gap = |viewport: &Value| {
+        viewport
+            .get("spacing")
+            .and_then(|s| s.get("blockGap"))
+            .filter(|v| !v.is_null())
+            .cloned()
+    };
+    let viewports: Vec<(&str, &str, &Value)> = queries
+        .iter()
+        .filter_map(|(breakpoint, query)| {
+            Some((
+                *breakpoint,
+                query.as_str(),
+                style_attr?.get(*breakpoint).filter(|v| v.is_object())?,
+            ))
+        })
+        .collect();
     for (breakpoint, _, viewport) in &viewports {
         let layout = container_values(viewport);
         if !layout.is_empty() {
@@ -604,9 +925,24 @@ pub fn render_layout_support(
         }
     }
     let block_name = sanitize(&attrs_block_name(bt));
-    let container_class = unique_id_from_values(&Value::Array(hash_list), &format!("wp-container-{block_name}-is-layout-"));
+    let container_class = unique_id_from_values(
+        &Value::Array(hash_list),
+        &format!("wp-container-{block_name}-is-layout-"),
+    );
     let selector = format!(".{container_class}");
-    let has_style = env.with_state(|s| get_layout_style(s, &selector, &used_layout, has_block_gap_support, gap_value.as_ref(), skip_gap, &fallback_gap, block_spacing, &LayoutOptions::default()));
+    let has_style = env.with_state(|s| {
+        get_layout_style(
+            s,
+            &selector,
+            &used_layout,
+            has_block_gap_support,
+            gap_value.as_ref(),
+            skip_gap,
+            &fallback_gap,
+            block_spacing,
+            &LayoutOptions::default(),
+        )
+    });
     let mut viewport_style = false;
     for (_, query, viewport) in &viewports {
         let layout = container_values(viewport);
@@ -618,8 +954,24 @@ pub fn render_layout_support(
             Some(gap) => sanitize_block_gap_value(Some(gap)),
             None => gap_value.clone(),
         };
-        let options = LayoutOptions { rules_group: Some(query), viewport_overrides: Some(&layout), has_block_gap_override: own_gap.is_some() };
-        viewport_style |= env.with_state(|s| get_layout_style(s, &selector, &used_layout, has_block_gap_support, gap.as_ref(), skip_gap, &fallback_gap, block_spacing, &options));
+        let options = LayoutOptions {
+            rules_group: Some(query),
+            viewport_overrides: Some(&layout),
+            has_block_gap_override: own_gap.is_some(),
+        };
+        viewport_style |= env.with_state(|s| {
+            get_layout_style(
+                s,
+                &selector,
+                &used_layout,
+                has_block_gap_support,
+                gap.as_ref(),
+                skip_gap,
+                &fallback_gap,
+                block_spacing,
+                &options,
+            )
+        });
     }
     if viewport_style || has_style {
         class_names.push(container_class);
@@ -637,7 +989,11 @@ pub fn render_layout_support(
     }
 
     // For blocks with inner blocks the classes belong on the element that wraps them.
-    let wrapper_class = if has_inner_blocks { inner_wrapper_class(first_inner_chunk) } else { None };
+    let wrapper_class = if has_inner_blocks {
+        inner_wrapper_class(first_inner_chunk)
+    } else {
+        None
+    };
     let mut target = editor;
     if let Some(wrapper) = wrapper_class {
         let html = target.tag().clone();
@@ -682,22 +1038,44 @@ fn inner_wrapper_class(first_chunk: Option<&str>) -> Option<String> {
 
 /// `wp_restore_group_inner_container()` on `render_block_core/group`: themes without a `theme.json` get the
 /// `wp-block-group__inner-container` wrapper back, with the layout classes moved onto it.
-pub fn restore_group_inner_container(attrs: &serde_json::Map<String, Value>, content: String) -> String {
+pub fn restore_group_inner_container(
+    attrs: &serde_json::Map<String, Value>,
+    content: String,
+) -> String {
     use regex::bytes::Regex;
-    let tag_name = attrs.get("tagName").and_then(Value::as_str).unwrap_or("div");
+    let tag_name = attrs
+        .get("tagName")
+        .and_then(Value::as_str)
+        .unwrap_or("div");
     let quoted = regex::escape(tag_name);
     // PCRE's `\s` without `/u`.
     const S: &str = r"[ \t\n\x0B\x0C\r]";
-    let Ok(existing) = Regex::new(&format!(r#"(?-u)^{S}*<{quoted}\b[^>]*wp-block-group({S}|")[^>]*>{S}*<div\b[^>]*wp-block-group__inner-container({S}|")[^>]*>"#)) else { return content };
-    let layout = attrs.get("layout").and_then(|l| l.get("type")).and_then(Value::as_str);
+    let Ok(existing) = Regex::new(&format!(
+        r#"(?-u)^{S}*<{quoted}\b[^>]*wp-block-group({S}|")[^>]*>{S}*<div\b[^>]*wp-block-group__inner-container({S}|")[^>]*>"#
+    )) else {
+        return content;
+    };
+    let layout = attrs
+        .get("layout")
+        .and_then(|l| l.get("type"))
+        .and_then(Value::as_str);
     if existing.is_match(content.as_bytes()) || matches!(layout, Some("flex" | "grid")) {
         return content;
     }
     let mut layout_classes: Vec<String> = Vec::new();
     let mut without = content.clone();
-    if let Some(tag) = crate::html::tags(&content, 0).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|c| c == "wp-block-group"))) {
+    if let Some(tag) = crate::html::tags(&content, 0).into_iter().find(|t| {
+        !t.is_closer
+            && t.attr("class")
+                .is_some_and(|c| c.split_ascii_whitespace().any(|c| c == "wp-block-group"))
+    }) {
         let mut editor = crate::html::TagEditor::from_tag(&content, tag);
-        let classes: Vec<String> = editor.get_attribute("class").unwrap_or_default().split_ascii_whitespace().map(str::to_owned).collect();
+        let classes: Vec<String> = editor
+            .get_attribute("class")
+            .unwrap_or_default()
+            .split_ascii_whitespace()
+            .map(str::to_owned)
+            .collect();
         for class in classes {
             if class.contains("is-layout-") && !layout_classes.contains(&class) {
                 editor.remove_class(&class);
@@ -706,7 +1084,11 @@ pub fn restore_group_inner_container(attrs: &serde_json::Map<String, Value>, con
         }
         without = editor.finish();
     }
-    let Ok(replace) = Regex::new(&format!(r"(?ms-u)(^{S}*<{quoted}\b[^>]*wp-block-group[^>]*>)(.*)(</{quoted}>{S}*$)")) else { return content };
+    let Ok(replace) = Regex::new(&format!(
+        r"(?ms-u)(^{S}*<{quoted}\b[^>]*wp-block-group[^>]*>)(.*)(</{quoted}>{S}*$)"
+    )) else {
+        return content;
+    };
     let updated = replace.replace_all(without.as_bytes(), |caps: &regex::bytes::Captures<'_>| {
         let mut out = caps[1].to_vec();
         out.extend_from_slice(b"<div class=\"wp-block-group__inner-container\">");
@@ -719,7 +1101,15 @@ pub fn restore_group_inner_container(attrs: &serde_json::Map<String, Value>, con
     if layout_classes.is_empty() {
         return updated;
     }
-    let Some(tag) = crate::html::tags(&updated, 0).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|c| c == "wp-block-group__inner-container"))) else { return updated };
+    let Some(tag) = crate::html::tags(&updated, 0).into_iter().find(|t| {
+        !t.is_closer
+            && t.attr("class").is_some_and(|c| {
+                c.split_ascii_whitespace()
+                    .any(|c| c == "wp-block-group__inner-container")
+            })
+    }) else {
+        return updated;
+    };
     let mut editor = crate::html::TagEditor::from_tag(&updated, tag);
     for class in &layout_classes {
         editor.add_class(class);
@@ -729,10 +1119,22 @@ pub fn restore_group_inner_container(attrs: &serde_json::Map<String, Value>, con
 
 /// `wp_restore_image_outer_container()` on `render_block_core/image`: themes without a `theme.json` get aligned
 /// images wrapped in a `<div class="wp-block-image">` again.
-pub fn restore_image_outer_container(attrs: &serde_json::Map<String, Value>, content: String) -> String {
-    let Some(tag) = crate::html::tags(&content, 0).into_iter().find(|t| !t.is_closer && t.name == "figure") else { return content };
+pub fn restore_image_outer_container(
+    attrs: &serde_json::Map<String, Value>,
+    content: String,
+) -> String {
+    let Some(tag) = crate::html::tags(&content, 0)
+        .into_iter()
+        .find(|t| !t.is_closer && t.name == "figure")
+    else {
+        return content;
+    };
     let mut figure = crate::html::TagEditor::from_tag(&content, tag);
-    if !figure.has_class("wp-block-image") || !["alignleft", "aligncenter", "alignright"].iter().any(|c| figure.has_class(c)) {
+    if !figure.has_class("wp-block-image")
+        || !["alignleft", "aligncenter", "alignright"]
+            .iter()
+            .any(|c| figure.has_class(c))
+    {
         return content;
     }
     let class = match attrs.get("className").and_then(Value::as_str) {
@@ -747,7 +1149,11 @@ pub fn restore_image_outer_container(attrs: &serde_json::Map<String, Value>, con
             figure.remove_class(name);
         }
     }
-    format!("<div class=\"{}\">{}</div>", crate::html::esc_attr(&class), figure.finish())
+    format!(
+        "<div class=\"{}\">{}</div>",
+        crate::html::esc_attr(&class),
+        figure.finish()
+    )
 }
 
 #[cfg(test)]
@@ -762,9 +1168,22 @@ mod tests {
     fn flex_layout_rules() {
         let mut state = State::default();
         let layout = json!({"type": "flex", "flexWrap": "nowrap", "justifyContent": "space-between", "verticalAlignment": "center"});
-        let any = get_layout_style(&mut state, ".c", layout.as_object().unwrap(), false, None, false, &json!("0.5em"), None, &LayoutOptions::default());
+        let any = get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            false,
+            None,
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default(),
+        );
         assert!(any);
-        assert_eq!(rules_of(&state), ".c{flex-wrap:nowrap;justify-content:space-between;align-items:center;}");
+        assert_eq!(
+            rules_of(&state),
+            ".c{flex-wrap:nowrap;justify-content:space-between;align-items:center;}"
+        );
     }
 
     #[test]
@@ -772,16 +1191,42 @@ mod tests {
         let mut state = State::default();
         let layout = json!({"type": "flex"});
         let gap = json!({"top": "var:preset|spacing|50", "left": "10px"});
-        get_layout_style(&mut state, ".c", layout.as_object().unwrap(), true, Some(&gap), false, &json!("0.5em"), None, &LayoutOptions::default());
-        assert_eq!(rules_of(&state), ".c{gap:var(--wp--preset--spacing--50) 10px;}");
+        get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            true,
+            Some(&gap),
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default(),
+        );
+        assert_eq!(
+            rules_of(&state),
+            ".c{gap:var(--wp--preset--spacing--50) 10px;}"
+        );
     }
 
     #[test]
     fn vertical_flex() {
         let mut state = State::default();
         let layout = json!({"type": "flex", "orientation": "vertical"});
-        get_layout_style(&mut state, ".c", layout.as_object().unwrap(), false, None, false, &json!("0.5em"), None, &LayoutOptions::default());
-        assert_eq!(rules_of(&state), ".c{flex-direction:column;align-items:flex-start;}");
+        get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            false,
+            None,
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default(),
+        );
+        assert_eq!(
+            rules_of(&state),
+            ".c{flex-direction:column;align-items:flex-start;}"
+        );
     }
 
     #[test]
@@ -789,7 +1234,17 @@ mod tests {
         let mut state = State::default();
         let layout = json!({"type": "constrained", "contentSize": "600px", "wideSize": "1000px"});
         let spacing = json!({"padding": {"right": "10px"}});
-        get_layout_style(&mut state, ".c", layout.as_object().unwrap(), false, None, false, &json!("0.5em"), Some(&spacing), &LayoutOptions::default());
+        get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            false,
+            None,
+            false,
+            &json!("0.5em"),
+            Some(&spacing),
+            &LayoutOptions::default(),
+        );
         assert_eq!(
             rules_of(&state),
             ".c > :where(:not(.alignleft):not(.alignright):not(.alignfull)){max-width:600px;margin-left:auto !important;margin-right:auto !important;}.c > .alignwide{max-width:1000px;}.c .alignfull{max-width:none;}.c > .alignfull{margin-right:calc(10px * -1);}"
@@ -800,7 +1255,17 @@ mod tests {
     fn default_layout_without_block_gap_has_no_rules() {
         let mut state = State::default();
         let layout = json!({"type": "default"});
-        assert!(!get_layout_style(&mut state, ".c", layout.as_object().unwrap(), false, None, false, &json!("0.5em"), None, &LayoutOptions::default()));
+        assert!(!get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            false,
+            None,
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default()
+        ));
         assert!(state.block_supports_css.is_empty());
     }
 
@@ -808,23 +1273,55 @@ mod tests {
     fn block_gap_in_default_and_constrained_layouts() {
         let mut state = State::default();
         let layout = json!({"type": "default"});
-        get_layout_style(&mut state, ".c", layout.as_object().unwrap(), true, Some(&json!("2rem")), false, &json!("0.5em"), None, &LayoutOptions::default());
-        assert_eq!(rules_of(&state), ".c > *{margin-block-start:0;margin-block-end:0;}.c > * + *{margin-block-start:2rem;margin-block-end:0;}");
+        get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            true,
+            Some(&json!("2rem")),
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default(),
+        );
+        assert_eq!(
+            rules_of(&state),
+            ".c > *{margin-block-start:0;margin-block-end:0;}.c > * + *{margin-block-start:2rem;margin-block-end:0;}"
+        );
     }
 
     #[test]
     fn grid_with_minimum_column_width() {
         let mut state = State::default();
         let layout = json!({"type": "grid", "minimumColumnWidth": "20rem"});
-        get_layout_style(&mut state, ".c", layout.as_object().unwrap(), false, None, false, &json!("0.5em"), None, &LayoutOptions::default());
-        assert_eq!(rules_of(&state), ".c{grid-template-columns:repeat(auto-fill, minmax(min(20rem, 100%), 1fr));container-type:inline-size;}");
+        get_layout_style(
+            &mut state,
+            ".c",
+            layout.as_object().unwrap(),
+            false,
+            None,
+            false,
+            &json!("0.5em"),
+            None,
+            &LayoutOptions::default(),
+        );
+        assert_eq!(
+            rules_of(&state),
+            ".c{grid-template-columns:repeat(auto-fill, minmax(min(20rem, 100%), 1fr));container-type:inline-size;}"
+        );
     }
 
     #[test]
     fn gap_values_with_code_are_rejected() {
-        assert_eq!(sanitize_block_gap_value(Some(&json!("1rem"))), Some(json!("1rem")));
+        assert_eq!(
+            sanitize_block_gap_value(Some(&json!("1rem"))),
+            Some(json!("1rem"))
+        );
         assert_eq!(sanitize_block_gap_value(Some(&json!("calc(1px)"))), None);
-        assert_eq!(sanitize_block_gap_value(Some(&json!({"top": "1px", "left": "a}b"}))), Some(json!({"top": "1px", "left": null})));
+        assert_eq!(
+            sanitize_block_gap_value(Some(&json!({"top": "1px", "left": "a}b"}))),
+            Some(json!({"top": "1px", "left": null}))
+        );
     }
 
     #[test]
@@ -832,14 +1329,32 @@ mod tests {
         let child = json!({"selfStretch": "fixed", "flexSize": "50%", "columnSpan": 2});
         let rules = super::child_layout_rules(".k", child.as_object().unwrap(), &Map::new(), None);
         assert_eq!(rules.len(), 2);
-        assert_eq!(rules[1].2.as_deref(), Some("@container (max-width: 25.5rem )"));
-        assert_eq!(rules[0].1, d(&[("flex-basis", "50%"), ("box-sizing", "border-box"), ("grid-column", "span 2")]));
+        assert_eq!(
+            rules[1].2.as_deref(),
+            Some("@container (max-width: 25.5rem )")
+        );
+        assert_eq!(
+            rules[0].1,
+            d(&[
+                ("flex-basis", "50%"),
+                ("box-sizing", "border-box"),
+                ("grid-column", "span 2")
+            ])
+        );
     }
 
     #[test]
     fn wrapper_is_the_last_open_element_with_a_class() {
-        assert_eq!(inner_wrapper_class(Some("\n<div class=\"wp-block-group\">\n<p class=\"x\">a</p>")), Some("wp-block-group".into()));
-        assert_eq!(inner_wrapper_class(Some("<div class=\"a\"><div class=\"b\">")), Some("b".into()));
+        assert_eq!(
+            inner_wrapper_class(Some(
+                "\n<div class=\"wp-block-group\">\n<p class=\"x\">a</p>"
+            )),
+            Some("wp-block-group".into())
+        );
+        assert_eq!(
+            inner_wrapper_class(Some("<div class=\"a\"><div class=\"b\">")),
+            Some("b".into())
+        );
         assert_eq!(inner_wrapper_class(Some("<div>")), None);
         assert_eq!(inner_wrapper_class(None), None);
     }

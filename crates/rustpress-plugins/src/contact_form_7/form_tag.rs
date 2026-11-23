@@ -6,10 +6,14 @@ use std::sync::LazyLock;
 use fancy_regex::Regex as FancyRegex;
 use regex::Regex;
 
-use super::formatter::{PLACEHOLDER_BLOCK, PLACEHOLDER_INLINE, Side, is_unicode_whitespace, normalize_start_tag, php_trim, sha256_hex, strip_whitespaces};
+use super::formatter::{
+    PLACEHOLDER_BLOCK, PLACEHOLDER_INLINE, Side, is_unicode_whitespace, normalize_start_tag,
+    php_trim, sha256_hex, strip_whitespaces,
+};
 
 /// `wpcf7_get_unicode_whitespaces()` as a character class body.
-const UNICODE_WS: &str = r"\x09-\x0D\x20\x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}";
+const UNICODE_WS: &str =
+    r"\x09-\x0D\x20\x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}";
 
 /// What a form-tag type supports (`$features` of `wpcf7_add_form_tag()`).
 #[derive(Debug, Clone, Copy, Default)]
@@ -29,7 +33,10 @@ pub struct Features {
 /// The form-tag types the modules of Contact Form 7 register, in the order `WPCF7::load_modules()` adds them, with
 /// what each supports (`stripe` and `turnstile` exist even while their services are not set up).
 pub const TAG_TYPES: &[(&str, Features)] = {
-    const NAME: Features = Features { name_attr: true, ..EMPTY };
+    const NAME: Features = Features {
+        name_attr: true,
+        ..EMPTY
+    };
     const EMPTY: Features = Features {
         name_attr: false,
         selectable_values: false,
@@ -42,16 +49,55 @@ pub const TAG_TYPES: &[(&str, Features)] = {
         do_not_store: false,
         file_uploading: false,
     };
-    const SELECTABLE: Features = Features { name_attr: true, selectable_values: true, ..EMPTY };
-    const CHECKBOX: Features = Features { name_attr: true, selectable_values: true, multiple_controls_container: true, ..EMPTY };
-    const COUNT: Features = Features { name_attr: true, zero_controls_container: true, not_for_mail: true, ..EMPTY };
+    const SELECTABLE: Features = Features {
+        name_attr: true,
+        selectable_values: true,
+        ..EMPTY
+    };
+    const CHECKBOX: Features = Features {
+        name_attr: true,
+        selectable_values: true,
+        multiple_controls_container: true,
+        ..EMPTY
+    };
+    const COUNT: Features = Features {
+        name_attr: true,
+        zero_controls_container: true,
+        not_for_mail: true,
+        ..EMPTY
+    };
     const DATE: Features = NAME;
-    const FILE: Features = Features { name_attr: true, file_uploading: true, ..EMPTY };
-    const HIDDEN: Features = Features { name_attr: true, display_hidden: true, ..EMPTY };
-    const QUIZ: Features = Features { name_attr: true, do_not_store: true, not_for_mail: true, ..EMPTY };
-    const REFLECTION: Features = Features { name_attr: true, display_block: true, not_for_mail: true, ..EMPTY };
-    const OUTPUT: Features = Features { name_attr: true, not_for_mail: true, ..EMPTY };
-    const RESPONSE: Features = Features { display_block: true, ..EMPTY };
+    const FILE: Features = Features {
+        name_attr: true,
+        file_uploading: true,
+        ..EMPTY
+    };
+    const HIDDEN: Features = Features {
+        name_attr: true,
+        display_hidden: true,
+        ..EMPTY
+    };
+    const QUIZ: Features = Features {
+        name_attr: true,
+        do_not_store: true,
+        not_for_mail: true,
+        ..EMPTY
+    };
+    const REFLECTION: Features = Features {
+        name_attr: true,
+        display_block: true,
+        not_for_mail: true,
+        ..EMPTY
+    };
+    const OUTPUT: Features = Features {
+        name_attr: true,
+        not_for_mail: true,
+        ..EMPTY
+    };
+    const RESPONSE: Features = Features {
+        display_block: true,
+        ..EMPTY
+    };
     &[
         ("acceptance", SELECTABLE),
         ("checkbox", CHECKBOX),
@@ -75,7 +121,14 @@ pub const TAG_TYPES: &[(&str, Features)] = {
         ("response", RESPONSE),
         ("select", SELECTABLE),
         ("select*", SELECTABLE),
-        ("stripe", Features { display_block: true, singular: true, ..EMPTY }),
+        (
+            "stripe",
+            Features {
+                display_block: true,
+                singular: true,
+                ..EMPTY
+            },
+        ),
         ("submit", EMPTY),
         ("text", NAME),
         ("text*", NAME),
@@ -93,7 +146,11 @@ pub const TAG_TYPES: &[(&str, Features)] = {
 
 /// `tag_type_supports()`'s answer for a type: its features.
 pub fn features(tag_type: &str) -> Features {
-    TAG_TYPES.iter().find(|(t, _)| *t == tag_type).map(|(_, f)| *f).unwrap_or_default()
+    TAG_TYPES
+        .iter()
+        .find(|(t, _)| *t == tag_type)
+        .map(|(_, f)| *f)
+        .unwrap_or_default()
 }
 
 /// `WPCF7_Pipe`: `before|after`.
@@ -108,9 +165,15 @@ impl Pipe {
         match text.find('|') {
             None => {
                 let s = strip_whitespaces(text, Side::Both).to_owned();
-                Self { before: s.clone(), after: s }
+                Self {
+                    before: s.clone(),
+                    after: s,
+                }
             }
-            Some(at) => Self { before: strip_whitespaces(&text[..at], Side::Both).to_owned(), after: strip_whitespaces(&text[at + 1..], Side::Both).to_owned() },
+            Some(at) => Self {
+                before: strip_whitespaces(&text[..at], Side::Both).to_owned(),
+                after: strip_whitespaces(&text[at + 1..], Side::Both).to_owned(),
+            },
         }
     }
 }
@@ -144,7 +207,8 @@ impl FormTag {
 
     /// `has_option( $name )`: `name` or `name:...`.
     pub fn has_option(&self, name: &str) -> bool {
-        let pattern = Regex::new(&format!("(?i)^{}(:.+)?$", quote(name))).expect("valid option pattern");
+        let pattern =
+            Regex::new(&format!("(?i)^{}(:.+)?$", quote(name))).expect("valid option pattern");
         self.options.iter().any(|o| pattern.is_match(o))
     }
 
@@ -162,25 +226,37 @@ impl FormTag {
     }
 
     fn option_regex(name: &str, pattern: &str) -> Regex {
-        Regex::new(&format!("(?i)^{}:{}$", quote(name), Self::preset(pattern))).expect("valid option pattern")
+        Regex::new(&format!("(?i)^{}:{}$", quote(name), Self::preset(pattern)))
+            .expect("valid option pattern")
     }
 
     /// `get_option( $name, $pattern, true )`: the value after `name:` of the first option that matches.
     pub fn get_option(&self, name: &str, pattern: &str) -> Option<String> {
         let regex = Self::option_regex(name, pattern);
-        self.options.iter().find(|o| regex.is_match(o)).map(|o| o[name.len() + 1..].to_owned())
+        self.options
+            .iter()
+            .find(|o| regex.is_match(o))
+            .map(|o| o[name.len() + 1..].to_owned())
     }
 
     /// `get_option( $name, $pattern )`: the values of every option that matches.
     pub fn get_options(&self, name: &str, pattern: &str) -> Vec<String> {
         let regex = Self::option_regex(name, pattern);
-        self.options.iter().filter(|o| regex.is_match(o)).map(|o| o[name.len() + 1..].to_owned()).collect()
+        self.options
+            .iter()
+            .filter(|o| regex.is_match(o))
+            .map(|o| o[name.len() + 1..].to_owned())
+            .collect()
     }
 
     /// `get_class_option( $default_classes )`.
     pub fn get_class_option(&self, default_classes: &str) -> Option<String> {
         let mut classes: Vec<String> = Vec::new();
-        for class in default_classes.split(' ').map(str::to_owned).chain(self.get_options("class", "")) {
+        for class in default_classes
+            .split(' ')
+            .map(str::to_owned)
+            .chain(self.get_options("class", ""))
+        {
             let class = rustpress_core::formatting::sanitize_html_class(&class);
             if !class.is_empty() && !classes.contains(&class) {
                 classes.push(class);
@@ -191,7 +267,8 @@ impl FormTag {
 
     /// `get_autocomplete_option()`.
     pub fn get_autocomplete_option(&self) -> Option<String> {
-        static TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z]+(?:-[0-9a-z]+)*$").unwrap());
+        static TOKEN: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[a-z]+(?:-[0-9a-z]+)*$").unwrap());
         let mut tokens: Vec<String> = Vec::new();
         for option in self.get_options("autocomplete", "[-0-9a-zA-Z|]+") {
             for token in option.split('|').map(str::to_lowercase) {
@@ -213,19 +290,31 @@ impl FormTag {
 
     /// The first non-empty capture `group` of `pattern` over the options.
     fn first_capture(&self, pattern: &Regex, group: usize) -> Option<String> {
-        self.options.iter().filter_map(|o| pattern.captures(o)).find_map(|c| c.get(group).map(|m| m.as_str().to_owned()).filter(|s| !s.is_empty()))
+        self.options
+            .iter()
+            .filter_map(|o| pattern.captures(o))
+            .find_map(|c| {
+                c.get(group)
+                    .map(|m| m.as_str().to_owned())
+                    .filter(|s| !s.is_empty())
+            })
     }
 
     /// `get_size_option()`: `size:N` or `N/M`.
     pub fn get_size_option(&self) -> Option<String> {
         static SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]*)/[0-9]*$").unwrap());
-        self.get_option("size", "int").filter(|s| truthy(s)).or_else(|| self.first_capture(&SIZE, 1))
+        self.get_option("size", "int")
+            .filter(|s| truthy(s))
+            .or_else(|| self.first_capture(&SIZE, 1))
     }
 
     /// `get_maxlength_option()`: `maxlength:N`, `N/M` or `NxM/L`.
     pub fn get_maxlength_option(&self) -> Option<String> {
-        static MAX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:[0-9]*x?[0-9]*)?/([0-9]+)$").unwrap());
-        self.get_option("maxlength", "int").filter(|s| truthy(s)).or_else(|| self.first_capture(&MAX, 1))
+        static MAX: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^(?:[0-9]*x?[0-9]*)?/([0-9]+)$").unwrap());
+        self.get_option("maxlength", "int")
+            .filter(|s| truthy(s))
+            .or_else(|| self.first_capture(&MAX, 1))
     }
 
     pub fn get_minlength_option(&self) -> Option<String> {
@@ -234,19 +323,26 @@ impl FormTag {
 
     /// `get_cols_option()`: `cols:N` or `NxM`.
     pub fn get_cols_option(&self) -> Option<String> {
-        static COLS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]*)x([0-9]*)(?:/[0-9]+)?$").unwrap());
-        self.get_option("cols", "int").filter(|s| truthy(s)).or_else(|| self.first_capture(&COLS, 1))
+        static COLS: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^([0-9]*)x([0-9]*)(?:/[0-9]+)?$").unwrap());
+        self.get_option("cols", "int")
+            .filter(|s| truthy(s))
+            .or_else(|| self.first_capture(&COLS, 1))
     }
 
     /// `get_rows_option()`: `rows:N` or `NxM`.
     pub fn get_rows_option(&self) -> Option<String> {
-        static ROWS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]*)x([0-9]*)(?:/[0-9]+)?$").unwrap());
-        self.get_option("rows", "int").filter(|s| truthy(s)).or_else(|| self.first_capture(&ROWS, 2))
+        static ROWS: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^([0-9]*)x([0-9]*)(?:/[0-9]+)?$").unwrap());
+        self.get_option("rows", "int")
+            .filter(|s| truthy(s))
+            .or_else(|| self.first_capture(&ROWS, 2))
     }
 
     /// `get_limit_option()`: the size limit of a file field in bytes (1 MB by default).
     pub fn get_limit_option(&self) -> u64 {
-        static LIMIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^limit:([1-9][0-9]*)([kKmM]?[bB])?$").unwrap());
+        static LIMIT: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^limit:([1-9][0-9]*)([kKmM]?[bB])?$").unwrap());
         for option in &self.options {
             if let Some(c) = LIMIT.captures(option) {
                 let size: u64 = c[1].parse().unwrap_or(0);
@@ -268,7 +364,8 @@ pub fn truthy(s: &str) -> bool {
 
 /// `wpcf7_is_name()`.
 pub fn is_name(text: &str) -> bool {
-    static NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][-A-Za-z0-9_:.]*$").unwrap());
+    static NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[A-Za-z][-A-Za-z0-9_:.]*$").unwrap());
     NAME.is_match(text)
 }
 
@@ -301,9 +398,20 @@ fn parse_atts(text: &str) -> Option<(Vec<String>, Vec<String>)> {
     let options = if options_text.is_empty() || options_text == "0" {
         Vec::new()
     } else {
-        strip_whitespaces(options_text, Side::Both).split(is_unicode_whitespace).filter(|s| !s.is_empty()).map(str::to_owned).collect()
+        strip_whitespaces(options_text, Side::Both)
+            .split(is_unicode_whitespace)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect()
     };
-    let values = if values_text.is_empty() || values_text == "0" { Vec::new() } else { VALUE.find_iter(values_text).map(|m| strip_quote(m.as_str())).collect() };
+    let values = if values_text.is_empty() || values_text == "0" {
+        Vec::new()
+    } else {
+        VALUE
+            .find_iter(values_text)
+            .map(|m| strip_quote(m.as_str()))
+            .collect()
+    };
     Some((options, values))
 }
 
@@ -323,7 +431,11 @@ pub struct TagMatch<'a> {
 /// `tag_regex()` for the registered types.
 fn tag_regex() -> &'static FancyRegex {
     static REGEX: LazyLock<FancyRegex> = LazyLock::new(|| {
-        let types = TAG_TYPES.iter().map(|(t, _)| fancy_regex::escape(t).into_owned()).collect::<Vec<_>>().join("|");
+        let types = TAG_TYPES
+            .iter()
+            .map(|(t, _)| fancy_regex::escape(t).into_owned())
+            .collect::<Vec<_>>()
+            .join("|");
         rustpress_core::formatting::pcre(&format!(r"(?s)(\[?)\[({types})(?:[{UNICODE_WS}]+(.*?))?(?:[{UNICODE_WS}]+(/))?\](?:([^\[]*?)\[/\2\])?(\]?)")).unwrap()
     });
     &REGEX
@@ -335,7 +447,17 @@ pub fn matches(content: &str) -> Vec<TagMatch<'_>> {
     for c in tag_regex().captures_iter(content).flatten() {
         let whole = c.get(0).expect("group 0");
         let g = |i: usize| c.get(i).map_or("", |m| m.as_str());
-        out.push(TagMatch { whole: whole.as_str(), start: whole.start(), end: whole.end(), open: g(1), tag_type: g(2), attr: g(3), slash: g(4), content: g(5), close: g(6) });
+        out.push(TagMatch {
+            whole: whole.as_str(),
+            start: whole.start(),
+            end: whole.end(),
+            open: g(1),
+            tag_type: g(2),
+            attr: g(3),
+            slash: g(4),
+            content: g(5),
+            close: g(6),
+        });
     }
     out
 }
@@ -353,8 +475,13 @@ pub fn replace_with_placeholders(content: &str) -> (String, Vec<(String, String)
             continue;
         }
         let f = features(m.tag_type);
-        let name = if f.display_block || f.display_hidden { PLACEHOLDER_BLOCK } else { PLACEHOLDER_INLINE };
-        let placeholder = normalize_start_tag(&format!("<{name} id=\"{}\" />", sha256_hex(m.whole))).0;
+        let name = if f.display_block || f.display_hidden {
+            PLACEHOLDER_BLOCK
+        } else {
+            PLACEHOLDER_INLINE
+        };
+        let placeholder =
+            normalize_start_tag(&format!("<{name} id=\"{}\" />", sha256_hex(m.whole))).0;
         placeholders.push((placeholder.clone(), m.whole.to_owned()));
         out.push_str(&placeholder);
     }
@@ -373,18 +500,27 @@ pub fn restore_from_placeholders(content: &str, placeholders: &[(String, String)
 
 /// What `scan_callback()` makes of a match: the tag, or `None` when the match stays as it is.
 pub fn scan_one(m: &TagMatch<'_>, scanned: &[FormTag]) -> Option<FormTag> {
-    static BR_END: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)<br[\r\n\t ]*/?>$").unwrap());
+    static BR_END: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?m)<br[\r\n\t ]*/?>$").unwrap());
     let f = features(m.tag_type);
     let basetype = m.tag_type.trim_matches('*').to_owned();
     if f.singular && scanned.iter().any(|t| t.basetype == basetype) {
         return None;
     }
     let attr = parse_atts(m.attr);
-    let mut tag = FormTag { tag_type: m.tag_type.to_owned(), basetype, ..FormTag::default() };
+    let mut tag = FormTag {
+        tag_type: m.tag_type.to_owned(),
+        basetype,
+        ..FormTag::default()
+    };
     let mut attr = attr;
     if f.name_attr {
         let (options, _) = attr.as_mut()?;
-        tag.raw_name = if options.is_empty() { String::new() } else { options.remove(0) };
+        tag.raw_name = if options.is_empty() {
+            String::new()
+        } else {
+            options.remove(0)
+        };
         if !is_name(&tag.raw_name) {
             return None;
         }
@@ -427,7 +563,9 @@ mod tests {
 
     #[test]
     fn parses_names_options_and_values() {
-        let tags = scan(r#"[text* your-name class:a 30/80 "Jane" 'x|y'] [[text escaped]] [submit "Send"]"#);
+        let tags = scan(
+            r#"[text* your-name class:a 30/80 "Jane" 'x|y'] [[text escaped]] [submit "Send"]"#,
+        );
         assert_eq!(tags.len(), 2);
         assert_eq!(tags[0].name, "your-name");
         assert_eq!(tags[0].options, ["class:a", "30/80"]);

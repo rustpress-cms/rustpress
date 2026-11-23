@@ -8,7 +8,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
 use rustpress_content::sanitize;
-use rustpress_core::{canonical, formatting, kses, php_lit, rewrite, safe_css, shortcodes, slug, text};
+use rustpress_core::{
+    canonical, formatting, kses, php_lit, rewrite, safe_css, shortcodes, slug, text,
+};
 
 /// xorshift64: the same inputs in every run.
 struct Random(u64);
@@ -27,17 +29,180 @@ impl Random {
 }
 
 const TOKENS: &[&str] = &[
-    "<", ">", "</", "/>", "<!--", "-->", "<![CDATA[", "]]>", "&", "&amp;", "&#", "&#x", ";", "&#106;", "&hellip;", "&nbsp", "\"", "'", "=", " ", "\n", "\r\n", "\t", "\0", "\\",
-    "[", "]", "[/", "[[", "]]", "[caption", "[gallery ids=\"1,2\"]", "[embed]", "[/embed]", "[video", "[playlist",
-    "<!-- wp:", "<!-- /wp:", " /-->", "paragraph", "group", "{", "}", "{\"a\":", "\"x\"", ":", ",", "core/", "navigation-link",
-    "a", "p", "div", "script", "style", "pre", "img", "svg", "textarea", "table", "tr", "td", "br", "hr", "blockquote", "form", "object", "math", "select", "option",
-    "href", "src", "onerror", "style=", "class", "id", "javascript:", "data:text/html,", "http://", "https://", "//", "www.", "ftp.", "mailto:", "example.com", "@", ".", "?", "#", "%", "%zz", "%00", "%2e%2e", "+",
+    "<",
+    ">",
+    "</",
+    "/>",
+    "<!--",
+    "-->",
+    "<![CDATA[",
+    "]]>",
+    "&",
+    "&amp;",
+    "&#",
+    "&#x",
+    ";",
+    "&#106;",
+    "&hellip;",
+    "&nbsp",
+    "\"",
+    "'",
+    "=",
+    " ",
+    "\n",
+    "\r\n",
+    "\t",
+    "\0",
+    "\\",
+    "[",
+    "]",
+    "[/",
+    "[[",
+    "]]",
+    "[caption",
+    "[gallery ids=\"1,2\"]",
+    "[embed]",
+    "[/embed]",
+    "[video",
+    "[playlist",
+    "<!-- wp:",
+    "<!-- /wp:",
+    " /-->",
+    "paragraph",
+    "group",
+    "{",
+    "}",
+    "{\"a\":",
+    "\"x\"",
+    ":",
+    ",",
+    "core/",
+    "navigation-link",
+    "a",
+    "p",
+    "div",
+    "script",
+    "style",
+    "pre",
+    "img",
+    "svg",
+    "textarea",
+    "table",
+    "tr",
+    "td",
+    "br",
+    "hr",
+    "blockquote",
+    "form",
+    "object",
+    "math",
+    "select",
+    "option",
+    "href",
+    "src",
+    "onerror",
+    "style=",
+    "class",
+    "id",
+    "javascript:",
+    "data:text/html,",
+    "http://",
+    "https://",
+    "//",
+    "www.",
+    "ftp.",
+    "mailto:",
+    "example.com",
+    "@",
+    ".",
+    "?",
+    "#",
+    "%",
+    "%zz",
+    "%00",
+    "%2e%2e",
+    "+",
     // Characters whose lowercase or uppercase form has another length, combining marks, separators, astral planes.
-    "İ", "ß", "ǅ", "ſ", "K", "é", "\u{0301}", "\u{2028}", "\u{feff}", "\u{200b}", "😀", "漢", "\u{10ffff}", "ΐ", "ŉ", "ǰ",
-    "a:1:{", "s:3:\"", "i:", "b:1;", "N;", "d:0.5;", "O:8:\"stdClass\":", "a:2:{i:0;", "9999999999999999999", "-", "0", "1", "e", "E99999",
-    "--", "boundary=", "multipart/form-data", "Content-Disposition: form-data; name=\"", "filename=\"", "\r\n\r\n", "url(", ")", "expression(", "/*", "*/", "!important", "@import", "var(--",
-    "'s", "''", "\"\"", "...", "---", "(c)", "1x1", "12'", "9\"", "\\'", "`", "^", "$", "|", "(", "*", "~", "array(", "=>",
-    "<?php", "?>", "<?xml", "<!DOCTYPE", "<![", "xlink:href", "<use", "<a href=\"", "\">", "</a>", "<p>", "</p>", "<br />", "\n\n", "<li>", "<ul>", "</ul>",
+    "İ",
+    "ß",
+    "ǅ",
+    "ſ",
+    "K",
+    "é",
+    "\u{0301}",
+    "\u{2028}",
+    "\u{feff}",
+    "\u{200b}",
+    "😀",
+    "漢",
+    "\u{10ffff}",
+    "ΐ",
+    "ŉ",
+    "ǰ",
+    "a:1:{",
+    "s:3:\"",
+    "i:",
+    "b:1;",
+    "N;",
+    "d:0.5;",
+    "O:8:\"stdClass\":",
+    "a:2:{i:0;",
+    "9999999999999999999",
+    "-",
+    "0",
+    "1",
+    "e",
+    "E99999",
+    "--",
+    "boundary=",
+    "multipart/form-data",
+    "Content-Disposition: form-data; name=\"",
+    "filename=\"",
+    "\r\n\r\n",
+    "url(",
+    ")",
+    "expression(",
+    "/*",
+    "*/",
+    "!important",
+    "@import",
+    "var(--",
+    "'s",
+    "''",
+    "\"\"",
+    "...",
+    "---",
+    "(c)",
+    "1x1",
+    "12'",
+    "9\"",
+    "\\'",
+    "`",
+    "^",
+    "$",
+    "|",
+    "(",
+    "*",
+    "~",
+    "array(",
+    "=>",
+    "<?php",
+    "?>",
+    "<?xml",
+    "<!DOCTYPE",
+    "<![",
+    "xlink:href",
+    "<use",
+    "<a href=\"",
+    "\">",
+    "</a>",
+    "<p>",
+    "</p>",
+    "<br />",
+    "\n\n",
+    "<li>",
+    "<ul>",
+    "</ul>",
 ];
 
 fn random_text(random: &mut Random) -> String {
@@ -106,8 +271,18 @@ const TARGETS: &[Target] = &[
         formatting::capital_p_dangit(s, false);
         formatting::specialchars_noquotes(s);
     }),
-    ("make_clickable", |s| drop(text::make_clickable(s, &text::Clickable { home_host: "example.com", comment: true }))),
-    ("convert_smilies", |s| drop(text::convert_smilies(s, "http://example.com/wp-includes/"))),
+    ("make_clickable", |s| {
+        drop(text::make_clickable(
+            s,
+            &text::Clickable {
+                home_host: "example.com",
+                comment: true,
+            },
+        ))
+    }),
+    ("convert_smilies", |s| {
+        drop(text::convert_smilies(s, "http://example.com/wp-includes/"))
+    }),
     ("shortcodes", |s| {
         shortcodes::parse_atts(s);
         shortcodes::strip_shortcodes(s);
@@ -122,7 +297,9 @@ const TARGETS: &[Target] = &[
         slug::sanitize_title_save(s, "de_DE");
         slug::remove_accents(s, "de_DE");
     }),
-    ("safecss_filter_attr", |s| drop(safe_css::safecss_filter_attr(s))),
+    ("safecss_filter_attr", |s| {
+        drop(safe_css::safecss_filter_attr(s))
+    }),
     ("the request path", |s| {
         rewrite::urldecode(s.as_bytes());
         rewrite::request_path(s, "/");
@@ -152,7 +329,9 @@ const TARGETS: &[Target] = &[
         rustpress_admin::multipart::parse("--", s.as_bytes());
         rustpress_admin::multipart::parse("x", s.as_bytes());
     }),
-    ("unserialize", |s| drop(rustpress_phpser::unserialize(s.as_bytes()))),
+    ("unserialize", |s| {
+        drop(rustpress_phpser::unserialize(s.as_bytes()))
+    }),
 ];
 
 /// A call may take this long (a debug build on a busy runner; the slowest seen is a few milliseconds).
@@ -171,7 +350,9 @@ fn random_input_never_panics() {
             let panicked = catch_unwind(AssertUnwindSafe(|| call(&input))).is_err();
             if panicked || started.elapsed() > SLOW {
                 match failures.iter_mut().find(|(failed, _)| failed == name) {
-                    Some((_, shortest)) if input.len() < shortest.len() => *shortest = input.clone(),
+                    Some((_, shortest)) if input.len() < shortest.len() => {
+                        *shortest = input.clone()
+                    }
                     Some(_) => {}
                     None => failures.push((name, input.clone())),
                 }
@@ -179,7 +360,10 @@ fn random_input_never_panics() {
         }
     }
     std::panic::set_hook(hook);
-    assert!(failures.is_empty(), "panicked or took over {SLOW:?}: {failures:#?}");
+    assert!(
+        failures.is_empty(),
+        "panicked or took over {SLOW:?}: {failures:#?}"
+    );
 }
 
 /// Nested or repeated thousands of times: a recursive function would overflow the stack (which ends the whole
@@ -204,15 +388,25 @@ fn deep_and_long_input_is_handled() {
         "1 ? ".repeat(20_000),
     ];
     // The stack of a request handler (`thread_stack_size` in the server's `main`).
-    let worker = std::thread::Builder::new().stack_size(16 * 1024 * 1024).spawn(move || {
-        for input in &inputs {
-            for (name, call) in TARGETS {
-                let started = Instant::now();
-                call(input);
-                let took = started.elapsed();
-                assert!(took < Duration::from_secs(30), "{name} took {took:?} for {} bytes starting with {:?}", input.len(), &input[..20]);
+    let worker = std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            for input in &inputs {
+                for (name, call) in TARGETS {
+                    let started = Instant::now();
+                    call(input);
+                    let took = started.elapsed();
+                    assert!(
+                        took < Duration::from_secs(30),
+                        "{name} took {took:?} for {} bytes starting with {:?}",
+                        input.len(),
+                        &input[..20]
+                    );
+                }
             }
-        }
-    });
-    worker.expect("the thread starts").join().expect("no function panics");
+        });
+    worker
+        .expect("the thread starts")
+        .join()
+        .expect("no function panics");
 }

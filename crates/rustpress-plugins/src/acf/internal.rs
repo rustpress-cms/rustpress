@@ -15,20 +15,33 @@ pub fn validated(post: &AcfPost, defaults: Value) -> Value {
         Value::Array(items) => items,
         _ => Vec::new(),
     };
-    let set = |raw: &mut Vec<(Key, Value)>, name: &str, value: Value| super::php::set(raw, name, value);
+    let set =
+        |raw: &mut Vec<(Key, Value)>, name: &str, value: Value| super::php::set(raw, name, value);
     set(&mut raw, "ID", Value::Int(post.id as i64));
     set(&mut raw, "title", super::php::string(&post.title));
     set(&mut raw, "key", super::php::string(&post.name));
     set(&mut raw, "menu_order", Value::Int(post.menu_order));
-    set(&mut raw, "active", Value::Bool(matches!(post.status.as_str(), "publish" | "auto-draft")));
+    set(
+        &mut raw,
+        "active",
+        Value::Bool(matches!(post.status.as_str(), "publish" | "auto-draft")),
+    );
     validated_value(&Value::Array(raw), defaults)
 }
 
 /// `validate_post()` of an item that is an array already (the defaults under it, the booleans converted).
 pub fn validated_value(raw: &Value, defaults: Value) -> Value {
-    let Value::Array(default_items) = &defaults else { return raw.clone() };
-    let boolean: Vec<Key> = default_items.iter().filter(|(_, v)| matches!(v, Value::Bool(_))).map(|(k, _)| k.clone()).collect();
-    let Value::Array(mut items) = parse_args(raw, defaults) else { unreachable!() };
+    let Value::Array(default_items) = &defaults else {
+        return raw.clone();
+    };
+    let boolean: Vec<Key> = default_items
+        .iter()
+        .filter(|(_, v)| matches!(v, Value::Bool(_)))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let Value::Array(mut items) = parse_args(raw, defaults) else {
+        unreachable!()
+    };
     for (k, v) in &mut items {
         if !boolean.iter().any(|b| key_eq(b, k)) {
             continue;
@@ -47,16 +60,50 @@ fn s(text: &str) -> Value {
 }
 
 fn arr(items: &[(&str, Value)]) -> Value {
-    Value::Array(items.iter().map(|(k, v)| (super::php::key(k), v.clone())).collect())
+    Value::Array(
+        items
+            .iter()
+            .map(|(k, v)| (super::php::key(k), v.clone()))
+            .collect(),
+    )
 }
 
 /// `ACF_Post_Type::get_settings_array()`.
 pub fn post_type_defaults() -> Value {
     let labels = [
-        "name", "singular_name", "menu_name", "all_items", "add_new", "add_new_item", "edit_item", "new_item", "view_item", "view_items", "search_items", "not_found", "not_found_in_trash",
-        "parent_item_colon", "archives", "attributes", "featured_image", "set_featured_image", "remove_featured_image", "use_featured_image", "insert_into_item", "uploaded_to_this_item",
-        "filter_items_list", "filter_by_date", "items_list_navigation", "items_list", "item_published", "item_published_privately", "item_reverted_to_draft", "item_scheduled", "item_updated",
-        "item_link", "item_link_description",
+        "name",
+        "singular_name",
+        "menu_name",
+        "all_items",
+        "add_new",
+        "add_new_item",
+        "edit_item",
+        "new_item",
+        "view_item",
+        "view_items",
+        "search_items",
+        "not_found",
+        "not_found_in_trash",
+        "parent_item_colon",
+        "archives",
+        "attributes",
+        "featured_image",
+        "set_featured_image",
+        "remove_featured_image",
+        "use_featured_image",
+        "insert_into_item",
+        "uploaded_to_this_item",
+        "filter_items_list",
+        "filter_by_date",
+        "items_list_navigation",
+        "items_list",
+        "item_published",
+        "item_published_privately",
+        "item_reverted_to_draft",
+        "item_scheduled",
+        "item_updated",
+        "item_link",
+        "item_link_description",
     ];
     let t = Value::Bool(true);
     let f = Value::Bool(false);
@@ -72,7 +119,10 @@ pub fn post_type_defaults() -> Value {
         ("import_date", s("")),
         ("allow_ai_access", f.clone()),
         ("ai_description", s("")),
-        ("labels", Value::Array(labels.iter().map(|l| (super::php::key(l), s(""))).collect())),
+        (
+            "labels",
+            Value::Array(labels.iter().map(|l| (super::php::key(l), s(""))).collect()),
+        ),
         ("description", s("")),
         ("public", t.clone()),
         ("hierarchical", f.clone()),
@@ -92,11 +142,29 @@ pub fn post_type_defaults() -> Value {
         ("rename_capabilities", f.clone()),
         ("singular_capability_name", s("post")),
         ("plural_capability_name", s("posts")),
-        ("supports", Value::Array(["title", "editor", "thumbnail", "custom-fields"].iter().enumerate().map(|(i, v)| (Key::Int(i as i64), s(v))).collect())),
+        (
+            "supports",
+            Value::Array(
+                ["title", "editor", "thumbnail", "custom-fields"]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (Key::Int(i as i64), s(v)))
+                    .collect(),
+            ),
+        ),
         ("taxonomies", Value::Array(Vec::new())),
         ("has_archive", f.clone()),
         ("has_archive_slug", s("")),
-        ("rewrite", arr(&[("permalink_rewrite", s("post_type_key")), ("slug", s("")), ("feeds", f.clone()), ("pages", t.clone()), ("with_front", t.clone())])),
+        (
+            "rewrite",
+            arr(&[
+                ("permalink_rewrite", s("post_type_key")),
+                ("slug", s("")),
+                ("feeds", f.clone()),
+                ("pages", t.clone()),
+                ("with_front", t.clone()),
+            ]),
+        ),
         ("query_var", s("post_type_key")),
         ("query_var_name", s("")),
         ("can_export", t),
@@ -109,9 +177,35 @@ pub fn post_type_defaults() -> Value {
 /// `ACF_Taxonomy::get_settings_array()`.
 pub fn taxonomy_defaults() -> Value {
     let labels = [
-        "singular_name", "name", "menu_name", "search_items", "popular_items", "all_items", "parent_item", "parent_item_colon", "name_field_description", "slug_field_description",
-        "parent_field_description", "desc_field_description", "edit_item", "view_item", "update_item", "add_new_item", "new_item_name", "separate_items_with_commas", "add_or_remove_items",
-        "choose_from_most_used", "not_found", "no_terms", "filter_by_item", "items_list_navigation", "items_list", "most_used", "back_to_items", "item_link", "item_link_description",
+        "singular_name",
+        "name",
+        "menu_name",
+        "search_items",
+        "popular_items",
+        "all_items",
+        "parent_item",
+        "parent_item_colon",
+        "name_field_description",
+        "slug_field_description",
+        "parent_field_description",
+        "desc_field_description",
+        "edit_item",
+        "view_item",
+        "update_item",
+        "add_new_item",
+        "new_item_name",
+        "separate_items_with_commas",
+        "add_or_remove_items",
+        "choose_from_most_used",
+        "not_found",
+        "no_terms",
+        "filter_by_item",
+        "items_list_navigation",
+        "items_list",
+        "most_used",
+        "back_to_items",
+        "item_link",
+        "item_link_description",
     ];
     let t = Value::Bool(true);
     let f = Value::Bool(false);
@@ -126,11 +220,19 @@ pub fn taxonomy_defaults() -> Value {
         ("advanced_configuration", Value::Int(0)),
         ("import_source", s("")),
         ("import_date", s("")),
-        ("labels", Value::Array(labels.iter().map(|l| (super::php::key(l), s(""))).collect())),
+        (
+            "labels",
+            Value::Array(labels.iter().map(|l| (super::php::key(l), s(""))).collect()),
+        ),
         ("description", s("")),
         (
             "capabilities",
-            arr(&[("manage_terms", s("manage_categories")), ("edit_terms", s("manage_categories")), ("delete_terms", s("manage_categories")), ("assign_terms", s("edit_posts"))]),
+            arr(&[
+                ("manage_terms", s("manage_categories")),
+                ("edit_terms", s("manage_categories")),
+                ("delete_terms", s("manage_categories")),
+                ("assign_terms", s("edit_posts")),
+            ]),
         ),
         ("public", t.clone()),
         ("publicly_queryable", t.clone()),
@@ -145,12 +247,25 @@ pub fn taxonomy_defaults() -> Value {
         ("show_tagcloud", t.clone()),
         ("show_in_quick_edit", t.clone()),
         ("show_admin_column", f.clone()),
-        ("rewrite", arr(&[("permalink_rewrite", s("taxonomy_key")), ("slug", s("")), ("with_front", t.clone()), ("rewrite_hierarchical", f.clone())])),
+        (
+            "rewrite",
+            arr(&[
+                ("permalink_rewrite", s("taxonomy_key")),
+                ("slug", s("")),
+                ("with_front", t.clone()),
+                ("rewrite_hierarchical", f.clone()),
+            ]),
+        ),
         ("query_var", s("taxonomy_key")),
         ("query_var_name", s("")),
         (
             "default_term",
-            arr(&[("default_term_enabled", f.clone()), ("default_term_name", s("")), ("default_term_slug", s("")), ("default_term_description", s(""))]),
+            arr(&[
+                ("default_term_enabled", f.clone()),
+                ("default_term_name", s("")),
+                ("default_term_slug", s("")),
+                ("default_term_description", s("")),
+            ]),
         ),
         ("sort", Value::Null),
         ("meta_box", s("default")),
@@ -167,7 +282,11 @@ struct Args(Vec<(Option<Lit>, Lit)>);
 
 impl Args {
     fn set(&mut self, name: &str, value: Lit) {
-        match self.0.iter_mut().find(|(k, _)| k.as_ref().and_then(Lit::as_str) == Some(name)) {
+        match self
+            .0
+            .iter_mut()
+            .find(|(k, _)| k.as_ref().and_then(Lit::as_str) == Some(name))
+        {
             Some(slot) => slot.1 = value,
             None => self.0.push((Some(Lit::Str(name.to_owned())), value)),
         }
@@ -195,7 +314,14 @@ fn labels(post: &Value, escape: bool) -> Option<Lit> {
                 Key::Str(s) => Lit::Str(String::from_utf8_lossy(s).into_owned()),
             };
             let text = strval(Some(v));
-            (Some(key), Lit::Str(if escape { rustpress_core::formatting::esc_html(&text) } else { text }))
+            (
+                Some(key),
+                Lit::Str(if escape {
+                    rustpress_core::formatting::esc_html(&text)
+                } else {
+                    text
+                }),
+            )
         })
         .collect();
     (!labels.is_empty()).then_some(Lit::Array(labels))
@@ -224,8 +350,14 @@ struct Rewrite {
 fn rewrite(post: &Value, key_default: &str, type_key: &str) -> Rewrite {
     let settings = to_array(get(post, "rewrite"));
     // `isset()`: a null counts as missing.
-    let find = |name: &str| settings.iter().find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)).map(|(_, v)| v);
-    let permalink_rewrite = find("permalink_rewrite").map_or_else(|| key_default.to_owned(), |v| strval(Some(v)));
+    let find = |name: &str| {
+        settings
+            .iter()
+            .find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null))
+            .map(|(_, v)| v)
+    };
+    let permalink_rewrite =
+        find("permalink_rewrite").map_or_else(|| key_default.to_owned(), |v| strval(Some(v)));
     let enabled = permalink_rewrite != "no_permalink";
     let mut args = Args::default();
     if let Some(slug) = find("slug")
@@ -241,7 +373,11 @@ fn rewrite(post: &Value, key_default: &str, type_key: &str) -> Rewrite {
     {
         args.set("with_front", Lit::Bool(false));
     }
-    Rewrite { enabled, args, settings }
+    Rewrite {
+        enabled,
+        args,
+        settings,
+    }
 }
 
 /// `query_var`: `custom_query_var` with its name, `none` for none, the key otherwise.
@@ -294,7 +430,10 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
         args.set("show_in_menu", Lit::Bool(show_in_menu));
     }
     if show_in_menu && truthy(get(post, "admin_menu_parent")) {
-        args.set("show_in_menu", Lit::Str(strval(get(post, "admin_menu_parent"))));
+        args.set(
+            "show_in_menu",
+            Lit::Str(strval(get(post, "admin_menu_parent"))),
+        );
     }
     let show_in_nav_menus = boolval(get(post, "show_in_nav_menus"));
     if show_in_nav_menus != public {
@@ -304,14 +443,20 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
     if show_in_admin_bar != show_in_menu {
         args.set("show_in_admin_bar", Lit::Bool(show_in_admin_bar));
     }
-    args.set("show_in_rest", Lit::Bool(boolval(get(post, "show_in_rest"))));
+    args.set(
+        "show_in_rest",
+        Lit::Bool(boolval(get(post, "show_in_rest"))),
+    );
     let rest_base = strval(get(post, "rest_base"));
     if !rest_base.is_empty() && rest_base != "0" && rest_base != strval(get(post, "post_type")) {
         args.set("rest_base", Lit::Str(rest_base));
     }
     let rest_namespace = strval(get(post, "rest_namespace"));
     if !rest_namespace.is_empty() && rest_namespace != "0" && rest_namespace != "wp/v2" {
-        args.set("rest_namespace", get(post, "rest_namespace").map_or(Lit::Null, to_lit));
+        args.set(
+            "rest_namespace",
+            get(post, "rest_namespace").map_or(Lit::Null, to_lit),
+        );
     }
     let controller = strval(get(post, "rest_controller_class"));
     if !controller.is_empty() && controller != "0" && controller != "WP_REST_Posts_Controller" {
@@ -324,7 +469,10 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
     args.set("menu_icon", Lit::Str("dashicons-admin-post".to_owned()));
     if truthy(get(post, "menu_icon")) {
         match get(post, "menu_icon") {
-            Some(Value::Str(icon)) => args.set("menu_icon", Lit::Str(String::from_utf8_lossy(icon).into_owned())),
+            Some(Value::Str(icon)) => args.set(
+                "menu_icon",
+                Lit::Str(String::from_utf8_lossy(icon).into_owned()),
+            ),
             Some(icon @ Value::Array(_)) => {
                 if strval(icon.get("type")) == "media_library" {
                     args.set("menu_icon", Lit::Unknown);
@@ -340,7 +488,10 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
         let plural = strval(get(post, "plural_capability_name"));
         let empty = |s: &str| s.is_empty() || s == "0";
         let capability_type = if !empty(&singular) && !empty(&plural) {
-            Some(Lit::Array(vec![(Some(Lit::Int(0)), Lit::Str(singular.clone())), (Some(Lit::Int(1)), Lit::Str(plural.clone()))]))
+            Some(Lit::Array(vec![
+                (Some(Lit::Int(0)), Lit::Str(singular.clone())),
+                (Some(Lit::Int(1)), Lit::Str(plural.clone())),
+            ]))
         } else if !empty(&singular) {
             Some(Lit::Str(singular.clone()))
         } else {
@@ -369,26 +520,61 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
     let mut supports_lit: Vec<(Option<Lit>, Lit)> = Vec::new();
     if supports.iter().any(|f| f == "notes") && supports.iter().any(|f| f == "editor") {
         supports.retain(|f| f != "notes" && f != "editor");
-        supports_lit.extend(supports.iter().enumerate().map(|(i, f)| (Some(Lit::Int(i as i64)), Lit::Str(f.clone()))));
-        supports_lit.push((Some(key_name("editor")), Lit::Array(vec![(Some(key_name("notes")), Lit::Bool(true))])));
+        supports_lit.extend(
+            supports
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (Some(Lit::Int(i as i64)), Lit::Str(f.clone()))),
+        );
+        supports_lit.push((
+            Some(key_name("editor")),
+            Lit::Array(vec![(Some(key_name("notes")), Lit::Bool(true))]),
+        ));
     } else {
-        supports_lit.extend(supports.iter().enumerate().map(|(i, f)| (Some(Lit::Int(i as i64)), Lit::Str(f.clone()))));
+        supports_lit.extend(
+            supports
+                .iter()
+                .enumerate()
+                .map(|(i, f)| (Some(Lit::Int(i as i64)), Lit::Str(f.clone()))),
+        );
     }
-    args.set("supports", if supports_lit.is_empty() { Lit::Bool(false) } else { Lit::Array(supports_lit) });
+    args.set(
+        "supports",
+        if supports_lit.is_empty() {
+            Lit::Bool(false)
+        } else {
+            Lit::Array(supports_lit)
+        },
+    );
     if truthy(get(post, "register_meta_box_cb")) {
         args.set("register_meta_box_cb", Lit::Unknown);
     }
-    let taxonomies: Vec<(Key, Value)> = to_array(get(post, "taxonomies")).into_iter().filter(|(_, v)| truthy(Some(v))).collect();
+    let taxonomies: Vec<(Key, Value)> = to_array(get(post, "taxonomies"))
+        .into_iter()
+        .filter(|(_, v)| truthy(Some(v)))
+        .collect();
     if !taxonomies.is_empty() {
         args.set("taxonomies", to_lit(&Value::Array(taxonomies)));
     }
     let has_archive = boolval(get(post, "has_archive"));
     if has_archive {
         let slug = strval(get(post, "has_archive_slug"));
-        args.set("has_archive", if !slug.is_empty() && slug != "0" { Lit::Str(slug) } else { Lit::Bool(true) });
+        args.set(
+            "has_archive",
+            if !slug.is_empty() && slug != "0" {
+                Lit::Str(slug)
+            } else {
+                Lit::Bool(true)
+            },
+        );
     }
     let mut rw = rewrite(post, "post_type_key", "post_type");
-    let find = |name: &str| rw.settings.iter().find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)).map(|(_, v)| v.clone());
+    let find = |name: &str| {
+        rw.settings
+            .iter()
+            .find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null))
+            .map(|(_, v)| v.clone())
+    };
     if let Some(feeds) = find("feeds")
         && truthy(Some(&feeds)) != has_archive
         && rw.enabled
@@ -410,7 +596,10 @@ pub fn post_type_args_with(post: &Value, escape_labels: bool) -> Lit {
     if !boolval(get(post, "can_export")) {
         args.set("can_export", Lit::Bool(false));
     }
-    args.set("delete_with_user", Lit::Bool(boolval(get(post, "delete_with_user"))));
+    args.set(
+        "delete_with_user",
+        Lit::Bool(boolval(get(post, "delete_with_user"))),
+    );
     Lit::Array(args.0)
 }
 
@@ -450,14 +639,20 @@ pub fn taxonomy_args_with(post: &Value, escape_labels: bool) -> Lit {
     if show_in_nav_menus != public {
         args.set("show_in_nav_menus", Lit::Bool(show_in_nav_menus));
     }
-    args.set("show_in_rest", Lit::Bool(boolval(get(post, "show_in_rest"))));
+    args.set(
+        "show_in_rest",
+        Lit::Bool(boolval(get(post, "show_in_rest"))),
+    );
     let rest_base = strval(get(post, "rest_base"));
     if !rest_base.is_empty() && rest_base != "0" && rest_base != strval(get(post, "taxonomy")) {
         args.set("rest_base", Lit::Str(rest_base));
     }
     let rest_namespace = strval(get(post, "rest_namespace"));
     if !rest_namespace.is_empty() && rest_namespace != "0" && rest_namespace != "wp/v2" {
-        args.set("rest_namespace", get(post, "rest_namespace").map_or(Lit::Null, to_lit));
+        args.set(
+            "rest_namespace",
+            get(post, "rest_namespace").map_or(Lit::Null, to_lit),
+        );
     }
     let controller = strval(get(post, "rest_controller_class"));
     if !controller.is_empty() && controller != "0" && controller != "WP_REST_Terms_Controller" {
@@ -476,7 +671,12 @@ pub fn taxonomy_args_with(post: &Value, escape_labels: bool) -> Lit {
     }
     let mut capabilities = Args::default();
     let caps = get(post, "capabilities");
-    for (cap, default) in [("manage_terms", "manage_categories"), ("edit_terms", "manage_categories"), ("delete_terms", "manage_categories"), ("assign_terms", "edit_posts")] {
+    for (cap, default) in [
+        ("manage_terms", "manage_categories"),
+        ("edit_terms", "manage_categories"),
+        ("delete_terms", "manage_categories"),
+        ("assign_terms", "edit_posts"),
+    ] {
         let value = caps.and_then(|c| c.get(cap));
         if truthy(value) && strval(value) != default {
             capabilities.set(cap, Lit::Str(strval(value)));
@@ -489,13 +689,19 @@ pub fn taxonomy_args_with(post: &Value, escape_labels: bool) -> Lit {
     if meta_box == "custom" && truthy(get(post, "meta_box_cb")) {
         args.set("meta_box_cb", Lit::Unknown);
         if truthy(get(post, "meta_box_sanitize_cb")) {
-            args.set("meta_box_sanitize_cb", Lit::Str(strval(get(post, "meta_box_sanitize_cb"))));
+            args.set(
+                "meta_box_sanitize_cb",
+                Lit::Str(strval(get(post, "meta_box_sanitize_cb"))),
+            );
         }
     } else if meta_box == "disabled" {
         args.set("meta_box_cb", Lit::Bool(false));
     }
     let mut rw = rewrite(post, "taxonomy_key", "taxonomy");
-    if let Some((_, hierarchical)) = rw.settings.iter().find(|(k, _)| key_eq(k, &super::php::key("rewrite_hierarchical")))
+    if let Some((_, hierarchical)) = rw
+        .settings
+        .iter()
+        .find(|(k, _)| key_eq(k, &super::php::key("rewrite_hierarchical")))
         && truthy(Some(hierarchical))
         && rw.enabled
     {
@@ -508,10 +714,19 @@ pub fn taxonomy_args_with(post: &Value, escape_labels: bool) -> Lit {
     }
     query_var(post, "taxonomy", &mut args);
     let default_term = to_array(get(post, "default_term"));
-    let find = |name: &str| default_term.iter().find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null)).map(|(_, v)| v);
+    let find = |name: &str| {
+        default_term
+            .iter()
+            .find(|(k, v)| key_eq(k, &super::php::key(name)) && !matches!(v, Value::Null))
+            .map(|(_, v)| v)
+    };
     if truthy(find("default_term_enabled")) {
         let mut term = Args::default();
-        for (from, to) in [("default_term_name", "name"), ("default_term_slug", "slug"), ("default_term_description", "description")] {
+        for (from, to) in [
+            ("default_term_name", "name"),
+            ("default_term_slug", "slug"),
+            ("default_term_description", "description"),
+        ] {
             if truthy(find(from)) {
                 term.set(to, Lit::Str(strval(find(from))));
             }
@@ -532,30 +747,78 @@ pub fn registrations(post_types: &[AcfPost], taxonomies: &[AcfPost]) -> Vec<Regi
     for post in taxonomies {
         let post = validated(post, taxonomy_defaults());
         let name = strval(post.get("taxonomy"));
-        if !truthy(post.get("active")) || name.is_empty() || is_builtin_taxonomy(&name) || out.iter().any(|r| r.taxonomy && r.name == name) {
+        if !truthy(post.get("active"))
+            || name.is_empty()
+            || is_builtin_taxonomy(&name)
+            || out.iter().any(|r| r.taxonomy && r.name == name)
+        {
             continue;
         }
-        let object_types = to_array(post.get("object_type")).iter().map(|(_, v)| strval(Some(v))).collect();
-        out.push(Registration { name, taxonomy: true, args: taxonomy_args(&post), object_types, priority: 5 });
+        let object_types = to_array(post.get("object_type"))
+            .iter()
+            .map(|(_, v)| strval(Some(v)))
+            .collect();
+        out.push(Registration {
+            name,
+            taxonomy: true,
+            args: taxonomy_args(&post),
+            object_types,
+            priority: 5,
+        });
     }
     for post in post_types {
         let post = validated(post, post_type_defaults());
         let name = strval(post.get("post_type"));
-        if !truthy(post.get("active")) || name.is_empty() || is_builtin_post_type(&name) || out.iter().any(|r| !r.taxonomy && r.name == name) {
+        if !truthy(post.get("active"))
+            || name.is_empty()
+            || is_builtin_post_type(&name)
+            || out.iter().any(|r| !r.taxonomy && r.name == name)
+        {
             continue;
         }
-        out.push(Registration { name, taxonomy: false, args: post_type_args(&post), object_types: Vec::new(), priority: 5 });
+        out.push(Registration {
+            name,
+            taxonomy: false,
+            args: post_type_args(&post),
+            object_types: Vec::new(),
+            priority: 5,
+        });
     }
     out
 }
 
 fn is_builtin_post_type(name: &str) -> bool {
-    matches!(name, "post" | "page" | "attachment" | "revision" | "nav_menu_item" | "custom_css" | "customize_changeset" | "oembed_cache" | "user_request" | "acf-field-group" | "acf-field" | "acf-post-type" | "acf-taxonomy" | "acf-ui-options-page")
-        || name.starts_with("wp_")
+    matches!(
+        name,
+        "post"
+            | "page"
+            | "attachment"
+            | "revision"
+            | "nav_menu_item"
+            | "custom_css"
+            | "customize_changeset"
+            | "oembed_cache"
+            | "user_request"
+            | "acf-field-group"
+            | "acf-field"
+            | "acf-post-type"
+            | "acf-taxonomy"
+            | "acf-ui-options-page"
+    ) || name.starts_with("wp_")
 }
 
 fn is_builtin_taxonomy(name: &str) -> bool {
-    matches!(name, "category" | "post_tag" | "nav_menu" | "link_category" | "post_format" | "wp_theme" | "wp_template_part_area" | "wp_pattern_category")
+    matches!(
+        name,
+        "category"
+            | "post_tag"
+            | "nav_menu"
+            | "link_category"
+            | "post_format"
+            | "wp_theme"
+            | "wp_template_part_area"
+            | "wp_pattern_category"
+    )
 }
 
 #[cfg(test)]
@@ -563,7 +826,14 @@ mod tests {
     use super::*;
 
     fn post(content: &str) -> AcfPost {
-        AcfPost { id: 7, title: "Books".into(), name: "post_type_x".into(), status: "publish".into(), content: content.into(), ..Default::default() }
+        AcfPost {
+            id: 7,
+            title: "Books".into(),
+            name: "post_type_x".into(),
+            status: "publish".into(),
+            content: content.into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -572,13 +842,31 @@ mod tests {
         let regs = registrations(&[post(stored)], &[]);
         let args = &regs[0].args;
         assert_eq!(regs[0].name, "rp_book");
-        assert_eq!(args.get("labels").and_then(|l| l.get("menu_name")).and_then(Lit::as_str), Some("Books &amp; More"));
+        assert_eq!(
+            args.get("labels")
+                .and_then(|l| l.get("menu_name"))
+                .and_then(Lit::as_str),
+            Some("Books &amp; More")
+        );
         assert_eq!(args.get("has_archive"), Some(&Lit::Bool(true)));
-        assert_eq!(args.get("rewrite").and_then(|r| r.get("slug")).and_then(Lit::as_str), Some("buecher"));
+        assert_eq!(
+            args.get("rewrite")
+                .and_then(|r| r.get("slug"))
+                .and_then(Lit::as_str),
+            Some("buecher")
+        );
         assert_eq!(args.get("rewrite").and_then(|r| r.get("feeds")), None);
         assert_eq!(args.get("rest_base").and_then(Lit::as_str), Some("books"));
         assert_eq!(args.get("hierarchical"), Some(&Lit::Bool(true)));
-        assert_eq!(args.get("supports").map(Lit::strings), Some(vec!["title".to_owned(), "editor".to_owned(), "thumbnail".to_owned(), "custom-fields".to_owned()]));
+        assert_eq!(
+            args.get("supports").map(Lit::strings),
+            Some(vec![
+                "title".to_owned(),
+                "editor".to_owned(),
+                "thumbnail".to_owned(),
+                "custom-fields".to_owned()
+            ])
+        );
     }
 
     #[test]

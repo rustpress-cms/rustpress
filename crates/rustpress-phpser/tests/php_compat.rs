@@ -45,13 +45,25 @@ const CASES: &[&str] = &[
 
 fn php() -> Option<String> {
     let bin = std::env::var("PHP_BIN").unwrap_or_else(|_| "php".into());
-    Command::new(&bin).arg("-v").output().ok().filter(|o| o.status.success()).map(|_| bin)
+    Command::new(&bin)
+        .arg("-v")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|_| bin)
 }
 
 fn php_serialize(bin: &str, expr: &str) -> Vec<u8> {
     let code = format!("fwrite(STDOUT, serialize({expr}));");
-    let out = Command::new(bin).args(["-d", "serialize_precision=-1", "-r", &code]).output().unwrap();
-    assert!(out.status.success(), "php failed for {expr}: {}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new(bin)
+        .args(["-d", "serialize_precision=-1", "-r", &code])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "php failed for {expr}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     out.stdout
 }
 
@@ -59,7 +71,10 @@ fn php_serialize(bin: &str, expr: &str) -> Vec<u8> {
 fn php_output_round_trips_byte_exact() {
     let Some(bin) = php() else {
         eprintln!("php not found, skipping compatibility test");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
     for expr in CASES {
@@ -71,7 +86,10 @@ fn php_output_round_trips_byte_exact() {
                 "round trip differs for `{expr}`: {}",
                 String::from_utf8_lossy(&expected)
             ),
-            Err(e) => panic!("cannot parse PHP output for `{expr}`: {e}\n{}", String::from_utf8_lossy(&expected)),
+            Err(e) => panic!(
+                "cannot parse PHP output for `{expr}`: {e}\n{}",
+                String::from_utf8_lossy(&expected)
+            ),
         }
     }
 }

@@ -35,7 +35,12 @@ pub struct AttachmentQuery {
 
 fn search_terms(query: &AttachmentQuery) -> Vec<&str> {
     if query.search_terms.is_empty() {
-        query.search.as_deref().filter(|s| !s.is_empty()).into_iter().collect()
+        query
+            .search
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .into_iter()
+            .collect()
     } else {
         query.search_terms.iter().map(String::as_str).collect()
     }
@@ -43,20 +48,31 @@ fn search_terms(query: &AttachmentQuery) -> Vec<&str> {
 
 /// `%term%` with the wildcards of LIKE escaped.
 fn like_pattern(term: &str) -> String {
-    format!("%{}%", term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
+    format!(
+        "%{}%",
+        term.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    )
 }
 
 /// `WP_Query::parse_search_order()`, followed by a comma.
 fn push_search_order(qb: &mut QueryBuilder<MySql>, query: &AttachmentQuery) {
     let terms = search_terms(query);
-    let [first, rest @ ..] = terms.as_slice() else { return };
+    let [first, rest @ ..] = terms.as_slice() else {
+        return;
+    };
     if rest.is_empty() {
-        qb.push("p.post_title LIKE ").push_bind(like_pattern(first)).push(" DESC, ");
+        qb.push("p.post_title LIKE ")
+            .push_bind(like_pattern(first))
+            .push(" DESC, ");
         return;
     }
     // Negative terms are not ported, as in the search itself: the whole string always counts.
     let phrase = like_pattern(query.search.as_deref().unwrap_or_default());
-    qb.push("(CASE WHEN p.post_title LIKE ").push_bind(phrase.clone()).push(" THEN 1 ");
+    qb.push("(CASE WHEN p.post_title LIKE ")
+        .push_bind(phrase.clone())
+        .push(" THEN 1 ");
     if terms.len() < 7 {
         for (joiner, rank) in [(" AND ", 2), (" OR ", 3)] {
             qb.push("WHEN ");
@@ -69,13 +85,20 @@ fn push_search_order(qb: &mut QueryBuilder<MySql>, query: &AttachmentQuery) {
             qb.push(format!(" THEN {rank} "));
         }
     }
-    qb.push("WHEN p.post_excerpt LIKE ").push_bind(phrase.clone()).push(" THEN 4 ");
-    qb.push("WHEN p.post_content LIKE ").push_bind(phrase).push(" THEN 5 ELSE 6 END), ");
+    qb.push("WHEN p.post_excerpt LIKE ")
+        .push_bind(phrase.clone())
+        .push(" THEN 4 ");
+    qb.push("WHEN p.post_content LIKE ")
+        .push_bind(phrase)
+        .push(" THEN 5 ELSE 6 END), ");
 }
 
 impl Db {
     fn push_attachment_filters(&self, qb: &mut QueryBuilder<MySql>, query: &AttachmentQuery) {
-        qb.push(format!(" FROM {} p WHERE p.post_type = 'attachment'", self.prefix.table("posts")));
+        qb.push(format!(
+            " FROM {} p WHERE p.post_type = 'attachment'",
+            self.prefix.table("posts")
+        ));
         match query.status.as_deref() {
             Some("trash") => {
                 qb.push(" AND p.post_status = 'trash'");
@@ -87,16 +110,26 @@ impl Db {
                 qb.push(" AND p.post_status IN ('inherit', 'private')");
             }
         }
-        if let Some(mime) = query.mime.as_deref().filter(|m| !m.is_empty() && *m != "all") {
+        if let Some(mime) = query
+            .mime
+            .as_deref()
+            .filter(|m| !m.is_empty() && *m != "all")
+        {
             qb.push(" AND (");
-            for (index, part) in mime.split(',').map(str::trim).filter(|p| !p.is_empty()).enumerate() {
+            for (index, part) in mime
+                .split(',')
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .enumerate()
+            {
                 if index > 0 {
                     qb.push(" OR ");
                 }
                 if part.contains('/') {
                     qb.push("p.post_mime_type = ").push_bind(part.to_owned());
                 } else {
-                    qb.push("p.post_mime_type LIKE ").push_bind(format!("{part}/%"));
+                    qb.push("p.post_mime_type LIKE ")
+                        .push_bind(format!("{part}/%"));
                 }
             }
             qb.push(")");
@@ -114,7 +147,8 @@ impl Db {
             qb.push(" AND YEAR(p.post_date) = ").push_bind(year as i64);
         }
         if let Some(month) = query.month {
-            qb.push(" AND MONTH(p.post_date) = ").push_bind(month as i64);
+            qb.push(" AND MONTH(p.post_date) = ")
+                .push_bind(month as i64);
         }
         if let Some(parent) = query.parent {
             qb.push(" AND p.post_parent = ").push_bind(parent);
@@ -162,7 +196,10 @@ impl Db {
         }
         qb.push(format!("{column} {direction}, p.ID {direction}"));
         if query.limit > 0 {
-            qb.push(" LIMIT ").push_bind(query.limit as i64).push(" OFFSET ").push_bind(query.offset as i64);
+            qb.push(" LIMIT ")
+                .push_bind(query.limit as i64)
+                .push(" OFFSET ")
+                .push_bind(query.offset as i64);
         }
         let posts: Vec<Post> = qb.build_query_as().fetch_all(&self.pool).await?;
         Ok((posts, total as u64))
@@ -170,8 +207,14 @@ impl Db {
 
     /// `update_gallery_tab()`: the files attached to a post, those in the trash aside.
     pub async fn count_attached(&self, post_id: u64) -> Result<u64> {
-        let sql = format!("SELECT COUNT(*) FROM {} WHERE post_type = 'attachment' AND post_status != 'trash' AND post_parent = ?", self.prefix.table("posts"));
-        let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_id).fetch_one(&self.pool).await?;
+        let sql = format!(
+            "SELECT COUNT(*) FROM {} WHERE post_type = 'attachment' AND post_status != 'trash' AND post_parent = ?",
+            self.prefix.table("posts")
+        );
+        let count: i64 = sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(post_id)
+            .fetch_one(&self.pool)
+            .await?;
         Ok(count as u64)
     }
 
@@ -182,7 +225,10 @@ impl Db {
             "SELECT {POST_COLUMNS} FROM {} p WHERE p.post_type = 'attachment' AND p.post_parent = ? AND p.post_status NOT IN ('trash', 'auto-draft') ORDER BY p.menu_order DESC, p.ID DESC",
             self.prefix.table("posts")
         );
-        Ok(sqlx::query_as(AssertSqlSafe(sql)).bind(post_id).fetch_all(&self.pool).await?)
+        Ok(sqlx::query_as(AssertSqlSafe(sql))
+            .bind(post_id)
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     /// `_wp_delete_orphaned_draft_menu_items()`: menu items added but never saved, older than `before`.
@@ -192,19 +238,40 @@ impl Db {
             self.prefix.table("posts"),
             self.prefix.table("postmeta")
         );
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).bind(before).fetch_all(&self.pool).await?)
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(before)
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     /// The quick search of the menu editor: `search_columns` is only the title, published posts only.
-    pub async fn posts_by_title(&self, post_type: &str, terms: &[String], order_by: crate::OrderBy, order: crate::Order, limit: u64) -> Result<Vec<Post>> {
-        let mut qb = QueryBuilder::<MySql>::new(format!("SELECT {POST_COLUMNS} FROM {} p WHERE p.post_type = ", self.prefix.table("posts")));
-        qb.push_bind(post_type.to_owned()).push(" AND p.post_status = 'publish'");
+    pub async fn posts_by_title(
+        &self,
+        post_type: &str,
+        terms: &[String],
+        order_by: crate::OrderBy,
+        order: crate::Order,
+        limit: u64,
+    ) -> Result<Vec<Post>> {
+        let mut qb = QueryBuilder::<MySql>::new(format!(
+            "SELECT {POST_COLUMNS} FROM {} p WHERE p.post_type = ",
+            self.prefix.table("posts")
+        ));
+        qb.push_bind(post_type.to_owned())
+            .push(" AND p.post_status = 'publish'");
         for term in terms {
-            qb.push(" AND p.post_title LIKE ").push_bind(like_pattern(term));
+            qb.push(" AND p.post_title LIKE ")
+                .push_bind(like_pattern(term));
         }
-        let direction = if order == crate::Order::Asc { "ASC" } else { "DESC" };
+        let direction = if order == crate::Order::Asc {
+            "ASC"
+        } else {
+            "DESC"
+        };
         if order_by == crate::OrderBy::MenuOrderTitle {
-            qb.push(format!(" ORDER BY p.menu_order {direction}, p.post_title {direction}"));
+            qb.push(format!(
+                " ORDER BY p.menu_order {direction}, p.post_title {direction}"
+            ));
         } else {
             qb.push(format!(" ORDER BY p.post_date {direction}"));
         }
@@ -214,26 +281,46 @@ impl Db {
 
     /// `get_available_post_mime_types( 'attachment' )`.
     pub async fn attachment_mime_types(&self) -> Result<Vec<String>> {
-        let sql = format!("SELECT DISTINCT post_mime_type FROM {} WHERE post_type = 'attachment'", self.prefix.table("posts"));
-        Ok(sqlx::query_scalar(AssertSqlSafe(sql)).fetch_all(&self.pool).await?)
+        let sql = format!(
+            "SELECT DISTINCT post_mime_type FROM {} WHERE post_type = 'attachment'",
+            self.prefix.table("posts")
+        );
+        Ok(sqlx::query_scalar(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     /// `(post_mime_type, count)` of every attachment, for the type filter and the "Unattached" counts.
     pub async fn attachment_mime_counts(&self) -> Result<Vec<(String, u64)>> {
-        let sql = format!("SELECT post_mime_type, COUNT(*) FROM {} WHERE post_type = 'attachment' AND post_status IN ('inherit', 'private') GROUP BY post_mime_type", self.prefix.table("posts"));
-        let rows: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
+        let sql = format!(
+            "SELECT post_mime_type, COUNT(*) FROM {} WHERE post_type = 'attachment' AND post_status IN ('inherit', 'private') GROUP BY post_mime_type",
+            self.prefix.table("posts")
+        );
+        let rows: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(|(m, n)| (m, n as u64)).collect())
     }
 
     pub async fn attachment_unattached_count(&self) -> Result<u64> {
-        let sql = format!("SELECT COUNT(*) FROM {} p WHERE p.post_type = 'attachment' AND p.post_status IN ('inherit', 'private') AND p.post_parent = 0", self.prefix.table("posts"));
-        let n: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).fetch_one(&self.pool).await?;
+        let sql = format!(
+            "SELECT COUNT(*) FROM {} p WHERE p.post_type = 'attachment' AND p.post_status IN ('inherit', 'private') AND p.post_parent = 0",
+            self.prefix.table("posts")
+        );
+        let n: i64 = sqlx::query_scalar(AssertSqlSafe(sql))
+            .fetch_one(&self.pool)
+            .await?;
         Ok(n as u64)
     }
 
     pub async fn attachment_trash_count(&self) -> Result<u64> {
-        let sql = format!("SELECT COUNT(*) FROM {} p WHERE p.post_type = 'attachment' AND p.post_status = 'trash'", self.prefix.table("posts"));
-        let n: i64 = sqlx::query_scalar(AssertSqlSafe(sql)).fetch_one(&self.pool).await?;
+        let sql = format!(
+            "SELECT COUNT(*) FROM {} p WHERE p.post_type = 'attachment' AND p.post_status = 'trash'",
+            self.prefix.table("posts")
+        );
+        let n: i64 = sqlx::query_scalar(AssertSqlSafe(sql))
+            .fetch_one(&self.pool)
+            .await?;
         Ok(n as u64)
     }
 
@@ -243,7 +330,9 @@ impl Db {
             "SELECT DISTINCT YEAR(post_date) AS y, MONTH(post_date) AS m FROM {} WHERE post_type = 'attachment' AND post_status IN ('inherit', 'private') ORDER BY post_date DESC",
             self.prefix.table("posts")
         );
-        let rows: Vec<(i32, i32)> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
+        let rows: Vec<(i32, i32)> = sqlx::query_as(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows)
     }
 }

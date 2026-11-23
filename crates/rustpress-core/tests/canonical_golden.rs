@@ -12,13 +12,24 @@ const EXPECTED: &str = include_str!("fixtures/canonical_expected.tsv");
 
 #[tokio::test]
 async fn canonical_redirects_match_wordpress() {
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let Ok(db) = Db::connect(&url, "wp_").await else {
         eprintln!("reference DB not available, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
-    let site = Site::load_at(db, std::path::Path::new(&std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()))).await.unwrap();
+    let site = Site::load_at(
+        db,
+        std::path::Path::new(
+            &std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()),
+        ),
+    )
+    .await
+    .unwrap();
 
     let mut problems = Vec::new();
     let mut total = 0;
@@ -27,11 +38,20 @@ async fn canonical_redirects_match_wordpress() {
         total += 1;
         let (path, query) = url.split_once('?').unwrap_or((url, ""));
         let result = site.query(path, query).await.unwrap();
-        let ours = site.canonical_redirect(path, query, &result).await.unwrap().unwrap_or_default();
+        let ours = site
+            .canonical_redirect(path, query, &result)
+            .await
+            .unwrap()
+            .unwrap_or_default();
         if ours != expected {
             problems.push(format!("{url}\n    wp:   {expected:?}\n    ours: {ours:?}"));
         }
     }
     assert!(total > 100, "fixture looks truncated");
-    assert!(problems.is_empty(), "{} of {total} URLs differ:\n{}", problems.len(), problems.join("\n"));
+    assert!(
+        problems.is_empty(),
+        "{} of {total} URLs differ:\n{}",
+        problems.len(),
+        problems.join("\n")
+    );
 }

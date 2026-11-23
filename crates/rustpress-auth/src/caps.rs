@@ -49,7 +49,12 @@ impl Roles {
         {
             for (key, role) in items {
                 if let rustpress_phpser::Key::Str(name) = key {
-                    roles.insert(String::from_utf8_lossy(name).into_owned(), role.get("capabilities").map(capability_map).unwrap_or_default());
+                    roles.insert(
+                        String::from_utf8_lossy(name).into_owned(),
+                        role.get("capabilities")
+                            .map(capability_map)
+                            .unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -86,16 +91,32 @@ pub struct CurrentUser {
 impl CurrentUser {
     /// The user background jobs run as (`wp-cron.php` has no current user; every check passes).
     pub fn system() -> Self {
-        Self { id: 0, login: String::new(), display_name: String::new(), email: String::new(), roles: Vec::new(), allcaps: HashMap::new(), system: true, site_caps: SiteCaps::default() }
+        Self {
+            id: 0,
+            login: String::new(),
+            display_name: String::new(),
+            email: String::new(),
+            roles: Vec::new(),
+            allcaps: HashMap::new(),
+            system: true,
+            site_caps: SiteCaps::default(),
+        }
     }
 
     /// Nobody signed in (ID 0): every check fails.
     pub fn nobody() -> Self {
-        Self { system: false, ..Self::system() }
+        Self {
+            system: false,
+            ..Self::system()
+        }
     }
 
     /// Loads the capabilities of `user`.
-    pub async fn load(db: &Db, site_roles: &Roles, user: &AuthUser) -> Result<Self, rustpress_db::Error> {
+    pub async fn load(
+        db: &Db,
+        site_roles: &Roles,
+        user: &AuthUser,
+    ) -> Result<Self, rustpress_db::Error> {
         let key = format!("{}capabilities", db.table_prefix());
         let stored = match db.user_meta(user.id, &key).await? {
             Some(raw) => rustpress_phpser::unserialize(raw.as_bytes()).unwrap_or(Value::Null),
@@ -123,15 +144,37 @@ impl CurrentUser {
         for (cap, granted) in caps {
             allcaps.insert(cap, granted);
         }
-        let options = db.options_named(&["wp_page_for_privacy_policy", "page_on_front", "page_for_posts", "link_manager_enabled"]).await?;
-        let number = |name: &str| options.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.trim().parse::<u64>().ok()).unwrap_or(0);
+        let options = db
+            .options_named(&[
+                "wp_page_for_privacy_policy",
+                "page_on_front",
+                "page_for_posts",
+                "link_manager_enabled",
+            ])
+            .await?;
+        let number = |name: &str| {
+            options
+                .iter()
+                .find(|(n, _)| n == name)
+                .and_then(|(_, v)| v.trim().parse::<u64>().ok())
+                .unwrap_or(0)
+        };
         let site_caps = SiteCaps {
             privacy_page: number("wp_page_for_privacy_policy"),
             page_on_front: number("page_on_front"),
             page_for_posts: number("page_for_posts"),
             link_manager_enabled: number("link_manager_enabled") != 0,
         };
-        Ok(Self { id: user.id, login: user.user_login.clone(), display_name: user.display_name.clone(), email: user.user_email.clone(), roles, allcaps, system: false, site_caps })
+        Ok(Self {
+            id: user.id,
+            login: user.user_login.clone(),
+            display_name: user.display_name.clone(),
+            email: user.user_email.clone(),
+            roles,
+            allcaps,
+            system: false,
+            site_caps,
+        })
     }
 
     /// `current_user_can( $cap )` for a primitive capability.
@@ -144,12 +187,19 @@ impl CurrentUser {
         }
         // `map_meta_cap()`: capabilities without a post or user in question that stand for another one.
         let capability = match capability {
-            "manage_privacy_options" | "view_site_health_checks" | "export_others_personal_data" | "erase_others_personal_data" => "manage_options",
+            "manage_privacy_options"
+            | "view_site_health_checks"
+            | "export_others_personal_data"
+            | "erase_others_personal_data" => "manage_options",
             "setup_network" => "manage_options",
             "customize" => "edit_theme_options",
             // `install_languages`, which `wp_maybe_grant_install_languages_cap()` grants to those who may update the
             // core or install plugins or themes.
-            "install_languages" | "update_languages" => return ["update_core", "install_plugins", "install_themes"].iter().any(|c| self.allcaps.get(*c).copied().unwrap_or(false)),
+            "install_languages" | "update_languages" => {
+                return ["update_core", "install_plugins", "install_themes"]
+                    .iter()
+                    .any(|c| self.allcaps.get(*c).copied().unwrap_or(false));
+            }
             // Without the link manager switched on nobody manages links.
             "manage_links" if !self.site_caps.link_manager_enabled => return false,
             other => other,
@@ -169,7 +219,9 @@ mod tests {
 
     fn roles() -> Roles {
         // a:2:{s:13:"administrator";a:2:{s:4:"name";s:13:"Administrator";s:12:"capabilities";a:2:{s:14:"manage_options";b:1;s:4:"read";b:1;}}s:10:"subscriber";a:2:{s:4:"name";s:10:"Subscriber";s:12:"capabilities";a:1:{s:4:"read";b:1;}}}
-        Roles::from_option(r#"a:2:{s:13:"administrator";a:2:{s:4:"name";s:13:"Administrator";s:12:"capabilities";a:2:{s:14:"manage_options";b:1;s:4:"read";b:1;}}s:10:"subscriber";a:2:{s:4:"name";s:10:"Subscriber";s:12:"capabilities";a:1:{s:4:"read";b:1;}}}"#)
+        Roles::from_option(
+            r#"a:2:{s:13:"administrator";a:2:{s:4:"name";s:13:"Administrator";s:12:"capabilities";a:2:{s:14:"manage_options";b:1;s:4:"read";b:1;}}s:10:"subscriber";a:2:{s:4:"name";s:10:"Subscriber";s:12:"capabilities";a:1:{s:4:"read";b:1;}}}"#,
+        )
     }
 
     #[test]
@@ -183,7 +235,9 @@ mod tests {
 
     #[test]
     fn capability_maps_keep_false_values() {
-        let value = rustpress_phpser::unserialize(br#"a:2:{s:4:"read";b:1;s:10:"edit_posts";b:0;}"#).unwrap();
+        let value =
+            rustpress_phpser::unserialize(br#"a:2:{s:4:"read";b:1;s:10:"edit_posts";b:0;}"#)
+                .unwrap();
         let map = capability_map(&value);
         assert!(map["read"]);
         assert!(!map["edit_posts"]);

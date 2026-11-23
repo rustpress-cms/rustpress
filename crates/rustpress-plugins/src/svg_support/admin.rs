@@ -25,7 +25,14 @@ fn t(site: &Site, text: &str) -> String {
 
 /// `bodhi_svgs_admin_menu()`.
 pub(super) fn pages(site: &Site) -> Vec<AdminPage> {
-    vec![AdminPage { parent: "options-general.php", slug: SLUG, page_title: t(site, "SVG Support Settings and Usage"), menu_title: t(site, "SVG Support"), capability: "manage_options", ..AdminPage::default() }]
+    vec![AdminPage {
+        parent: "options-general.php",
+        slug: SLUG,
+        page_title: t(site, "SVG Support Settings and Usage"),
+        menu_title: t(site, "SVG Support"),
+        capability: "manage_options",
+        ..AdminPage::default()
+    }]
 }
 
 fn plugin_url(site: &Site, path: &str) -> String {
@@ -38,18 +45,42 @@ pub(super) fn enqueue(ctx: &AdminContext<'_>, settings: &Settings, assets: &mut 
     let settings_page = ctx.hook_suffix == HOOK;
     let media_library = ctx.hook_suffix == "upload.php";
     if settings_page || media_library {
-        assets.style("bodhi-svgs-admin", plugin_url(site, "css/svgs-admin.css"), &[], VERSION, "all");
+        assets.style(
+            "bodhi-svgs-admin",
+            plugin_url(site, "css/svgs-admin.css"),
+            &[],
+            VERSION,
+            "all",
+        );
     }
     if settings_page && !settings.advanced_mode() {
-        assets.style("bodhi-svgs-admin-simple-mode", plugin_url(site, "css/svgs-admin-simple-mode.css"), &[], VERSION, "all");
+        assets.style(
+            "bodhi-svgs-admin-simple-mode",
+            plugin_url(site, "css/svgs-admin-simple-mode.css"),
+            &[],
+            VERSION,
+            "all",
+        );
     }
     if matches!(ctx.hook_suffix, "post.php" | "post-new.php") {
-        assets.style("bodhi-svgs-admin-edit-post", plugin_url(site, "css/svgs-admin-edit-post.css"), &[], VERSION, "all");
+        assets.style(
+            "bodhi-svgs-admin-edit-post",
+            plugin_url(site, "css/svgs-admin-edit-post.css"),
+            &[],
+            VERSION,
+            "all",
+        );
     }
     if !settings_page {
         return;
     }
-    assets.style("bodhi-svgs-settings", plugin_url(site, "css/svgs-settings.css"), &[], VERSION, "all");
+    assets.style(
+        "bodhi-svgs-settings",
+        plugin_url(site, "css/svgs-settings.css"),
+        &[],
+        VERSION,
+        "all",
+    );
     let data = serde_json::json!({
         "ajaxUrl": site.site_url("wp-admin/admin-ajax.php"),
         "nonce": (ctx.nonce)("bodhi_svgs_autosave"),
@@ -64,8 +95,16 @@ pub(super) fn enqueue(ctx: &AdminContext<'_>, settings: &Settings, assets: &mut 
             "btnSaved": t(site, "Saved"),
         },
     });
-    let script = assets.script("bodhi-svgs-settings", plugin_url(site, "js/svgs-settings.js"), &[], VERSION, true);
-    script.before.push(format!("var SvgsSettings = {};", php_json::encode(&data)));
+    let script = assets.script(
+        "bodhi-svgs-settings",
+        plugin_url(site, "js/svgs-settings.js"),
+        &[],
+        VERSION,
+        true,
+    );
+    script
+        .before
+        .push(format!("var SvgsSettings = {};", php_json::encode(&data)));
 }
 
 /// `bodhi_svgs_admin_footer_text()` on the settings page and in the media library: it prints the rating instead of
@@ -74,13 +113,29 @@ pub(super) fn footer_text(ctx: &AdminContext<'_>) -> Option<String> {
     if ctx.hook_suffix != HOOK && ctx.hook_suffix != "upload.php" {
         return None;
     }
-    let text = esc_html(&t(ctx.site, "If you like %1$sSVG Support%2$s please leave a %3$s★★★★★%4$s rating. A huge thanks in advance!"));
-    Some(rustpress_core::i18n::sprintf(&text, &["<strong>", "</strong>", "<a href=\"https://wordpress.org/support/view/plugin-reviews/svg-support?filter=5#postform\" target=\"_blank\" class=\"svgs-rating-link\">", "</a>"]))
+    let text = esc_html(&t(
+        ctx.site,
+        "If you like %1$sSVG Support%2$s please leave a %3$s★★★★★%4$s rating. A huge thanks in advance!",
+    ));
+    Some(rustpress_core::i18n::sprintf(
+        &text,
+        &[
+            "<strong>",
+            "</strong>",
+            "<a href=\"https://wordpress.org/support/view/plugin-reviews/svg-support?filter=5#postform\" target=\"_blank\" class=\"svgs-rating-link\">",
+            "</a>",
+        ],
+    ))
 }
 
 /// `bodhi_svgs_plugin_action_links()`.
 pub(super) fn action_links(site: &Site, links: Vec<String>) -> Vec<String> {
-    let mut all = vec![format!("<a href=\"{}\" title=\"{}\">{}</a>", site.site_url("wp-admin/options-general.php?page=svg-support"), t(site, "SVG Support Settings"), t(site, "Settings"))];
+    let mut all = vec![format!(
+        "<a href=\"{}\" title=\"{}\">{}</a>",
+        site.site_url("wp-admin/options-general.php?page=svg-support"),
+        t(site, "SVG Support Settings"),
+        t(site, "Settings")
+    )];
     all.extend(links);
     all
 }
@@ -88,7 +143,10 @@ pub(super) fn action_links(site: &Site, links: Vec<String>) -> Vec<String> {
 /// `bodhi_svgs_plugin_meta_links()`.
 pub(super) fn row_meta(site: &Site, file: &str, mut links: Vec<String>) -> Vec<String> {
     if file == "svg-support/svg-support.php" {
-        links.push(format!("<a target=\"_blank\" href=\"https://wordpress.org/support/plugin/svg-support\">{}</a>", t(site, "Get Support")));
+        links.push(format!(
+            "<a target=\"_blank\" href=\"https://wordpress.org/support/plugin/svg-support\">{}</a>",
+            t(site, "Get Support")
+        ));
         links.push(format!("<a target=\"_blank\" href=\"https://wordpress.org/support/plugin/svg-support/reviews/\">{}</a>", t(site, "Leave a Review")));
         links.push(format!("<a target=\"_blank\" href=\"https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=Z9R7JERS82EQQ&source=url\">{}</a>", t(site, "Donate to author")));
     }
@@ -98,70 +156,148 @@ pub(super) fn row_meta(site: &Site, file: &str, mut links: Vec<String>) -> Vec<S
 /// `bodhi_svgs_help_tab()`.
 pub(super) fn help(site: &Site) -> AdminHelp {
     let t = |text: &str| t(site, text);
-    let tab = |id: &str, title: &str, content: String| HelpTab { id: id.to_owned(), title: t(title), content };
+    let tab = |id: &str, title: &str, content: String| HelpTab {
+        id: id.to_owned(),
+        title: t(title),
+        content,
+    };
     let overview = format!(
         "<h3>{}</h3><p>{}</p><p>{}</p><p>{}</p><p>{}</p>",
         t("Overview"),
-        t("At it's core, SVG Support allows you to upload SVG files and use them as you would any regular image with the added benefit of being scalable and looking great on any screen size, no matter what size it's displayed. Additionally, SVG file sizes are (more often than not) much smaller than conventional image formats."),
-        t("Even this most basic of usage is very powerful for modern websites, however, there's lots of cool stuff you can do with SVG files!"),
-        t("SVG Support features an \"Advanced Mode\" which toggles extra features, allowing you to take more control of how your SVG files are used. By rendering SVG files inline, it opens up a huge number of possibilities including animations, embedded links within the SVG, odd shaped link areas, custom CSS targeting elements within the SVG and  whole lot more!"),
-        t("So let's get into some more details! Simply click the tabs to the left to get more of an understanding of how powerful SVG Support is.")
+        t(
+            "At it's core, SVG Support allows you to upload SVG files and use them as you would any regular image with the added benefit of being scalable and looking great on any screen size, no matter what size it's displayed. Additionally, SVG file sizes are (more often than not) much smaller than conventional image formats."
+        ),
+        t(
+            "Even this most basic of usage is very powerful for modern websites, however, there's lots of cool stuff you can do with SVG files!"
+        ),
+        t(
+            "SVG Support features an \"Advanced Mode\" which toggles extra features, allowing you to take more control of how your SVG files are used. By rendering SVG files inline, it opens up a huge number of possibilities including animations, embedded links within the SVG, odd shaped link areas, custom CSS targeting elements within the SVG and  whole lot more!"
+        ),
+        t(
+            "So let's get into some more details! Simply click the tabs to the left to get more of an understanding of how powerful SVG Support is."
+        )
     );
-    let setting = |label: &str, text: String| format!("<p><strong>{}</strong><br>{text}</p>", t(label));
+    let setting =
+        |label: &str, text: String| format!("<p><strong>{}</strong><br>{text}</p>", t(label));
     let the_settings = format!(
         "<h3>{}</h3>{}{}{}{}{}{}{}",
         t("The Settings"),
-        setting("Restrict To Administrators:", t("SVG files are actually XML code, so allowing regular users to upload them can pose serious security risks. Please leave this checked unless you really know what you're doing.")),
-        setting("Enable Advanced Mode:", format!("{}<br>{}", t("When using SVG files like regular images just isn't enough ;)"), t("Enabling \"Advanced Mode\" displays options to give you more control over how you use SVG files on your site. It also includes extra JS on the front end, so leave this disabled unless you're actually using any of the advanced features."))),
-        setting("Output JS in Footer:", t("This setting allows you to choose whether the SVG Support JS file is enqueued in the header or the footer of the site. Usually you would enqueue in the footer unless you need it to be loaded sooner for some reason.")),
-        setting("Use Expanded JS:", t("This setting gives you the choice of JS file that is enqueued, the full expanded version or the minified version. You would usually enqueue the minified version, but if you want to bundle the JS file using a caching or minification plugin or similar, then you might want to enqueue the expanded, non-minified version.")),
-        setting("CSS Class To Target:", t("This allows you to set your own custom class that you will use in your SVG source IMG tags that you would like rendered inline. For example, it might be easier for you to remember to add the class \"inline-svg\" or something, in which case you would use your desired class name in this field to be used across your site.")),
-        setting("Automatically Insert Class:", t("When this is checked, you won't have to add the class to your SVG files during the embed process in the editor. When you pick your SVG, it will be placed in the editor with just the SVG Support class and others stripped. It does not change existing code, it's only a helper to allow you to quickly embed your SVG files and have them render inline without having to fiddle with the classes.")),
-        setting("Force Inline SVG:", t("This feature is to force all SVG files that are found in your site to be rendered inline. This can help if you aren't able to set a custom class on your IMG tags for some reason, usually when used in theme options or page builder elements."))
+        setting(
+            "Restrict To Administrators:",
+            t(
+                "SVG files are actually XML code, so allowing regular users to upload them can pose serious security risks. Please leave this checked unless you really know what you're doing."
+            )
+        ),
+        setting(
+            "Enable Advanced Mode:",
+            format!(
+                "{}<br>{}",
+                t("When using SVG files like regular images just isn't enough ;)"),
+                t(
+                    "Enabling \"Advanced Mode\" displays options to give you more control over how you use SVG files on your site. It also includes extra JS on the front end, so leave this disabled unless you're actually using any of the advanced features."
+                )
+            )
+        ),
+        setting(
+            "Output JS in Footer:",
+            t(
+                "This setting allows you to choose whether the SVG Support JS file is enqueued in the header or the footer of the site. Usually you would enqueue in the footer unless you need it to be loaded sooner for some reason."
+            )
+        ),
+        setting(
+            "Use Expanded JS:",
+            t(
+                "This setting gives you the choice of JS file that is enqueued, the full expanded version or the minified version. You would usually enqueue the minified version, but if you want to bundle the JS file using a caching or minification plugin or similar, then you might want to enqueue the expanded, non-minified version."
+            )
+        ),
+        setting(
+            "CSS Class To Target:",
+            t(
+                "This allows you to set your own custom class that you will use in your SVG source IMG tags that you would like rendered inline. For example, it might be easier for you to remember to add the class \"inline-svg\" or something, in which case you would use your desired class name in this field to be used across your site."
+            )
+        ),
+        setting(
+            "Automatically Insert Class:",
+            t(
+                "When this is checked, you won't have to add the class to your SVG files during the embed process in the editor. When you pick your SVG, it will be placed in the editor with just the SVG Support class and others stripped. It does not change existing code, it's only a helper to allow you to quickly embed your SVG files and have them render inline without having to fiddle with the classes."
+            )
+        ),
+        setting(
+            "Force Inline SVG:",
+            t(
+                "This feature is to force all SVG files that are found in your site to be rendered inline. This can help if you aren't able to set a custom class on your IMG tags for some reason, usually when used in theme options or page builder elements."
+            )
+        )
     );
     let standard = format!(
         "<h3>{}</h3><p>{}</p><p>{}</p>",
         t("Standard Usage"),
-        t("You can simply upload SVG files to your media library like any other image.<br>Make sure to select \"Restrict to Administrators\" if you only want to allow admins to upload SVG files."),
-        t("If you want to enable sanitization or minification of uploaded SVG files, please enable advanced settings and then enable sanitization and/or minification.")
+        t(
+            "You can simply upload SVG files to your media library like any other image.<br>Make sure to select \"Restrict to Administrators\" if you only want to allow admins to upload SVG files."
+        ),
+        t(
+            "If you want to enable sanitization or minification of uploaded SVG files, please enable advanced settings and then enable sanitization and/or minification."
+        )
     );
     let inline = format!(
         "<h3>{}</h3><p>{}<br>{}</p><pre><code>&lt;img class=\"style-svg\" alt=\"alt-text\" src=\"image-source.svg\" /&gt;</code></pre>{}<pre><code>&lt;img class=\"your-custom-class\" alt=\"alt-text\" src=\"image-source.svg\" /&gt;</code></pre><p>{}<br>{}</p><p><em>{}</em><br><em>- {}</em><br><em>- {}</em><br><em>- {}</em></p>",
         t("Render SVG Inline"),
-        t("You can embed your SVG image like any standard image with the addition of adding the class <code>style-svg</code> (or your custom class) to any IMG tags that you want this plugin to swap out with your actual SVG code."),
+        t(
+            "You can embed your SVG image like any standard image with the addition of adding the class <code>style-svg</code> (or your custom class) to any IMG tags that you want this plugin to swap out with your actual SVG code."
+        ),
         t("For example:"),
         t("or"),
-        t("The whole IMG tag element will now be dynamically replaced by the actual code of your SVG, making the inner content targetable."),
+        t(
+            "The whole IMG tag element will now be dynamically replaced by the actual code of your SVG, making the inner content targetable."
+        ),
         t("This allows you to target elements within your SVG using CSS."),
         t("Please Note:"),
-        t("You will likely need to set your own height and width in your CSS for SVG files to display correctly."),
-        t("Your uploaded image needs to be an SVG file for this plugin to replace the img tag with the inline SVG code. It will not create SVG files for you."),
-        t("You can set this target class on any element and the script will traverse all children of that target element looking for IMG tags with SVG in the src to replace.")
+        t(
+            "You will likely need to set your own height and width in your CSS for SVG files to display correctly."
+        ),
+        t(
+            "Your uploaded image needs to be an SVG file for this plugin to replace the img tag with the inline SVG code. It will not create SVG files for you."
+        ),
+        t(
+            "You can set this target class on any element and the script will traverse all children of that target element looking for IMG tags with SVG in the src to replace."
+        )
     );
     let featured = format!(
         "<h3>{}</h3><p>{}</p><p>{}</p><ol><li>{}</li><li>{}</li><li>{}</li><li>{}</li><li>{}</li></ol>",
         t("Featured Images"),
-        t("You can use SVG files as featured images just like any other image format, with the addition of being able to render your featured SVG inline on a per-post basis."),
+        t(
+            "You can use SVG files as featured images just like any other image format, with the addition of being able to render your featured SVG inline on a per-post basis."
+        ),
         t("To render your featured SVG inline:"),
         t("Make sure \"Advanced Mode\" is enabled."),
         t("Add your featured SVG like you would any regular featured image format."),
         t("Publish, Save Draft, or Update the post."),
-        t("Once the screen reloads, click the new checkbox below the featured image to render your SVG inline."),
+        t(
+            "Once the screen reloads, click the new checkbox below the featured image to render your SVG inline."
+        ),
         t("Publish, Save Draft, or Update the post a final time to render the SVG inline.")
     );
     let animation = format!(
         "<h3>{}</h3><p>{}<br>{}</p><p><strong>{}</strong><br>{}</p><p>{}</p>",
         t("Animation"),
         t("So you want to animate your SVG?"),
-        t("There's a number of ways you can animate an SVG. You could use CSS or JS to target elements within your SVG or even embed the animations in the file itself. Whichever way you choose, there is always a little bit of preparation required before uploading your SVG to your media library."),
+        t(
+            "There's a number of ways you can animate an SVG. You could use CSS or JS to target elements within your SVG or even embed the animations in the file itself. Whichever way you choose, there is always a little bit of preparation required before uploading your SVG to your media library."
+        ),
         t("First, let's talk about using CSS or JS to target elements within your SVG."),
-        t("Before you upload your SVG, you're going to need some classes to target inside your SVG. To do this, open your SVG file in the code editor of choice (I use Sublime Text). You will see each element within your SVG file written in XML code. Each little part of your SVG has it's own bit of code, so it's up to you which ones you want to target. It's in here that you'll place your new classes on each element you want to target."),
-        t("Then there's the option of animating the SVG file itself. There is a number of online tools to do this, or you can use the software of your choice. Once your SVG is animated and ready to go, you then upload it like any other image to your WordPress media library. When you embed it on a page/post, you will need to make sure to add the class to the IMG tag so SVG Support can render it inline. This will ensure your animations are displayed.")
+        t(
+            "Before you upload your SVG, you're going to need some classes to target inside your SVG. To do this, open your SVG file in the code editor of choice (I use Sublime Text). You will see each element within your SVG file written in XML code. Each little part of your SVG has it's own bit of code, so it's up to you which ones you want to target. It's in here that you'll place your new classes on each element you want to target."
+        ),
+        t(
+            "Then there's the option of animating the SVG file itself. There is a number of online tools to do this, or you can use the software of your choice. Once your SVG is animated and ready to go, you then upload it like any other image to your WordPress media library. When you embed it on a page/post, you will need to make sure to add the class to the IMG tag so SVG Support can render it inline. This will ensure your animations are displayed."
+        )
     );
     let donations = format!(
         "<h3>{}</h3><p>{}</p><p><strong>{}</strong></p><p><strong>{}</strong><a href=\"https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=Z9R7JERS82EQQ\" target=\"_blank\">Click Here</a><br/><strong>{}</strong><br/><strong>{}</strong><br/><strong>{}</strong></p><p>{}</br>{}</br>{}<br/><a href=\"https://www.coinbase.com/join/59be646cb87715012bbdcc6b\" target=\"_blank\">https://www.coinbase.com/join/59be646cb87715012bbdcc6b</a></p>",
         t("Donations"),
-        t("SVG Support (this plugin) has grown to be used by over 1 million websites actively and is maintained solely by one person. I couldn't possibly tell you how many hours have gone into the development, maintenance and support of this plugin. If you find it useful and would like to donate to help keep it going, that would be amazing! I truly appreciate the support and how far this has come."),
+        t(
+            "SVG Support (this plugin) has grown to be used by over 1 million websites actively and is maintained solely by one person. I couldn't possibly tell you how many hours have gone into the development, maintenance and support of this plugin. If you find it useful and would like to donate to help keep it going, that would be amazing! I truly appreciate the support and how far this has come."
+        ),
         t("Donation Methods:"),
         t("PayPal: "),
         t("BTC: 1qF8r2HkTLifND7WLGfWmvxfXc9ze55DZ"),
@@ -174,14 +310,36 @@ pub(super) fn help(site: &Site) -> AdminHelp {
     AdminHelp {
         tabs: vec![
             tab("bodhi_svgs_help_tab-overview", "Overview", overview),
-            tab("bodhi_svgs_help_tab-the_settings", "The Settings", the_settings),
-            tab("bodhi_svgs_help_tab_usage-standard", "Standard Usage", standard),
-            tab("bodhi_svgs_help_tab-inlining_svg", "Render SVG Inline", inline),
-            tab("bodhi_svgs_help_tab-featured_images", "Featured Images", featured),
+            tab(
+                "bodhi_svgs_help_tab-the_settings",
+                "The Settings",
+                the_settings,
+            ),
+            tab(
+                "bodhi_svgs_help_tab_usage-standard",
+                "Standard Usage",
+                standard,
+            ),
+            tab(
+                "bodhi_svgs_help_tab-inlining_svg",
+                "Render SVG Inline",
+                inline,
+            ),
+            tab(
+                "bodhi_svgs_help_tab-featured_images",
+                "Featured Images",
+                featured,
+            ),
             tab("bodhi_svgs_help_tab-animation", "Animation", animation),
             tab("bodhi_svgs_help_tab-donations", "DONATIONS", donations),
         ],
-        sidebar: format!("<p><strong>{}</strong></p><p>{}</p>", t("For more help, visit:"), t("<a target=\"_blank\" href=\"https://wordpress.org/support/plugin/svg-support\">SVG Support Forum</a>")),
+        sidebar: format!(
+            "<p><strong>{}</strong></p><p>{}</p>",
+            t("For more help, visit:"),
+            t(
+                "<a target=\"_blank\" href=\"https://wordpress.org/support/plugin/svg-support\">SVG Support Forum</a>"
+            )
+        ),
     }
 }
 
@@ -194,16 +352,33 @@ pub(super) fn sanitize(value: Option<Value>) -> Option<Value> {
         // Anything else is returned as it came.
         other => return other,
     };
-    let set = |items: &mut Vec<(Key, Value)>, key: &str, new: Value| match items.iter_mut().find(|(k, _)| *k == Key::Str(key.as_bytes().to_vec())) {
+    let set = |items: &mut Vec<(Key, Value)>, key: &str, new: Value| match items
+        .iter_mut()
+        .find(|(k, _)| *k == Key::Str(key.as_bytes().to_vec()))
+    {
         Some((_, slot)) => *slot = new,
         None => items.push((Key::Str(key.as_bytes().to_vec()), new)),
     };
-    let get = |items: &[(Key, Value)], key: &str| items.iter().find(|(k, _)| *k == Key::Str(key.as_bytes().to_vec())).map(|(_, v)| v.clone()).filter(|v| !matches!(v, Value::Null));
+    let get = |items: &[(Key, Value)], key: &str| {
+        items
+            .iter()
+            .find(|(k, _)| *k == Key::Str(key.as_bytes().to_vec()))
+            .map(|(_, v)| v.clone())
+            .filter(|v| !matches!(v, Value::Null))
+    };
     if let Some(target) = get(&items, "css_target") {
         let text = target.as_str().map(str::to_owned).unwrap_or_default();
-        set(&mut items, "css_target", Value::Str(esc_attr(&rustpress_content::sanitize::text_field(&text)).into_bytes()));
+        set(
+            &mut items,
+            "css_target",
+            Value::Str(esc_attr(&rustpress_content::sanitize::text_field(&text)).into_bytes()),
+        );
     }
-    if get(&items, "sanitize_svg_front_end").and_then(|v| v.as_str().map(str::to_owned)).as_deref() != Some("on") {
+    if get(&items, "sanitize_svg_front_end")
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .as_deref()
+        != Some("on")
+    {
         set(&mut items, "sanitize_svg_front_end", Value::Bool(false));
     }
     for key in ["sanitize_on_upload_roles", "restrict"] {
@@ -221,8 +396,15 @@ pub(super) fn sanitize(value: Option<Value>) -> Option<Value> {
 /// `map_deep( $value, 'sanitize_text_field' )`.
 fn map_text_field(value: Value) -> Value {
     match value {
-        Value::Str(text) => Value::Str(rustpress_content::sanitize::text_field(&String::from_utf8_lossy(&text)).into_bytes()),
-        Value::Array(items) => Value::Array(items.into_iter().map(|(k, v)| (k, map_text_field(v))).collect()),
+        Value::Str(text) => Value::Str(
+            rustpress_content::sanitize::text_field(&String::from_utf8_lossy(&text)).into_bytes(),
+        ),
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(|(k, v)| (k, map_text_field(v)))
+                .collect(),
+        ),
         other => other,
     }
 }
@@ -230,28 +412,47 @@ fn map_text_field(value: Value) -> Value {
 /// `bodhi_svgs_autosave_settings()`.
 pub(super) async fn autosave(ctx: &AdminContext<'_>) -> rustpress_core::Result<AjaxAnswer> {
     // `check_ajax_referer( 'bodhi_svgs_autosave', 'nonce' )`.
-    let nonce = ctx.post_field("nonce").or_else(|| ctx.get("nonce")).unwrap_or_default();
+    let nonce = ctx
+        .post_field("nonce")
+        .or_else(|| ctx.get("nonce"))
+        .unwrap_or_default();
     if !(ctx.verify_nonce)(nonce, "bodhi_svgs_autosave") {
         return Ok(AjaxAnswer::text(403, "-1"));
     }
-    let error = |status: u16, message: &str| AjaxAnswer::json(status, php_json::encode(&serde_json::json!({"success": false, "data": {"message": esc_html(&t(ctx.site, message))}})));
+    let error = |status: u16, message: &str| {
+        AjaxAnswer::json(
+            status,
+            php_json::encode(
+                &serde_json::json!({"success": false, "data": {"message": esc_html(&t(ctx.site, message))}}),
+            ),
+        )
+    };
     if !(ctx.can)("manage_options") {
         return Ok(error(403, "You can't play with this."));
     }
-    let raw = rustpress_core::native::form_value(ctx.form, "bodhi_svgs_settings").unwrap_or(Value::Array(Vec::new()));
+    let raw = rustpress_core::native::form_value(ctx.form, "bodhi_svgs_settings")
+        .unwrap_or(Value::Array(Vec::new()));
     if !matches!(raw, Value::Array(_)) {
         return Ok(error(400, "Invalid settings payload."));
     }
     let clean = sanitize(Some(map_text_field(raw))).unwrap_or(Value::Array(Vec::new()));
     if let Some(writer) = ctx.writer {
-        writer.update_option("bodhi_svgs_settings", &String::from_utf8_lossy(&rustpress_phpser::serialize(&clean))).await?;
+        writer
+            .update_option(
+                "bodhi_svgs_settings",
+                &String::from_utf8_lossy(&rustpress_phpser::serialize(&clean)),
+            )
+            .await?;
     }
     Ok(AjaxAnswer::json(200, "{\"success\":true}".to_owned()))
 }
 
 /// `bodhi_svgs_icon()`: an icon of the bundled sprite.
 fn icon(icons: &str, name: &str, size: u32) -> String {
-    format!("<svg class=\"svgs-icon\" width=\"{size}\" height=\"{size}\" aria-hidden=\"true\" focusable=\"false\"><use href=\"{icons}#{}\"></use></svg>", esc_attr(name))
+    format!(
+        "<svg class=\"svgs-icon\" width=\"{size}\" height=\"{size}\" aria-hidden=\"true\" focusable=\"false\"><use href=\"{icons}#{}\"></use></svg>",
+        esc_attr(name)
+    )
 }
 
 /// `checked( $value )`.
@@ -261,13 +462,20 @@ fn checked(on: bool) -> &'static str {
 
 /// `wp_kses( $desc, array( 'code' => array(), 'strong' => array(), 'em' => array() ) )` for the plugin's own texts.
 fn kses_desc(text: &str) -> String {
-    rustpress_core::kses::kses(text, &rustpress_core::kses::Allowed::tags(&[("code", &[]), ("strong", &[]), ("em", &[])]))
+    rustpress_core::kses::kses(
+        text,
+        &rustpress_core::kses::Allowed::tags(&[("code", &[]), ("strong", &[]), ("em", &[])]),
+    )
 }
 
 /// `bodhi_svgs_toggle_row()`.
 fn toggle_row(key: &str, label: &str, desc: &str, is_checked: bool, value: &str) -> String {
     let field = esc_attr(&format!("bodhi_svgs_settings[{key}]"));
-    let value = if value.is_empty() { String::new() } else { format!(" value=\"{}\"", esc_attr(value)) };
+    let value = if value.is_empty() {
+        String::new()
+    } else {
+        format!(" value=\"{}\"", esc_attr(value))
+    };
     format!(
         "\t\t<div class=\"svgs-row\">\n\t\t\t<label class=\"svgs-toggle-row\" for=\"{field}\">\n\t\t\t\t<input id=\"{field}\" name=\"{field}\" type=\"checkbox\" class=\"svgs-switch-input\"{value} {} />\n\t\t\t\t<span class=\"svgs-switch\" aria-hidden=\"true\"></span>\n\t\t\t\t<span class=\"svgs-toggle-text\">\n\t\t\t\t\t<span class=\"svgs-toggle-label\">{}</span>\n\t\t\t\t\t<span class=\"svgs-toggle-desc\">{}</span>\n\t\t\t\t</span>\n\t\t\t</label>\n\t\t</div>\n\t\t",
         checked(is_checked),
@@ -296,11 +504,22 @@ fn role_chips(icons: &str, key: &str, roles: &[(String, String)], selected: &[St
 
 /// The roles of the site in their order, with the translated names (`translate_user_role()`).
 fn roles(site: &Site) -> Vec<(String, String)> {
-    let Some(Value::Array(items)) = site.options.value(&format!("{}user_roles", site.db.table_prefix())) else { return Vec::new() };
+    let Some(Value::Array(items)) = site
+        .options
+        .value(&format!("{}user_roles", site.db.table_prefix()))
+    else {
+        return Vec::new();
+    };
     items
         .iter()
         .filter_map(|(key, role)| match key {
-            Key::Str(slug) => Some((String::from_utf8_lossy(slug).into_owned(), site.trx(role.get("name").and_then(Value::as_str).unwrap_or_default(), "User role"))),
+            Key::Str(slug) => Some((
+                String::from_utf8_lossy(slug).into_owned(),
+                site.trx(
+                    role.get("name").and_then(Value::as_str).unwrap_or_default(),
+                    "User role",
+                ),
+            )),
             Key::Int(_) => None,
         })
         .collect()
@@ -309,14 +528,24 @@ fn roles(site: &Site) -> Vec<(String, String)> {
 /// `(array) $options[ $key ]` as strings.
 fn list(settings: &Settings, key: &str) -> Vec<String> {
     match settings.get(key) {
-        Some(Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+            .collect(),
         Some(Value::Null) | None => Vec::new(),
-        Some(other) => other.as_str().map(|s| vec![s.to_owned()]).unwrap_or_default(),
+        Some(other) => other
+            .as_str()
+            .map(|s| vec![s.to_owned()])
+            .unwrap_or_default(),
     }
 }
 
 /// `bodhi_svg_support_settings_page()`: `admin/svgs-settings-page.php`.
-pub(super) fn settings_page(ctx: &AdminContext<'_>, settings: &Settings, settings_fields: &str) -> String {
+pub(super) fn settings_page(
+    ctx: &AdminContext<'_>,
+    settings: &Settings,
+    settings_fields: &str,
+) -> String {
     let site = ctx.site;
     let t = |text: &str| t(site, text);
     let h = |text: &str| esc_html(&t(text));
@@ -325,7 +554,11 @@ pub(super) fn settings_page(ctx: &AdminContext<'_>, settings: &Settings, setting
     let icon = |name: &str, size: u32| icon(&icons, name, size);
     let isset = |key: &str| settings.get(key).is_some_and(|v| !matches!(v, Value::Null));
     let roles = roles(site);
-    let css_target = settings.get("css_target").filter(|v| !matches!(v, Value::Null)).map(|v| esc_attr(v.as_str().unwrap_or_default())).unwrap_or_default();
+    let css_target = settings
+        .get("css_target")
+        .filter(|v| !matches!(v, Value::Null))
+        .map(|v| esc_attr(v.as_str().unwrap_or_default()))
+        .unwrap_or_default();
     let mut out = String::new();
     out.push_str(&format!(
         "\n<div class=\"wrap svgs-ds\">\n\n\t<div class=\"svgs-header\">\n\t\t<img src=\"{}\" width=\"30\" height=\"30\" alt=\"\" />\n\t\t<h1>{} <span class=\"svgs-version\">v{}</span></h1>\n\t\t<span class=\"svgs-savestate\" id=\"svgs-savestate\" data-state=\"idle\">\n\t\t\t{}\t\t\t<span>{}</span>\n\t\t</span>\n\t</div>\n\t<hr class=\"wp-header-end\">\n\n",
@@ -348,8 +581,16 @@ pub(super) fn settings_page(ctx: &AdminContext<'_>, settings: &Settings, setting
         h("Uploads, sanitization and performance.")
     ));
     for (key, label, hint) in [
-        ("restrict", "Restrict SVG uploads to", "Select the user roles that are allowed to upload SVG files. Only give upload permission to roles you trust."),
-        ("sanitize_on_upload_roles", "Do not sanitize for these roles", "Select the user roles that should bypass SVG sanitization on upload. Leave empty unless you fully trust a role's uploads."),
+        (
+            "restrict",
+            "Restrict SVG uploads to",
+            "Select the user roles that are allowed to upload SVG files. Only give upload permission to roles you trust.",
+        ),
+        (
+            "sanitize_on_upload_roles",
+            "Do not sanitize for these roles",
+            "Select the user roles that should bypass SVG sanitization on upload. Leave empty unless you fully trust a role's uploads.",
+        ),
     ] {
         out.push_str(&format!(
             "\t\t\t\t\t\t<div class=\"svgs-row\">\n\t\t\t\t\t\t\t<div class=\"svgs-field-label\">{}</div>\n\t\t\t\t\t\t\t{}\t\t\t\t\t\t\t<p class=\"svgs-hint\">{}</p>\n\t\t\t\t\t\t</div>\n\n",
@@ -366,7 +607,13 @@ pub(super) fn settings_page(ctx: &AdminContext<'_>, settings: &Settings, setting
         settings.get("sanitize_svg_front_end").and_then(Value::as_str) == Some("on"),
         "",
     ));
-    out.push_str(&toggle_row("minify_svg", &t("Minify SVG"), &t("Auto-minify all SVG uploads to keep file sizes small."), isset("minify_svg"), ""));
+    out.push_str(&toggle_row(
+        "minify_svg",
+        &t("Minify SVG"),
+        &t("Auto-minify all SVG uploads to keep file sizes small."),
+        isset("minify_svg"),
+        "",
+    ));
     out.push_str(&toggle_row("frontend_css", &t("Load front-end CSS"), &t("A very small piece of CSS that helps with displaying SVGs on the front-end in some cases."), isset("frontend_css"), ""));
     out.push_str(&format!(
         "\n\t\t\t\t\t</div>\n\t\t\t\t</section>\n\n\t\t\t\t<section class=\"svgs-panel\" id=\"svgs-advanced-panel\">\n\t\t\t\t\t<header class=\"svgs-panel-head\">\n\t\t\t\t\t\t<div>\n\t\t\t\t\t\t\t<h2>{}</h2>\n\t\t\t\t\t\t\t<p>{}</p>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t\t<div class=\"svgs-head-right\">\n\t\t\t\t\t\t\t<label class=\"svgs-toggle-row\" for=\"bodhi_svgs_settings[advanced_mode]\">\n\t\t\t\t\t\t\t\t<input id=\"bodhi_svgs_settings[advanced_mode]\" name=\"bodhi_svgs_settings[advanced_mode]\" type=\"checkbox\" class=\"svgs-switch-input\" aria-label=\"{}\" {} />\n\t\t\t\t\t\t\t\t<span class=\"svgs-switch\" aria-hidden=\"true\"></span>\n\t\t\t\t\t\t\t</label>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t</header>\n\t\t\t\t\t<div class=\"svgs-panel-body\">\n\n",
@@ -390,13 +637,25 @@ pub(super) fn settings_page(ctx: &AdminContext<'_>, settings: &Settings, setting
     let skip_nested = settings.get("skip_nested_svg").is_some_and(|v| match v {
         Value::Null => false,
         // `1 == $value`.
-        other => other.as_str().map_or_else(|| other.as_i64() == Some(1), |s| s.trim().parse::<f64>().is_ok_and(|n| n == 1.0)),
+        other => other.as_str().map_or_else(
+            || other.as_i64() == Some(1),
+            |s| s.trim().parse::<f64>().is_ok_and(|n| n == 1.0),
+        ),
     });
     out.push_str(&toggle_row("skip_nested_svg", &t("Skip nested SVGs"), &t("Only inline the first SVG in a target container — useful for Gutenberg Cover blocks with nested SVG images."), skip_nested, "1"));
     out.push_str(&toggle_row("js_foot_choice", &t("Output JS in footer"), &t("Place the inline-rendering script before the closing body tag instead of in the head. Requires your theme to call wp_footer()."), isset("js_foot_choice"), ""));
-    out.push_str(&toggle_row("use_vanilla_js", &t("Use vanilla JS"), &t("Load the dependency-free script instead of the jQuery version."), isset("use_vanilla_js"), ""));
+    out.push_str(&toggle_row(
+        "use_vanilla_js",
+        &t("Use vanilla JS"),
+        &t("Load the dependency-free script instead of the jQuery version."),
+        isset("use_vanilla_js"),
+        "",
+    ));
     out.push_str(&toggle_row("use_expanded_js", &t("Use expanded JS"), &t("Load the readable, non-minified script — useful if a caching plugin minifies your scripts externally."), isset("use_expanded_js"), ""));
-    out.push_str(&format!("\n\t\t\t\t\t\t\t<p class=\"svgs-subhead\">{}</p>\n\n\t\t\t\t\t\t\t", h("Legacy settings")));
+    out.push_str(&format!(
+        "\n\t\t\t\t\t\t\t<p class=\"svgs-subhead\">{}</p>\n\n\t\t\t\t\t\t\t",
+        h("Legacy settings")
+    ));
     out.push_str(&toggle_row(
         "force_inline_svg",
         &t("Force inline SVG"),
@@ -448,8 +707,18 @@ fn sidebar(site: &Site, icons: &str) -> String {
         icon("heart", 15),
         h("Donate via PayPal")
     );
-    out.push_str(&qr("BTC", "qr-btc.svg", "Bitcoin donation address QR code", "1qF8r2HkTLifND7WLGfWmvxfXc9ze55DZ"));
-    out.push_str(&qr("ETH", "qr-eth.svg", "Ethereum donation address QR code", "0x599695Eb51aFe2e5a0DAD60aD9c89Bc8f10B54f4"));
+    out.push_str(&qr(
+        "BTC",
+        "qr-btc.svg",
+        "Bitcoin donation address QR code",
+        "1qF8r2HkTLifND7WLGfWmvxfXc9ze55DZ",
+    ));
+    out.push_str(&qr(
+        "ETH",
+        "qr-eth.svg",
+        "Ethereum donation address QR code",
+        "0x599695Eb51aFe2e5a0DAD60aD9c89Bc8f10B54f4",
+    ));
     out.push_str(&format!(
         "\t\t\t\t</div>\n\t\t\t</div>\n\n\t\t\t<div class=\"svgs-card\">\n\t\t\t\t<h3>{}{}</h3>\n\t\t\t\t<p>{}</p>\n\t\t\t\t<a class=\"svgs-btn svgs-btn-secondary svgs-btn-sm svgs-btn-block\" target=\"_blank\" href=\"https://svg.support/tutorials/\">\n\t\t\t\t\t{}\t\t\t\t\t{}\t\t\t\t</a>\n\t\t\t\t<p class=\"svgs-card-links\">\n\t\t\t\t\t<a target=\"_blank\" href=\"https://wordpress.org/plugins/svg-support/\">{}</a> · <a target=\"_blank\" href=\"https://github.com/benbodhi/svg-support\">{}</a> · <a target=\"_blank\" href=\"https://twitter.com/svgsupport\">@SVGSupport</a><br />\n\t\t\t\t\t&copy; <a target=\"_blank\" href=\"https://benbodhi.com/\">Benbodhi</a> · <a target=\"_blank\" href=\"https://twitter.com/benbodhi\">@benbodhi</a> · <a target=\"_blank\" href=\"https://farcaster.xyz/benbodhi\">Farcaster</a>\n\t\t\t\t</p>\n\t\t\t</div>\n\n",
         icon("sparkles", 16),
@@ -492,10 +761,33 @@ mod tests {
 
     #[test]
     fn sanitizing_turns_off_what_was_not_sent() {
-        let form = Value::Array(vec![(Key::Str(b"advanced_mode".to_vec()), s("on")), (Key::Str(b"css_target".to_vec()), s(" my <b>svg</b> "))]);
-        let Some(Value::Array(items)) = sanitize(Some(form)) else { panic!() };
-        let keys: Vec<String> = items.iter().map(|(k, _)| if let Key::Str(k) = k { String::from_utf8_lossy(k).into_owned() } else { String::new() }).collect();
-        assert_eq!(keys, ["advanced_mode", "css_target", "sanitize_svg_front_end", "sanitize_on_upload_roles", "restrict"]);
+        let form = Value::Array(vec![
+            (Key::Str(b"advanced_mode".to_vec()), s("on")),
+            (Key::Str(b"css_target".to_vec()), s(" my <b>svg</b> ")),
+        ]);
+        let Some(Value::Array(items)) = sanitize(Some(form)) else {
+            panic!()
+        };
+        let keys: Vec<String> = items
+            .iter()
+            .map(|(k, _)| {
+                if let Key::Str(k) = k {
+                    String::from_utf8_lossy(k).into_owned()
+                } else {
+                    String::new()
+                }
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "advanced_mode",
+                "css_target",
+                "sanitize_svg_front_end",
+                "sanitize_on_upload_roles",
+                "restrict"
+            ]
+        );
         assert_eq!(items[1].1, s("my svg"));
         assert_eq!(items[2].1, Value::Bool(false));
         assert_eq!(items[4].1, Value::Array(vec![(Key::Int(0), s("none"))]));

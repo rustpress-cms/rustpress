@@ -24,10 +24,17 @@ pub async fn present(page: &Page<'_>, p: &Presentation) -> Result<String> {
             let link = match url {
                 Some(url) if index + 1 < total => {
                     let target = if blank { " target=\"_blank\"" } else { "" };
-                    format!("<span><a{target} href=\"{}\">{text}</a></span>", rustpress_core::formatting::esc_url(url))
+                    format!(
+                        "<span><a{target} href=\"{}\">{text}</a></span>",
+                        rustpress_core::formatting::esc_url(url)
+                    )
                 }
                 _ if index + 1 == total => {
-                    let text = if page.options.is_true("breadcrumbs-boldlast") { format!("<strong>{text}</strong>") } else { text.to_owned() };
+                    let text = if page.options.is_true("breadcrumbs-boldlast") {
+                        format!("<strong>{text}</strong>")
+                    } else {
+                        text.to_owned()
+                    };
                     format!("<span class=\"breadcrumb_last\" aria-current=\"page\">{text}</span>")
                 }
                 _ => format!("<span>{text}</span>"),

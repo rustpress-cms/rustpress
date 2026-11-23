@@ -56,7 +56,9 @@ impl BlockType {
     /// `wp_should_skip_block_supports_serialization`.
     pub fn skips_serialization(&self, feature_set: &str, feature: Option<&str>) -> bool {
         match self.support(&[feature_set, "__experimentalSkipSerialization"]) {
-            Some(Value::Array(list)) => feature.is_some_and(|f| list.iter().any(|v| v.as_str() == Some(f))),
+            Some(Value::Array(list)) => {
+                feature.is_some_and(|f| list.iter().any(|v| v.as_str() == Some(f)))
+            }
             Some(Value::Bool(b)) => *b,
             _ => false,
         }
@@ -67,7 +69,9 @@ impl BlockType {
     pub fn prepare_attributes(&self, attrs: &Map<String, Value>) -> Map<String, Value> {
         let mut out = attrs.clone();
         for (name, value) in attrs {
-            let Some(schema) = self.attributes.get(name) else { continue };
+            let Some(schema) = self.attributes.get(name) else {
+                continue;
+            };
             if validates(value, schema) {
                 continue;
             }
@@ -82,9 +86,10 @@ impl BlockType {
         }
         for (name, schema) in &self.attributes {
             if !out.contains_key(name)
-                && let Some(default) = schema.get("default").filter(|d| !d.is_null()) {
-                    out.insert(name.clone(), default.clone());
-                }
+                && let Some(default) = schema.get("default").filter(|d| !d.is_null())
+            {
+                out.insert(name.clone(), default.clone());
+            }
         }
         out
     }
@@ -93,9 +98,10 @@ impl BlockType {
 /// A small subset of `rest_validate_value_from_schema`: type and enum.
 fn validates(value: &Value, schema: &Value) -> bool {
     if let Some(options) = schema.get("enum").and_then(Value::as_array)
-        && !options.contains(value) {
-            return false;
-        }
+        && !options.contains(value)
+    {
+        return false;
+    }
     let matches_type = |t: &str| match t {
         "string" => value.is_string(),
         "boolean" => value.is_boolean(),
@@ -122,7 +128,10 @@ pub struct Registry {
 impl Registry {
     /// `blocks_dir` is `<wordpress>/wp-includes/blocks`.
     pub fn new(blocks_dir: impl Into<PathBuf>) -> Self {
-        Self { blocks_dir: blocks_dir.into(), cache: Mutex::new(HashMap::new()) }
+        Self {
+            blocks_dir: blocks_dir.into(),
+            cache: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn blocks_dir(&self) -> &Path {
@@ -133,10 +142,19 @@ impl Registry {
     /// then the dynamic ones of `require-dynamic-blocks.php`.
     pub fn registration_order(&self) -> Vec<String> {
         // The widget blocks, then the blocks with a PHP file (their `init` callbacks come first), then the static ones.
-        let mut names = vec!["core/legacy-widget".to_owned(), "core/widget-group".to_owned()];
-        if let Some(text) = rustpress_core::files::read(&self.blocks_dir.join("require-dynamic-blocks.php")) {
+        let mut names = vec![
+            "core/legacy-widget".to_owned(),
+            "core/widget-group".to_owned(),
+        ];
+        if let Some(text) =
+            rustpress_core::files::read(&self.blocks_dir.join("require-dynamic-blocks.php"))
+        {
             for line in text.lines() {
-                if let Some(file) = line.split("/blocks/").nth(1).and_then(|l| l.split(".php").next()) {
+                if let Some(file) = line
+                    .split("/blocks/")
+                    .nth(1)
+                    .and_then(|l| l.split(".php").next())
+                {
                     let name = format!("core/{file}");
                     if !names.contains(&name) {
                         names.push(name);
@@ -144,9 +162,15 @@ impl Registry {
                 }
             }
         }
-        if let Some(text) = rustpress_core::files::read(&self.blocks_dir.join("require-static-blocks.php")) {
+        if let Some(text) =
+            rustpress_core::files::read(&self.blocks_dir.join("require-static-blocks.php"))
+        {
             for line in text.lines() {
-                if let Some(name) = line.trim().strip_prefix('\'').and_then(|l| l.split('\'').next()) {
+                if let Some(name) = line
+                    .trim()
+                    .strip_prefix('\'')
+                    .and_then(|l| l.split('\'').next())
+                {
                     names.push(format!("core/{name}"));
                 }
             }
@@ -159,14 +183,23 @@ impl Registry {
     pub fn block_data(&self) -> Value {
         let mut blocks = Map::new();
         for name in self.registration_order() {
-            let Some(block) = self.get(&name) else { continue };
+            let Some(block) = self.get(&name) else {
+                continue;
+            };
             if let Some(style) = block.support(&["__experimentalStyle"]) {
                 blocks.insert(name.clone(), style.clone());
             }
-            if block.support(&["spacing", "blockGap", "__experimentalDefault"]).is_some() {
-                let entry = blocks.entry(name.clone()).or_insert_with(|| Value::Object(Map::new()));
+            if block
+                .support(&["spacing", "blockGap", "__experimentalDefault"])
+                .is_some()
+            {
+                let entry = blocks
+                    .entry(name.clone())
+                    .or_insert_with(|| Value::Object(Map::new()));
                 if let Some(entry) = entry.as_object_mut() {
-                    let spacing = entry.entry("spacing").or_insert_with(|| Value::Object(Map::new()));
+                    let spacing = entry
+                        .entry("spacing")
+                        .or_insert_with(|| Value::Object(Map::new()));
                     if let Some(spacing) = spacing.as_object_mut() {
                         spacing.entry("blockGap").or_insert(Value::Null);
                     }
@@ -207,19 +240,34 @@ impl Registry {
         let object = json.as_object()?;
         Some(BlockType {
             name: name.to_owned(),
-            attributes: object.get("attributes").and_then(Value::as_object).cloned().unwrap_or_default(),
+            attributes: object
+                .get("attributes")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default(),
             supports: object.get("supports").cloned().unwrap_or(Value::Null),
             uses_context: object
                 .get("usesContext")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                })
                 .unwrap_or_default(),
-            provides_context: object.get("providesContext").and_then(Value::as_object).cloned().unwrap_or_default(),
+            provides_context: object
+                .get("providesContext")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default(),
             selectors: object.get("selectors").cloned().unwrap_or(Value::Null),
             has_style: object.contains_key("style"),
             styles: match object.get("style") {
                 Some(Value::String(s)) => vec![s.clone()],
-                Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
+                Some(Value::Array(a)) => a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect(),
                 _ if dir.join("style.min.css").is_file() => vec![format!("wp-block-{slug}")],
                 _ => Vec::new(),
             },
@@ -232,7 +280,10 @@ impl Registry {
 fn legacy_post_comments(dir: PathBuf) -> BlockType {
     BlockType {
         name: "core/post-comments".into(),
-        attributes: serde_json::json!({ "textAlign": { "type": "string" } }).as_object().cloned().unwrap_or_default(),
+        attributes: serde_json::json!({ "textAlign": { "type": "string" } })
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
         supports: serde_json::json!({
             "html": false,
             "align": ["wide", "full"],
@@ -249,7 +300,11 @@ fn legacy_post_comments(dir: PathBuf) -> BlockType {
         selectors: Value::Null,
         dir,
         has_style: true,
-        styles: vec!["wp-block-post-comments".into(), "wp-block-buttons".into(), "wp-block-button".into()],
+        styles: vec![
+            "wp-block-post-comments".into(),
+            "wp-block-buttons".into(),
+            "wp-block-button".into(),
+        ],
     }
 }
 
@@ -289,7 +344,10 @@ mod tests {
 
     #[test]
     fn support_lookup_follows_block_has_support() {
-        let b = block(json!({}), json!({"color": {"text": true}, "align": ["wide"], "html": false, "anchor": true}));
+        let b = block(
+            json!({}),
+            json!({"color": {"text": true}, "align": ["wide"], "html": false, "anchor": true}),
+        );
         assert!(b.has_support(&["color"], false));
         assert!(b.has_support(&["color", "text"], false));
         assert!(b.has_support(&["align"], false));
@@ -301,7 +359,10 @@ mod tests {
 
     #[test]
     fn skip_serialization_can_be_boolean_or_list() {
-        let b = block(json!({}), json!({"color": {"__experimentalSkipSerialization": true}, "spacing": {"__experimentalSkipSerialization": ["blockGap"]}}));
+        let b = block(
+            json!({}),
+            json!({"color": {"__experimentalSkipSerialization": true}, "spacing": {"__experimentalSkipSerialization": ["blockGap"]}}),
+        );
         assert!(b.skips_serialization("color", Some("text")));
         assert!(b.skips_serialization("spacing", Some("blockGap")));
         assert!(!b.skips_serialization("spacing", Some("padding")));

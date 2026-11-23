@@ -5,10 +5,10 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+use rustpress_core::Site;
 use rustpress_core::formatting::{esc_html, esc_url};
 use rustpress_core::kses::Allowed;
 use rustpress_core::native::AdminContext;
-use rustpress_core::Site;
 use rustpress_phpser::Value;
 
 use super::DOMAIN;
@@ -34,28 +34,64 @@ fn esc_textarea(text: &str) -> String {
 /// `wpcf7_messages()` with the descriptions, as the editor lists them (`captcha_not_match` only with Really Simple
 /// CAPTCHA, which RustPress does not have).
 const MESSAGES: &[(&str, &str)] = &[
-    ("mail_sent_ok", "Sender&#8217;s message was sent successfully"),
+    (
+        "mail_sent_ok",
+        "Sender&#8217;s message was sent successfully",
+    ),
     ("mail_sent_ng", "Sender&#8217;s message failed to send"),
     ("validation_error", "Validation errors occurred"),
     ("spam", "Submission was referred to as spam"),
-    ("accept_terms", "There are terms that the sender must accept"),
-    ("invalid_required", "There is a field that the sender must fill in"),
-    ("invalid_too_long", "There is a field with input that is longer than the maximum allowed length"),
-    ("invalid_too_short", "There is a field with input that is shorter than the minimum allowed length"),
+    (
+        "accept_terms",
+        "There are terms that the sender must accept",
+    ),
+    (
+        "invalid_required",
+        "There is a field that the sender must fill in",
+    ),
+    (
+        "invalid_too_long",
+        "There is a field with input that is longer than the maximum allowed length",
+    ),
+    (
+        "invalid_too_short",
+        "There is a field with input that is shorter than the minimum allowed length",
+    ),
     ("upload_failed", "Uploading a file fails for any reason"),
-    ("upload_file_type_invalid", "Uploaded file is not allowed for file type"),
+    (
+        "upload_file_type_invalid",
+        "Uploaded file is not allowed for file type",
+    ),
     ("upload_file_too_large", "Uploaded file is too large"),
-    ("upload_failed_php_error", "Uploading a file fails for PHP error"),
-    ("invalid_date", "Date format that the sender entered is invalid"),
+    (
+        "upload_failed_php_error",
+        "Uploading a file fails for PHP error",
+    ),
+    (
+        "invalid_date",
+        "Date format that the sender entered is invalid",
+    ),
     ("date_too_early", "Date is earlier than minimum limit"),
     ("date_too_late", "Date is later than maximum limit"),
-    ("invalid_number", "Number format that the sender entered is invalid"),
+    (
+        "invalid_number",
+        "Number format that the sender entered is invalid",
+    ),
     ("number_too_small", "Number is smaller than minimum limit"),
     ("number_too_large", "Number is larger than maximum limit"),
-    ("quiz_answer_not_correct", "Sender does not enter the correct answer to the quiz"),
-    ("invalid_email", "Email address that the sender entered is invalid"),
+    (
+        "quiz_answer_not_correct",
+        "Sender does not enter the correct answer to the quiz",
+    ),
+    (
+        "invalid_email",
+        "Email address that the sender entered is invalid",
+    ),
     ("invalid_url", "URL that the sender entered is invalid"),
-    ("invalid_tel", "Telephone number that the sender entered is invalid"),
+    (
+        "invalid_tel",
+        "Telephone number that the sender entered is invalid",
+    ),
 ];
 
 /// What the editor shows of a form: a stored one, or the template of a new one (`initial()`).
@@ -66,7 +102,11 @@ pub struct Edited<'a> {
 
 impl Edited<'_> {
     fn post_id(&self) -> i64 {
-        if self.initial { -1 } else { self.form.id as i64 }
+        if self.initial {
+            -1
+        } else {
+            self.form.id as i64
+        }
     }
 
     /// `message( $status, false )` of the upgraded properties.
@@ -76,30 +116,74 @@ impl Edited<'_> {
 
     /// `prop( $name )` of a mail template after `upgrade()`, with the defaults of `wp_parse_args()`.
     fn mail(&self, site: &Site, name: &str) -> Vec<(&'static str, Value)> {
-        let stored = if name == "mail" { self.form.mail.as_ref() } else { self.form.mail_2.as_ref() };
+        let stored = if name == "mail" {
+            self.form.mail.as_ref()
+        } else {
+            self.form.mail_2.as_ref()
+        };
         let empty = Value::Str(Vec::new());
-        let mut out: Vec<(&'static str, Value)> = ["active", "recipient", "sender", "subject", "body", "additional_headers", "attachments", "use_html", "exclude_blank"]
-            .iter()
-            .map(|key| (*key, stored.and_then(|m| m.get(key)).cloned().unwrap_or_else(|| if matches!(*key, "active" | "use_html" | "exclude_blank") { Value::Bool(false) } else { empty.clone() })))
-            .collect();
+        let mut out: Vec<(&'static str, Value)> = [
+            "active",
+            "recipient",
+            "sender",
+            "subject",
+            "body",
+            "additional_headers",
+            "attachments",
+            "use_html",
+            "exclude_blank",
+        ]
+        .iter()
+        .map(|key| {
+            (
+                *key,
+                stored.and_then(|m| m.get(key)).cloned().unwrap_or_else(|| {
+                    if matches!(*key, "active" | "use_html" | "exclude_blank") {
+                        Value::Bool(false)
+                    } else {
+                        empty.clone()
+                    }
+                }),
+            )
+        })
+        .collect();
         // `upgrade()`: a mail without a recipient goes to the administrator.
-        if name == "mail" && stored.is_none_or(|m| m.as_array().is_some() && m.get("recipient").is_none()) {
-            out[1].1 = Value::Str(site.options.get("admin_email").unwrap_or_default().as_bytes().to_vec());
+        if name == "mail"
+            && stored.is_none_or(|m| m.as_array().is_some() && m.get("recipient").is_none())
+        {
+            out[1].1 = Value::Str(
+                site.options
+                    .get("admin_email")
+                    .unwrap_or_default()
+                    .as_bytes()
+                    .to_vec(),
+            );
         }
         out
     }
 }
 
 fn mail_value<'a>(mail: &'a [(&'static str, Value)], key: &str) -> &'a Value {
-    mail.iter().find(|(k, _)| *k == key).map(|(_, v)| v).expect("every key of the mail has a default")
+    mail.iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, v)| v)
+        .expect("every key of the mail has a default")
 }
 
 /// `collect_mail_tags()`: the names of the form-tags whose type is for mail.
 fn collect_mail_tags(form: &ContactForm) -> Vec<String> {
-    let not_for_mail: Vec<&str> = form_tag::TAG_TYPES.iter().filter(|(_, f)| f.not_for_mail).map(|(t, _)| *t).collect();
+    let not_for_mail: Vec<&str> = form_tag::TAG_TYPES
+        .iter()
+        .filter(|(_, f)| f.not_for_mail)
+        .map(|(t, _)| *t)
+        .collect();
     let mut out: Vec<String> = Vec::new();
     for tag in form_tag::scan(&form.form) {
-        if tag.basetype.is_empty() || not_for_mail.contains(&tag.basetype.as_str()) || tag.name.is_empty() || out.contains(&tag.name) {
+        if tag.basetype.is_empty()
+            || not_for_mail.contains(&tag.basetype.as_str())
+            || tag.name.is_empty()
+            || out.contains(&tag.name)
+        {
             continue;
         }
         out.push(tag.name);
@@ -109,18 +193,37 @@ fn collect_mail_tags(form: &ContactForm) -> Vec<String> {
 
 /// `suggest_mail_tags( $template_name )`.
 fn suggest_mail_tags(form: &ContactForm, mail: &[(&'static str, Value)]) -> String {
-    let texts: Vec<String> = mail.iter().filter(|(_, v)| php_truthy(v)).map(|(_, v)| php_string(v)).collect();
+    let texts: Vec<String> = mail
+        .iter()
+        .filter(|(_, v)| php_truthy(v))
+        .map(|(_, v)| php_string(v))
+        .collect();
     let mut out = String::new();
     for tag in collect_mail_tags(form) {
-        let pattern = Regex::new(&format!(r"\[(_[a-z]+_)?{}([ \t]+[^\]]+)?\]", regex::escape(&tag))).expect("valid mail-tag pattern");
+        let pattern = Regex::new(&format!(
+            r"\[(_[a-z]+_)?{}([ \t]+[^\]]+)?\]",
+            regex::escape(&tag)
+        ))
+        .expect("valid mail-tag pattern");
         let used = texts.iter().any(|t| pattern.is_match(t));
-        out.push_str(&format!("<span class=\"mailtag code {}\">[{}]</span>", if used { "used" } else { "unused" }, esc_html(&tag)));
+        out.push_str(&format!(
+            "<span class=\"mailtag code {}\">[{}]</span>",
+            if used { "used" } else { "unused" },
+            esc_html(&tag)
+        ));
     }
     out
 }
 
 /// `wpcf7_editor_box_mail()`.
-fn mail_box(site: &Site, edited: &Edited<'_>, id: &str, name: &str, title: &str, use_label: Option<&str>) -> String {
+fn mail_box(
+    site: &Site,
+    edited: &Edited<'_>,
+    id: &str,
+    name: &str,
+    title: &str,
+    use_label: Option<&str>,
+) -> String {
     let t = |text: &str| tr(site, text);
     let mail = edited.mail(site, name);
     let value = |key: &str| s(php_string(mail_value(&mail, key)));
@@ -132,25 +235,43 @@ fn mail_box(site: &Site, edited: &Edited<'_>, id: &str, name: &str, title: &str,
         other => Att::Str(php_string(other)),
     };
     let mut f = HtmlFormatter::new(false);
-    f.open("div", &[("class", s("contact-form-editor-box-mail")), ("id", s(id))]);
+    f.open(
+        "div",
+        &[("class", s("contact-form-editor-box-mail")), ("id", s(id))],
+    );
     f.open("h2", &[]);
     f.append_preformatted(&esc_html(title));
     f.end_tag("h2");
     if let Some(use_label) = use_label {
         f.open("label", &[("for", s(format!("{id}-active")))]);
-        f.open("input", &[("type", s("checkbox")), ("id", s(format!("{id}-active"))), ("name", s(format!("{id}[active]"))), ("data-config-field", s("")), ("data-toggle", s(format!("{id}-fieldset"))), ("value", s("1")), ("checked", flag("active"))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("checkbox")),
+                ("id", s(format!("{id}-active"))),
+                ("name", s(format!("{id}[active]"))),
+                ("data-config-field", s("")),
+                ("data-toggle", s(format!("{id}-fieldset"))),
+                ("value", s("1")),
+                ("checked", flag("active")),
+            ],
+        );
         f.append_whitespace();
         f.append_preformatted(&esc_html(use_label));
         f.end_tag("label");
         f.open("p", &[("class", s("description"))]);
-        f.append_preformatted(&esc_html(&t("Mail (2) is an additional mail template often used as an autoresponder.")));
+        f.append_preformatted(&esc_html(&t(
+            "Mail (2) is an additional mail template often used as an autoresponder.",
+        )));
         f.end_tag("p");
     }
     f.open("fieldset", &[("id", s(format!("{id}-fieldset")))]);
     f.open("legend", &[]);
     f.append_preformatted(&t("You can edit the email template here. For details, see <a href=\"%s\">Setting up mail</a>.").replacen("%s", "https://contactform7.com/setting-up-mail/", 1));
     f.open("br", &[]);
-    f.append_preformatted(&esc_html(&t("In the following fields, you can use these mail-tags:")));
+    f.append_preformatted(&esc_html(&t(
+        "In the following fields, you can use these mail-tags:",
+    )));
     f.open("br", &[]);
     f.append_printed(&suggest_mail_tags(edited.form, &mail));
     f.end_tag("legend");
@@ -162,7 +283,18 @@ fn mail_box(site: &Site, edited: &Edited<'_>, id: &str, name: &str, title: &str,
         f.open("label", &[("for", s(format!("{id}-{field}")))]);
         f.append_preformatted(&esc_html(&t(label)));
         f.open("td", &[]);
-        f.open("input", &[("type", s("text")), ("id", s(format!("{id}-{field}"))), ("name", s(format!("{id}[{key}]"))), ("class", s("large-text code")), ("size", Att::Int(70)), ("value", value(key)), ("data-config-field", s(format!("{name}.{key}")))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("text")),
+                ("id", s(format!("{id}-{field}"))),
+                ("name", s(format!("{id}[{key}]"))),
+                ("class", s("large-text code")),
+                ("size", Att::Int(70)),
+                ("value", value(key)),
+                ("data-config-field", s(format!("{name}.{key}"))),
+            ],
+        );
         f.end_tag("tr");
     };
     row(&mut f, "recipient", "recipient", "To");
@@ -174,17 +306,49 @@ fn mail_box(site: &Site, edited: &Edited<'_>, id: &str, name: &str, title: &str,
         f.open("label", &[("for", s(format!("{id}-{field}")))]);
         f.append_preformatted(&esc_html(&t(label)));
         f.open("td", &[]);
-        f.open("textarea", &[("id", s(format!("{id}-{field}"))), ("name", s(format!("{id}[{key}]"))), ("cols", Att::Int(100)), ("rows", Att::Int(rows)), ("class", s("large-text code")), ("data-config-field", s(format!("{name}.{key}")))]);
+        f.open(
+            "textarea",
+            &[
+                ("id", s(format!("{id}-{field}"))),
+                ("name", s(format!("{id}[{key}]"))),
+                ("cols", Att::Int(100)),
+                ("rows", Att::Int(rows)),
+                ("class", s("large-text code")),
+                ("data-config-field", s(format!("{name}.{key}"))),
+            ],
+        );
         f.append_preformatted(&esc_textarea(&php_string(mail_value(&mail, key))));
     };
-    textarea_row(&mut f, "additional_headers", "additional-headers", "Additional headers", 4);
+    textarea_row(
+        &mut f,
+        "additional_headers",
+        "additional-headers",
+        "Additional headers",
+        4,
+    );
     f.end_tag("tr");
     textarea_row(&mut f, "body", "body", "Message body", 18);
     f.end_tag("textarea");
-    for (key, field, label) in [("exclude_blank", "exclude-blank", "Exclude a line from output if all of its mail-tags are blank"), ("use_html", "use-html", "Use HTML content type")] {
+    for (key, field, label) in [
+        (
+            "exclude_blank",
+            "exclude-blank",
+            "Exclude a line from output if all of its mail-tags are blank",
+        ),
+        ("use_html", "use-html", "Use HTML content type"),
+    ] {
         f.open("p", &[]);
         f.open("label", &[("for", s(format!("{id}-{field}")))]);
-        f.open("input", &[("type", s("checkbox")), ("id", s(format!("{id}-{field}"))), ("name", s(format!("{id}[{key}]"))), ("value", s("1")), ("checked", flag(key))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("checkbox")),
+                ("id", s(format!("{id}-{field}"))),
+                ("name", s(format!("{id}[{key}]"))),
+                ("value", s("1")),
+                ("checked", flag(key)),
+            ],
+        );
         f.append_whitespace();
         f.append_preformatted(&esc_html(&t(label)));
     }
@@ -207,7 +371,17 @@ fn panel_form(site: &Site, edited: &Edited<'_>) -> String {
     f.append_preformatted(&t("You can edit the form template here. For details, see <a href=\"%s\">Editing form template</a>.").replacen("%s", "https://contactform7.com/editing-form-template/", 1));
     f.end_tag("legend");
     f.append_printed(&tag_generator_buttons(site));
-    f.open("textarea", &[("id", s("wpcf7-form")), ("name", s("wpcf7-form")), ("cols", Att::Int(100)), ("rows", Att::Int(24)), ("class", s("large-text code")), ("data-config-field", s("form.body"))]);
+    f.open(
+        "textarea",
+        &[
+            ("id", s("wpcf7-form")),
+            ("name", s("wpcf7-form")),
+            ("cols", Att::Int(100)),
+            ("rows", Att::Int(24)),
+            ("class", s("large-text code")),
+            ("data-config-field", s("form.body")),
+        ],
+    );
     f.append_preformatted(&esc_textarea(&edited.form.form));
     f.end_tag("textarea");
     kses(&f.output())
@@ -218,7 +392,14 @@ fn panel_mail(site: &Site, edited: &Edited<'_>) -> String {
     format!(
         "{}<br class=\"clear\" />{}",
         mail_box(site, edited, "wpcf7-mail", "mail", &tr(site, "Mail"), None),
-        mail_box(site, edited, "wpcf7-mail-2", "mail_2", &tr(site, "Mail (2)"), Some(&tr(site, "Use Mail (2)")))
+        mail_box(
+            site,
+            edited,
+            "wpcf7-mail-2",
+            "mail_2",
+            &tr(site, "Mail (2)"),
+            Some(&tr(site, "Use Mail (2)"))
+        )
     )
 }
 
@@ -239,7 +420,18 @@ fn panel_messages(site: &Site, edited: &Edited<'_>) -> String {
         f.open("label", &[("for", s(&field_id))]);
         f.append_preformatted(&esc_html(&t(description)));
         f.open("br", &[]);
-        f.open("input", &[("type", s("text")), ("id", s(&field_id)), ("name", s(format!("wpcf7-messages[{key}]"))), ("class", s("large-text")), ("size", Att::Int(70)), ("value", s(edited.message(site, key))), ("data-config-field", s(format!("messages.{key}")))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("text")),
+                ("id", s(&field_id)),
+                ("name", s(format!("wpcf7-messages[{key}]"))),
+                ("class", s("large-text")),
+                ("size", Att::Int(70)),
+                ("value", s(edited.message(site, key))),
+                ("data-config-field", s(format!("messages.{key}"))),
+            ],
+        );
     }
     kses(&f.output())
 }
@@ -255,7 +447,17 @@ fn panel_additional_settings(site: &Site, edited: &Edited<'_>) -> String {
     f.open("legend", &[]);
     f.append_preformatted(&t("You can add customization code snippets here. For details, see <a href=\"%s\">Additional settings</a>.").replacen("%s", "https://contactform7.com/additional-settings/", 1));
     f.end_tag("legend");
-    f.open("textarea", &[("id", s("wpcf7-additional-settings")), ("name", s("wpcf7-additional-settings")), ("cols", Att::Int(100)), ("rows", Att::Int(24)), ("class", s("large-text")), ("data-config-field", s("additional_settings.body"))]);
+    f.open(
+        "textarea",
+        &[
+            ("id", s("wpcf7-additional-settings")),
+            ("name", s("wpcf7-additional-settings")),
+            ("cols", Att::Int(100)),
+            ("rows", Att::Int(24)),
+            ("class", s("large-text")),
+            ("data-config-field", s("additional_settings.body")),
+        ],
+    );
     f.append_preformatted(&esc_textarea(&edited.form.additional_settings));
     f.end_tag("textarea");
     kses(&f.output())
@@ -268,21 +470,68 @@ fn editor_panels(ctx: &AdminContext<'_>, edited: &Edited<'_>) -> String {
     if !(ctx.can)(READ_WRITE) {
         return String::new();
     }
-    let settings = edited.form.additional_settings.trim().split('\n').filter(|l| !l.is_empty() && *l != "0").count();
-    let additional_title = if settings > 0 { t("Additional Settings (%d)").replacen("%d", &settings.to_string(), 1) } else { t("Additional Settings") };
-    let panels: Vec<(&str, String)> = vec![("form-panel", t("Form")), ("mail-panel", t("Mail")), ("messages-panel", t("Messages")), ("additional-settings-panel", additional_title)];
+    let settings = edited
+        .form
+        .additional_settings
+        .trim()
+        .split('\n')
+        .filter(|l| !l.is_empty() && *l != "0")
+        .count();
+    let additional_title = if settings > 0 {
+        t("Additional Settings (%d)").replacen("%d", &settings.to_string(), 1)
+    } else {
+        t("Additional Settings")
+    };
+    let panels: Vec<(&str, String)> = vec![
+        ("form-panel", t("Form")),
+        ("mail-panel", t("Mail")),
+        ("messages-panel", t("Messages")),
+        ("additional-settings-panel", additional_title),
+    ];
     let requested = ctx.get("active-tab").unwrap_or_default();
-    let active = panels.iter().position(|(id, _)| *id == requested).unwrap_or(0);
+    let active = panels
+        .iter()
+        .position(|(id, _)| *id == requested)
+        .unwrap_or(0);
     let mut f = HtmlFormatter::new(false);
-    f.open("nav", &[("id", s("contact-form-editor-tabs")), ("role", s("tablist")), ("aria-label", s(t("Contact form editor tabs"))), ("data-active-tab", Att::Int(active as i64))]);
+    f.open(
+        "nav",
+        &[
+            ("id", s("contact-form-editor-tabs")),
+            ("role", s("tablist")),
+            ("aria-label", s(t("Contact form editor tabs"))),
+            ("data-active-tab", Att::Int(active as i64)),
+        ],
+    );
     for (index, (id, title)) in panels.iter().enumerate() {
         let current = index == active;
-        f.open("button", &[("type", s("button")), ("role", s("tab")), ("aria-selected", s(if current { "true" } else { "false" })), ("aria-controls", s(*id)), ("id", s(format!("{id}-tab"))), ("tabindex", s(if current { "0" } else { "-1" })), ("data-panel", s(*id))]);
+        f.open(
+            "button",
+            &[
+                ("type", s("button")),
+                ("role", s("tab")),
+                ("aria-selected", s(if current { "true" } else { "false" })),
+                ("aria-controls", s(*id)),
+                ("id", s(format!("{id}-tab"))),
+                ("tabindex", s(if current { "0" } else { "-1" })),
+                ("data-panel", s(*id)),
+            ],
+        );
         f.append_preformatted(&esc_html(title));
     }
     f.end_tag("nav");
     for (index, (id, _)) in panels.iter().enumerate() {
-        f.open("section", &[("role", s("tabpanel")), ("aria-labelledby", s(format!("{id}-tab"))), ("id", s(*id)), ("class", s("contact-form-editor-panel")), ("tabindex", s("0")), ("hidden", Att::Bool(index != active))]);
+        f.open(
+            "section",
+            &[
+                ("role", s("tabpanel")),
+                ("aria-labelledby", s(format!("{id}-tab"))),
+                ("id", s(*id)),
+                ("class", s("contact-form-editor-panel")),
+                ("tabindex", s("0")),
+                ("hidden", Att::Bool(index != active)),
+            ],
+        );
         let content = match *id {
             "form-panel" => panel_form(site, edited),
             "mail-panel" => panel_mail(site, edited),
@@ -298,13 +547,20 @@ fn editor_panels(ctx: &AdminContext<'_>, edited: &Edited<'_>) -> String {
 /// `wpcf7_kses_allowed_html()` with the `form` attributes of `edit-contact-form.php`.
 fn page_allowed() -> &'static Allowed {
     static ALLOWED: OnceLock<Allowed> = OnceLock::new();
-    ALLOWED.get_or_init(|| form_context().merged(&[("form", &["method", "action", "id", "class", "disabled"])]))
+    ALLOWED.get_or_init(|| {
+        form_context().merged(&[("form", &["method", "action", "id", "class", "disabled"])])
+    })
 }
 
 /// The same with the `dialog` and the `form` of the tag generator panels.
 fn panels_allowed() -> &'static Allowed {
     static ALLOWED: OnceLock<Allowed> = OnceLock::new();
-    ALLOWED.get_or_init(|| form_context().merged(&[("dialog", &["id", "class"]), ("form", &["method", "class", "data-*"])]))
+    ALLOWED.get_or_init(|| {
+        form_context().merged(&[
+            ("dialog", &["id", "class"]),
+            ("form", &["method", "class", "data-*"]),
+        ])
+    })
 }
 
 /// `print()` of a formatter made with the default options.
@@ -321,18 +577,40 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
     let post_id = edited.post_id();
     let form = edited.form;
     let mut f = HtmlFormatter::new(false);
-    f.open("div", &[("class", s("wrap")), ("id", s("wpcf7-contact-form-editor"))]);
+    f.open(
+        "div",
+        &[("class", s("wrap")), ("id", s("wpcf7-contact-form-editor"))],
+    );
     f.open("h1", &[("class", s("wp-heading-inline"))]);
-    f.append_preformatted(&esc_html(&if edited.initial { t("Add Contact Form") } else { t("Edit Contact Form") }));
+    f.append_preformatted(&esc_html(&if edited.initial {
+        t("Add Contact Form")
+    } else {
+        t("Edit Contact Form")
+    }));
     f.end_tag("h1");
     if !edited.initial && can_edit {
         f.append_whitespace();
-        f.append_preformatted(&format!("<a class=\"page-title-action\" href=\"{}\">{}</a>", esc_url(&site.site_url("wp-admin/admin.php?page=wpcf7-new")), esc_html(&t("Add Contact Form"))));
+        f.append_preformatted(&format!(
+            "<a class=\"page-title-action\" href=\"{}\">{}</a>",
+            esc_url(&site.site_url("wp-admin/admin.php?page=wpcf7-new")),
+            esc_html(&t("Add Contact Form"))
+        ));
     }
     f.open("hr", &[("class", s("wp-header-end"))]);
     f.append_printed(notices);
-    let action = format!("{}&post={post_id}", site.site_url("wp-admin/admin.php?page=wpcf7"));
-    f.open("form", &[("method", s("post")), ("action", s(esc_url(&action))), ("id", s("wpcf7-admin-form-element")), ("disabled", Att::Bool(!can_edit))]);
+    let action = format!(
+        "{}&post={post_id}",
+        site.site_url("wp-admin/admin.php?page=wpcf7")
+    );
+    f.open(
+        "form",
+        &[
+            ("method", s("post")),
+            ("action", s(esc_url(&action))),
+            ("id", s("wpcf7-admin-form-element")),
+            ("disabled", Att::Bool(!can_edit)),
+        ],
+    );
     if can_edit {
         f.append_printed(&format!(
             "<input type=\"hidden\" id=\"_wpnonce\" name=\"_wpnonce\" value=\"{}\" /><input type=\"hidden\" name=\"_wp_http_referer\" value=\"{}\" />",
@@ -340,12 +618,50 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
             rustpress_core::formatting::esc_attr(ctx.request_uri)
         ));
     }
-    f.open("input", &[("type", s("hidden")), ("id", s("post_ID")), ("name", s("post_ID")), ("value", Att::Int(post_id))]);
-    f.open("input", &[("type", s("hidden")), ("id", s("wpcf7-locale")), ("name", s("wpcf7-locale")), ("value", s(&form.locale))]);
-    f.open("input", &[("type", s("hidden")), ("id", s("hiddenaction")), ("name", s("action")), ("value", s("save"))]);
-    f.open("input", &[("type", s("hidden")), ("id", s("active-tab")), ("name", s("active-tab")), ("value", s(ctx.get("active-tab").unwrap_or_default()))]);
+    f.open(
+        "input",
+        &[
+            ("type", s("hidden")),
+            ("id", s("post_ID")),
+            ("name", s("post_ID")),
+            ("value", Att::Int(post_id)),
+        ],
+    );
+    f.open(
+        "input",
+        &[
+            ("type", s("hidden")),
+            ("id", s("wpcf7-locale")),
+            ("name", s("wpcf7-locale")),
+            ("value", s(&form.locale)),
+        ],
+    );
+    f.open(
+        "input",
+        &[
+            ("type", s("hidden")),
+            ("id", s("hiddenaction")),
+            ("name", s("action")),
+            ("value", s("save")),
+        ],
+    );
+    f.open(
+        "input",
+        &[
+            ("type", s("hidden")),
+            ("id", s("active-tab")),
+            ("name", s("active-tab")),
+            ("value", s(ctx.get("active-tab").unwrap_or_default())),
+        ],
+    );
     f.open("div", &[("id", s("poststuff"))]);
-    f.open("div", &[("id", s("post-body")), ("class", s("metabox-holder columns-2 wp-clearfix"))]);
+    f.open(
+        "div",
+        &[
+            ("id", s("post-body")),
+            ("class", s("metabox-holder columns-2 wp-clearfix")),
+        ],
+    );
     f.open("div", &[("id", s("post-body-content"))]);
     f.open("div", &[("id", s("titlediv"))]);
     f.open("div", &[("id", s("titlewrap"))]);
@@ -354,7 +670,14 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
         &[
             ("type", s("text")),
             ("name", s("post_title")),
-            ("value", s(if edited.initial { String::new() } else { form.title.clone() })),
+            (
+                "value",
+                s(if edited.initial {
+                    String::new()
+                } else {
+                    form.title.clone()
+                }),
+            ),
             ("id", s("title")),
             ("spellcheck", s("true")),
             ("autocomplete", s("off")),
@@ -366,20 +689,48 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
     f.end_tag("div");
     f.open("div", &[("class", s("inside"))]);
     if !edited.initial {
-        f.open("div", &[("id", s("wpcf7-shortcode-wrap")), ("class", s("hide-shortcode"))]);
-        f.open("button", &[("class", s("toggle-shortcode alignright button-link")), ("type", s("button"))]);
+        f.open(
+            "div",
+            &[
+                ("id", s("wpcf7-shortcode-wrap")),
+                ("class", s("hide-shortcode")),
+            ],
+        );
+        f.open(
+            "button",
+            &[
+                ("class", s("toggle-shortcode alignright button-link")),
+                ("type", s("button")),
+            ],
+        );
         f.append_preformatted(&esc_html(&t("Toggle shortcode")));
         f.end_tag("button");
         f.open("div", &[("id", s("wpcf7-shortcode-inside"))]);
-        let title: String = form.title.chars().filter(|c| !matches!(c, '"' | '[' | ']')).collect();
-        let shortcode = format!("[contact-form-7 id=\"{}\" title=\"{title}\"]", form.short_hash(7));
+        let title: String = form
+            .title
+            .chars()
+            .filter(|c| !matches!(c, '"' | '[' | ']'))
+            .collect();
+        let shortcode = format!(
+            "[contact-form-7 id=\"{}\" title=\"{title}\"]",
+            form.short_hash(7)
+        );
         f.open("p", &[("class", s("description"))]);
         f.open("label", &[("for", s("wpcf7-shortcode"))]);
         f.append_preformatted(&esc_html(&t("Shortcodes are only needed in the Classic Editor environment; otherwise, use the Contact Form 7 block in the Block Editor.")));
         f.end_tag("label");
         f.append_whitespace();
         f.open("span", &[("class", s("shortcode wp-ui-highlight"))]);
-        f.open("input", &[("type", s("text")), ("id", s("wpcf7-shortcode")), ("readonly", Att::Bool(true)), ("class", s("large-text code selectable")), ("value", s(shortcode))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("text")),
+                ("id", s("wpcf7-shortcode")),
+                ("readonly", Att::Bool(true)),
+                ("class", s("large-text code selectable")),
+                ("value", s(shortcode)),
+            ],
+        );
         f.end_tag("p");
         f.end_tag("div");
         f.end_tag("div");
@@ -387,9 +738,18 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
     f.end_tag("div");
     f.end_tag("div");
     f.end_tag("div");
-    f.open("div", &[("id", s("postbox-container-1")), ("class", s("postbox-container"))]);
+    f.open(
+        "div",
+        &[
+            ("id", s("postbox-container-1")),
+            ("class", s("postbox-container")),
+        ],
+    );
     if can_edit {
-        f.open("section", &[("id", s("submitdiv")), ("class", s("postbox"))]);
+        f.open(
+            "section",
+            &[("id", s("submitdiv")), ("class", s("postbox"))],
+        );
         f.open("h2", &[]);
         f.append_preformatted(&esc_html(&t("Status")));
         f.end_tag("h2");
@@ -397,11 +757,27 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
         f.open("div", &[("class", s("submitbox")), ("id", s("submitpost"))]);
         f.open("div", &[("id", s("minor-publishing-actions"))]);
         f.open("div", &[("class", s("hidden"))]);
-        f.open("button", &[("type", s("submit")), ("class", s("button-primary")), ("name", s("wpcf7-save")), ("value", s(t("Save")))]);
+        f.open(
+            "button",
+            &[
+                ("type", s("submit")),
+                ("class", s("button-primary")),
+                ("name", s("wpcf7-save")),
+                ("value", s(t("Save"))),
+            ],
+        );
         f.append_preformatted(&esc_html(&t("Save")));
         f.end_tag("div");
         if !edited.initial {
-            f.open("button", &[("type", s("submit")), ("name", s("wpcf7-copy")), ("class", s("copy button-link")), ("value", s(t("Duplicate")))]);
+            f.open(
+                "button",
+                &[
+                    ("type", s("submit")),
+                    ("name", s("wpcf7-copy")),
+                    ("class", s("copy button-link")),
+                    ("value", s(t("Duplicate"))),
+                ],
+            );
             f.append_preformatted(&esc_html(&t("Duplicate")));
             f.end_tag("button");
         }
@@ -412,13 +788,29 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
         f.open("div", &[("id", s("major-publishing-actions"))]);
         if !edited.initial {
             f.open("div", &[("id", s("delete-action"))]);
-            f.open("button", &[("type", s("submit")), ("name", s("wpcf7-delete")), ("class", s("delete submitdelete")), ("value", s(t("Delete")))]);
+            f.open(
+                "button",
+                &[
+                    ("type", s("submit")),
+                    ("name", s("wpcf7-delete")),
+                    ("class", s("delete submitdelete")),
+                    ("value", s(t("Delete"))),
+                ],
+            );
             f.append_preformatted(&esc_html(&t("Delete")));
             f.end_tag("div");
         }
         f.open("div", &[("id", s("publishing-action"))]);
         f.append_preformatted("<span class=\"spinner\"></span>");
-        f.open("button", &[("type", s("submit")), ("class", s("button-primary")), ("name", s("wpcf7-save")), ("value", s(t("Save")))]);
+        f.open(
+            "button",
+            &[
+                ("type", s("submit")),
+                ("class", s("button-primary")),
+                ("name", s("wpcf7-save")),
+                ("value", s(t("Save"))),
+            ],
+        );
         f.append_preformatted(&esc_html(&t("Save")));
         f.end_tag("div");
         f.append_preformatted("<div class=\"clear\"></div>");
@@ -428,7 +820,13 @@ pub fn page(ctx: &AdminContext<'_>, edited: &Edited<'_>, notices: &str) -> Strin
         f.end_tag("section");
     }
     f.end_tag("div");
-    f.open("div", &[("id", s("postbox-container-2")), ("class", s("postbox-container"))]);
+    f.open(
+        "div",
+        &[
+            ("id", s("postbox-container-2")),
+            ("class", s("postbox-container")),
+        ],
+    );
     f.open("div", &[("id", s("contact-form-editor"))]);
     f.append_printed(&editor_panels(ctx, edited));
     f.end_tag("div");
@@ -449,29 +847,91 @@ struct Generator {
 }
 
 const GENERATORS: &[Generator] = &[
-    Generator { id: "text", title: "text" },
-    Generator { id: "email", title: "email" },
-    Generator { id: "url", title: "URL" },
-    Generator { id: "tel", title: "tel" },
-    Generator { id: "number", title: "number" },
-    Generator { id: "date", title: "date" },
-    Generator { id: "textarea", title: "text area" },
-    Generator { id: "menu", title: "drop-down menu" },
-    Generator { id: "checkbox", title: "checkboxes" },
-    Generator { id: "radio", title: "radio buttons" },
-    Generator { id: "acceptance", title: "acceptance" },
-    Generator { id: "quiz", title: "quiz" },
-    Generator { id: "file", title: "file" },
-    Generator { id: "submit", title: "submit" },
+    Generator {
+        id: "text",
+        title: "text",
+    },
+    Generator {
+        id: "email",
+        title: "email",
+    },
+    Generator {
+        id: "url",
+        title: "URL",
+    },
+    Generator {
+        id: "tel",
+        title: "tel",
+    },
+    Generator {
+        id: "number",
+        title: "number",
+    },
+    Generator {
+        id: "date",
+        title: "date",
+    },
+    Generator {
+        id: "textarea",
+        title: "text area",
+    },
+    Generator {
+        id: "menu",
+        title: "drop-down menu",
+    },
+    Generator {
+        id: "checkbox",
+        title: "checkboxes",
+    },
+    Generator {
+        id: "radio",
+        title: "radio buttons",
+    },
+    Generator {
+        id: "acceptance",
+        title: "acceptance",
+    },
+    Generator {
+        id: "quiz",
+        title: "quiz",
+    },
+    Generator {
+        id: "file",
+        title: "file",
+    },
+    Generator {
+        id: "submit",
+        title: "submit",
+    },
 ];
 
 /// `WPCF7_TagGenerator::print_buttons()`.
 fn tag_generator_buttons(site: &Site) -> String {
     let mut f = HtmlFormatter::new(false);
-    f.open("span", &[("id", s("tag-generator-list")), ("class", s("hide-if-no-js"))]);
+    f.open(
+        "span",
+        &[
+            ("id", s("tag-generator-list")),
+            ("class", s("hide-if-no-js")),
+        ],
+    );
     for generator in GENERATORS {
         let title = tr(site, generator.title);
-        f.open("button", &[("type", s("button")), ("data-taggen", s("open-dialog")), ("data-target", s(format!("tag-generator-panel-{}", generator.id))), ("title", s(tr(site, "Form-tag Generator: %s").replacen("%s", &title, 1)))]);
+        f.open(
+            "button",
+            &[
+                ("type", s("button")),
+                ("data-taggen", s("open-dialog")),
+                (
+                    "data-target",
+                    s(format!("tag-generator-panel-{}", generator.id)),
+                ),
+                (
+                    "title",
+                    s(tr(site, "Form-tag Generator: %s").replacen("%s", &title, 1)),
+                ),
+            ],
+        );
         f.append_preformatted(&esc_html(&title));
     }
     kses(&f.output())
@@ -491,7 +951,10 @@ impl Parts<'_> {
     /// `ref( $suffix )`.
     fn r(&self, suffix: &str) -> String {
         let reference = format!("{}-{suffix}", self.key).to_lowercase();
-        let reference: String = reference.chars().filter(|c| c.is_ascii_digit() || c.is_ascii_lowercase() || *c == '-').collect();
+        let reference: String = reference
+            .chars()
+            .filter(|c| c.is_ascii_digit() || c.is_ascii_lowercase() || *c == '-')
+            .collect();
         let mut out = String::new();
         for c in reference.chars() {
             if c == '-' && out.ends_with('-') {
@@ -502,13 +965,24 @@ impl Parts<'_> {
         out.trim_matches('-').to_owned()
     }
 
-    fn field_type(&self, with_required: bool, with_optional: bool, select_options: &[(&str, String)]) -> String {
+    fn field_type(
+        &self,
+        with_required: bool,
+        with_optional: bool,
+        select_options: &[(&str, String)],
+    ) -> String {
         let mut f = HtmlFormatter::new(false);
         f.open("fieldset", &[]);
         f.open("legend", &[("id", s(self.r("type-legend")))]);
         f.append_preformatted(&esc_html(&self.t("Field type")));
         f.end_tag("legend");
-        f.open("select", &[("data-tag-part", s("basetype")), ("aria-labelledby", s(self.r("type-legend")))]);
+        f.open(
+            "select",
+            &[
+                ("data-tag-part", s("basetype")),
+                ("aria-labelledby", s(self.r("type-legend"))),
+            ],
+        );
         for (basetype, title) in select_options {
             f.open("option", &[("value", s(*basetype))]);
             f.append_preformatted(&esc_html(title));
@@ -517,14 +991,29 @@ impl Parts<'_> {
         if with_required {
             f.open("br", &[]);
             f.open("label", &[]);
-            f.open("input", &[("type", s("checkbox")), ("data-tag-part", s("type-suffix")), ("value", s("*"))]);
+            f.open(
+                "input",
+                &[
+                    ("type", s("checkbox")),
+                    ("data-tag-part", s("type-suffix")),
+                    ("value", s("*")),
+                ],
+            );
             f.append_whitespace();
             f.append_preformatted(&esc_html(&self.t("This is a required field.")));
         }
         if with_optional {
             f.open("br", &[]);
             f.open("label", &[]);
-            f.open("input", &[("type", s("checkbox")), ("data-tag-part", s("option")), ("data-tag-option", s("optional")), ("checked", Att::Bool(true))]);
+            f.open(
+                "input",
+                &[
+                    ("type", s("checkbox")),
+                    ("data-tag-part", s("option")),
+                    ("data-tag-option", s("optional")),
+                    ("checked", Att::Bool(true)),
+                ],
+            );
             f.append_whitespace();
             f.append_preformatted(&esc_html(&self.t("This checkbox is optional.")));
         }
@@ -538,10 +1027,19 @@ impl Parts<'_> {
             esc_html(&self.t("Field name"))
         );
         let (option, label) = match ask_if {
-            "author_name" => ("autocomplete:name", "This field expects the submitter name."),
-            "author_email" => ("autocomplete:email", "This field expects the submitter email."),
+            "author_name" => (
+                "autocomplete:name",
+                "This field expects the submitter name.",
+            ),
+            "author_email" => (
+                "autocomplete:email",
+                "This field expects the submitter email.",
+            ),
             "author_url" => ("autocomplete:url", "This field expects the submitter URL."),
-            "author_tel" => ("autocomplete:tel", "This field expects the submitter telephone number."),
+            "author_tel" => (
+                "autocomplete:tel",
+                "This field expects the submitter telephone number.",
+            ),
             _ => ("", ""),
         };
         if !option.is_empty() {
@@ -565,30 +1063,64 @@ impl Parts<'_> {
         f.open("legend", &[]);
         f.append_preformatted(&esc_html(title));
         f.end_tag("legend");
-        for (index, (label, option)) in [("Min", min_option), ("Max", max_option)].iter().enumerate() {
+        for (index, (label, option)) in [("Min", min_option), ("Max", max_option)]
+            .iter()
+            .enumerate()
+        {
             if index == 1 {
                 f.append_preformatted(" &#8660; ");
             }
             f.open("label", &[]);
             f.append_preformatted(&esc_html(&self.t(label)));
             f.append_whitespace();
-            f.open("input", &[("type", s(kind)), ("data-tag-part", s("option")), ("data-tag-option", s(*option)), ("min", Att::Int(0))]);
+            f.open(
+                "input",
+                &[
+                    ("type", s(kind)),
+                    ("data-tag-part", s("option")),
+                    ("data-tag-option", s(*option)),
+                    ("min", Att::Int(0)),
+                ],
+            );
             f.end_tag("label");
         }
         kses(&f.output())
     }
 
-    fn default_value(&self, kind: &str, title: &str, with_placeholder: bool, use_content: bool) -> String {
+    fn default_value(
+        &self,
+        kind: &str,
+        title: &str,
+        with_placeholder: bool,
+        use_content: bool,
+    ) -> String {
         let mut f = HtmlFormatter::new(false);
         f.open("fieldset", &[]);
         f.open("legend", &[("id", s(self.r("value-legend")))]);
         f.append_preformatted(&esc_html(title));
         f.end_tag("legend");
-        f.open("input", &[("type", s(kind)), ("data-tag-part", s(if use_content { "content" } else { "value" })), ("aria-labelledby", s(self.r("value-legend")))]);
+        f.open(
+            "input",
+            &[
+                ("type", s(kind)),
+                (
+                    "data-tag-part",
+                    s(if use_content { "content" } else { "value" }),
+                ),
+                ("aria-labelledby", s(self.r("value-legend"))),
+            ],
+        );
         if with_placeholder {
             f.open("br", &[]);
             f.open("label", &[]);
-            f.open("input", &[("type", s("checkbox")), ("data-tag-part", s("option")), ("data-tag-option", s("placeholder"))]);
+            f.open(
+                "input",
+                &[
+                    ("type", s("checkbox")),
+                    ("data-tag-part", s("option")),
+                    ("data-tag-option", s("placeholder")),
+                ],
+            );
             f.append_whitespace();
             f.append_preformatted(&esc_html(&self.t("Use this text as the placeholder.")));
         }
@@ -597,24 +1129,61 @@ impl Parts<'_> {
 
     /// `selectable_values()`: `first_as_label` and `use_label_element` are `None` (no option), `Some(false)` (shown) or
     /// `Some(true)` (shown and checked).
-    fn selectable_values(&self, first_as_label: Option<bool>, use_label_element: Option<bool>) -> String {
+    fn selectable_values(
+        &self,
+        first_as_label: Option<bool>,
+        use_label_element: Option<bool>,
+    ) -> String {
         let mut f = HtmlFormatter::new(false);
         f.open("fieldset", &[]);
         f.open("legend", &[("id", s(self.r("selectable-values-legend")))]);
         f.append_preformatted(&esc_html(&self.t("Selectable values")));
         f.end_tag("legend");
-        f.open("span", &[("id", s(self.r("selectable-values-description")))]);
+        f.open(
+            "span",
+            &[("id", s(self.r("selectable-values-description")))],
+        );
         f.append_preformatted(&esc_html(&self.t("One item per line.")));
         f.end_tag("span");
         f.open("br", &[]);
-        f.open("textarea", &[("required", Att::Bool(true)), ("data-tag-part", s("value")), ("aria-labelledby", s(self.r("selectable-values-legend"))), ("aria-describedby", s(self.r("selectable-values-description")))]);
+        f.open(
+            "textarea",
+            &[
+                ("required", Att::Bool(true)),
+                ("data-tag-part", s("value")),
+                ("aria-labelledby", s(self.r("selectable-values-legend"))),
+                (
+                    "aria-describedby",
+                    s(self.r("selectable-values-description")),
+                ),
+            ],
+        );
         f.append_preformatted(&esc_html(&self.t("Option 1\nOption 2\nOption 3")));
         f.end_tag("textarea");
-        for (setting, option, label) in [(first_as_label, "first_as_label", "Use the first item as a label."), (use_label_element, "use_label_element", "Wrap each item with a label element.")] {
+        for (setting, option, label) in [
+            (
+                first_as_label,
+                "first_as_label",
+                "Use the first item as a label.",
+            ),
+            (
+                use_label_element,
+                "use_label_element",
+                "Wrap each item with a label element.",
+            ),
+        ] {
             if let Some(checked) = setting {
                 f.open("br", &[]);
                 f.open("label", &[]);
-                f.open("input", &[("type", s("checkbox")), ("checked", Att::Bool(checked)), ("data-tag-part", s("option")), ("data-tag-option", s(option))]);
+                f.open(
+                    "input",
+                    &[
+                        ("type", s("checkbox")),
+                        ("checked", Att::Bool(checked)),
+                        ("data-tag-part", s("option")),
+                        ("data-tag-option", s(option)),
+                    ],
+                );
                 f.append_whitespace();
                 f.append_preformatted(&esc_html(&self.t(label)));
                 f.end_tag("label");
@@ -626,9 +1195,28 @@ impl Parts<'_> {
     fn insert_box_content(&self) -> String {
         let mut f = HtmlFormatter::new(false);
         f.open("div", &[("class", s("flex-container"))]);
-        f.open("input", &[("type", s("text")), ("class", s("code selectable")), ("readonly", Att::Bool(true)), ("data-tag-part", s("tag")), ("aria-label", s(self.t("The form-tag to be inserted into the form template")))]);
+        f.open(
+            "input",
+            &[
+                ("type", s("text")),
+                ("class", s("code selectable")),
+                ("readonly", Att::Bool(true)),
+                ("data-tag-part", s("tag")),
+                (
+                    "aria-label",
+                    s(self.t("The form-tag to be inserted into the form template")),
+                ),
+            ],
+        );
         f.append_whitespace();
-        f.open("button", &[("type", s("button")), ("class", s("button button-primary")), ("data-taggen", s("insert-tag"))]);
+        f.open(
+            "button",
+            &[
+                ("type", s("button")),
+                ("class", s("button button-primary")),
+                ("data-taggen", s("insert-tag")),
+            ],
+        );
         f.append_preformatted(&esc_html(&self.t("Insert Tag")));
         f.end_tag("button");
         kses(&f.output())
@@ -651,28 +1239,106 @@ struct FieldType {
 }
 
 fn field_type_of(id: &str) -> FieldType {
-    let ft = |display_name, heading, description, url| FieldType { display_name, heading, description, url };
+    let ft = |display_name, heading, description, url| FieldType {
+        display_name,
+        heading,
+        description,
+        url,
+    };
     match id {
-        "email" => ft("Email address field", "Email address field form-tag generator", "Generates a form-tag for an <a href=\"%s\">email address input field</a>.", "https://contactform7.com/text-fields/"),
-        "url" => ft("URL field", "URL field form-tag generator", "Generates a form-tag for a <a href=\"%s\">URL input field</a>.", "https://contactform7.com/text-fields/"),
-        "tel" => ft("Telephone number field", "Telephone number field form-tag generator", "Generates a form-tag for a <a href=\"%s\">telephone number input field</a>.", "https://contactform7.com/text-fields/"),
-        "number" => ft("Number field", "Number field form-tag generator", "Generates a form-tag for a <a href=\"%s\">number input field</a>.", "https://contactform7.com/number-fields/"),
-        "date" => ft("Date field", "Date field form-tag generator", "Generates a form-tag for a <a href=\"%s\">date input field</a>.", "https://contactform7.com/date-field/"),
-        "textarea" => ft("Text area", "Text area form-tag generator", "Generates a form-tag for a <a href=\"%s\">multi-line plain text input area</a>.", "https://contactform7.com/text-fields/"),
-        "menu" => ft("Drop-down menu", "Drop-down menu form-tag generator", "Generates a form-tag for a <a href=\"%s\">drop-down menu</a>.", "https://contactform7.com/checkboxes-radio-buttons-and-menus/"),
-        "checkbox" => ft("Checkboxes", "Checkboxes form-tag generator", "Generates a form-tag for a group of <a href=\"%s\">checkboxes</a>.", "https://contactform7.com/checkboxes-radio-buttons-and-menus/"),
-        "radio" => ft("Radio buttons", "Radio buttons form-tag generator", "Generates a form-tag for a group of <a href=\"%s\">radio buttons</a>.", "https://contactform7.com/checkboxes-radio-buttons-and-menus/"),
-        "acceptance" => ft("Acceptance checkbox", "Acceptance checkbox form-tag generator", "Generates a form-tag for an <a href=\"%s\">acceptance checkbox</a>.", "https://contactform7.com/acceptance-checkbox/"),
-        "quiz" => ft("Quiz", "Quiz form-tag generator", "Generates a form-tag for a <a href=\"%s\">quiz</a>.", "https://contactform7.com/quiz/"),
-        "file" => ft("File uploading field", "File uploading field form-tag generator", "Generates a form-tag for a <a href=\"%s\">file uploading field</a>.", "https://contactform7.com/file-uploading-and-attachment/"),
-        "submit" => ft("Submit button", "Submit button form-tag generator", "Generates a form-tag for a <a href=\"%s\">submit button</a>.", "https://contactform7.com/submit-button/"),
-        _ => ft("Text field", "Text field form-tag generator", "Generates a form-tag for a <a href=\"%s\">single-line plain text input field</a>.", "https://contactform7.com/text-fields/"),
+        "email" => ft(
+            "Email address field",
+            "Email address field form-tag generator",
+            "Generates a form-tag for an <a href=\"%s\">email address input field</a>.",
+            "https://contactform7.com/text-fields/",
+        ),
+        "url" => ft(
+            "URL field",
+            "URL field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">URL input field</a>.",
+            "https://contactform7.com/text-fields/",
+        ),
+        "tel" => ft(
+            "Telephone number field",
+            "Telephone number field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">telephone number input field</a>.",
+            "https://contactform7.com/text-fields/",
+        ),
+        "number" => ft(
+            "Number field",
+            "Number field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">number input field</a>.",
+            "https://contactform7.com/number-fields/",
+        ),
+        "date" => ft(
+            "Date field",
+            "Date field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">date input field</a>.",
+            "https://contactform7.com/date-field/",
+        ),
+        "textarea" => ft(
+            "Text area",
+            "Text area form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">multi-line plain text input area</a>.",
+            "https://contactform7.com/text-fields/",
+        ),
+        "menu" => ft(
+            "Drop-down menu",
+            "Drop-down menu form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">drop-down menu</a>.",
+            "https://contactform7.com/checkboxes-radio-buttons-and-menus/",
+        ),
+        "checkbox" => ft(
+            "Checkboxes",
+            "Checkboxes form-tag generator",
+            "Generates a form-tag for a group of <a href=\"%s\">checkboxes</a>.",
+            "https://contactform7.com/checkboxes-radio-buttons-and-menus/",
+        ),
+        "radio" => ft(
+            "Radio buttons",
+            "Radio buttons form-tag generator",
+            "Generates a form-tag for a group of <a href=\"%s\">radio buttons</a>.",
+            "https://contactform7.com/checkboxes-radio-buttons-and-menus/",
+        ),
+        "acceptance" => ft(
+            "Acceptance checkbox",
+            "Acceptance checkbox form-tag generator",
+            "Generates a form-tag for an <a href=\"%s\">acceptance checkbox</a>.",
+            "https://contactform7.com/acceptance-checkbox/",
+        ),
+        "quiz" => ft(
+            "Quiz",
+            "Quiz form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">quiz</a>.",
+            "https://contactform7.com/quiz/",
+        ),
+        "file" => ft(
+            "File uploading field",
+            "File uploading field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">file uploading field</a>.",
+            "https://contactform7.com/file-uploading-and-attachment/",
+        ),
+        "submit" => ft(
+            "Submit button",
+            "Submit button form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">submit button</a>.",
+            "https://contactform7.com/submit-button/",
+        ),
+        _ => ft(
+            "Text field",
+            "Text field form-tag generator",
+            "Generates a form-tag for a <a href=\"%s\">single-line plain text input field</a>.",
+            "https://contactform7.com/text-fields/",
+        ),
     }
 }
 
 /// The callback of a tag generator (`wpcf7_tag_generator_text()` and the others).
 fn generator_panel(site: &Site, id: &str) -> String {
-    let p = Parts { site, key: format!("tag-generator-panel-{id}") };
+    let p = Parts {
+        site,
+        key: format!("tag-generator-panel-{id}"),
+    };
     let t = |text: &str| tr(site, text);
     let ft = field_type_of(id);
     let mut f = HtmlFormatter::new(false);
@@ -681,7 +1347,9 @@ fn generator_panel(site: &Site, id: &str) -> String {
     f.append_preformatted(&esc_html(&t(ft.heading)));
     f.end_tag("h3");
     f.open("p", &[]);
-    f.append_preformatted(&rustpress_core::kses::kses_data(&t(ft.description).replacen("%s", ft.url, 1)));
+    f.append_preformatted(&rustpress_core::kses::kses_data(
+        &t(ft.description).replacen("%s", ft.url, 1),
+    ));
     f.end_tag("header");
     f.open("div", &[("class", s("control-box"))]);
     let display = t(ft.display_name);
@@ -697,16 +1365,75 @@ fn generator_panel(site: &Site, id: &str) -> String {
                 "tel" => "author_tel",
                 _ => "author_name",
             };
-            [p.field_type(true, false, &[(basetype, display)]), p.field_name(purpose), p.class_attr(), p.min_max("number", &t("Length"), "minlength:", "maxlength:"), p.default_value("text", &t("Default value"), true, false)].concat()
+            [
+                p.field_type(true, false, &[(basetype, display)]),
+                p.field_name(purpose),
+                p.class_attr(),
+                p.min_max("number", &t("Length"), "minlength:", "maxlength:"),
+                p.default_value("text", &t("Default value"), true, false),
+            ]
+            .concat()
         }
-        "number" => [p.field_type(true, false, &[("number", t("Spinbox")), ("range", t("Slider"))]), p.field_name(""), p.class_attr(), p.min_max("number", &t("Range"), "min:", "max:"), p.default_value("number", &t("Default value"), false, false)].concat(),
-        "date" => [p.field_type(true, false, &[("date", display)]), p.field_name(""), p.class_attr(), p.min_max("date", &t("Range"), "min:", "max:"), p.default_value("date", &t("Default value"), false, false)].concat(),
-        "textarea" => [p.field_type(true, false, &[("textarea", display)]), p.field_name(""), p.class_attr(), p.min_max("number", &t("Length"), "minlength:", "maxlength:"), p.default_value("text", &t("Default value"), true, true)].concat(),
-        "menu" => [p.field_type(true, false, &[("select", display)]), p.field_name(""), p.class_attr(), p.selectable_values(Some(false), None)].concat(),
-        "checkbox" | "radio" => [p.field_type(id == "checkbox", false, &[(basetype, display)]), p.field_name(""), p.class_attr(), p.selectable_values(None, Some(true))].concat(),
-        "acceptance" => [p.field_type(false, true, &[("acceptance", display)]), p.field_name(""), p.class_attr()].concat(),
-        "quiz" | "file" => [p.field_type(id == "file", false, &[(basetype, display)]), p.field_name(""), p.class_attr()].concat(),
-        _ => [p.field_type(false, false, &[("submit", display)]), p.class_attr(), p.default_value("text", &t("Label"), false, false)].concat(),
+        "number" => [
+            p.field_type(
+                true,
+                false,
+                &[("number", t("Spinbox")), ("range", t("Slider"))],
+            ),
+            p.field_name(""),
+            p.class_attr(),
+            p.min_max("number", &t("Range"), "min:", "max:"),
+            p.default_value("number", &t("Default value"), false, false),
+        ]
+        .concat(),
+        "date" => [
+            p.field_type(true, false, &[("date", display)]),
+            p.field_name(""),
+            p.class_attr(),
+            p.min_max("date", &t("Range"), "min:", "max:"),
+            p.default_value("date", &t("Default value"), false, false),
+        ]
+        .concat(),
+        "textarea" => [
+            p.field_type(true, false, &[("textarea", display)]),
+            p.field_name(""),
+            p.class_attr(),
+            p.min_max("number", &t("Length"), "minlength:", "maxlength:"),
+            p.default_value("text", &t("Default value"), true, true),
+        ]
+        .concat(),
+        "menu" => [
+            p.field_type(true, false, &[("select", display)]),
+            p.field_name(""),
+            p.class_attr(),
+            p.selectable_values(Some(false), None),
+        ]
+        .concat(),
+        "checkbox" | "radio" => [
+            p.field_type(id == "checkbox", false, &[(basetype, display)]),
+            p.field_name(""),
+            p.class_attr(),
+            p.selectable_values(None, Some(true)),
+        ]
+        .concat(),
+        "acceptance" => [
+            p.field_type(false, true, &[("acceptance", display)]),
+            p.field_name(""),
+            p.class_attr(),
+        ]
+        .concat(),
+        "quiz" | "file" => [
+            p.field_type(id == "file", false, &[(basetype, display)]),
+            p.field_name(""),
+            p.class_attr(),
+        ]
+        .concat(),
+        _ => [
+            p.field_type(false, false, &[("submit", display)]),
+            p.class_attr(),
+            p.default_value("text", &t("Label"), false, false),
+        ]
+        .concat(),
     };
     f.append_printed(&controls);
     match id {
@@ -715,7 +1442,16 @@ fn generator_panel(site: &Site, id: &str) -> String {
             f.open("legend", &[("id", s(p.r("value-legend")))]);
             f.append_preformatted(&esc_html(&t("Condition")));
             f.end_tag("legend");
-            f.open("input", &[("type", s("text")), ("required", Att::Bool(true)), ("value", s(t("Put the condition for consent here."))), ("data-tag-part", s("content")), ("aria-labelledby", s(p.r("value-legend")))]);
+            f.open(
+                "input",
+                &[
+                    ("type", s("text")),
+                    ("required", Att::Bool(true)),
+                    ("value", s(t("Put the condition for consent here."))),
+                    ("data-tag-part", s("content")),
+                    ("aria-labelledby", s(p.r("value-legend"))),
+                ],
+            );
         }
         "quiz" => {
             f.open("fieldset", &[]);
@@ -723,17 +1459,41 @@ fn generator_panel(site: &Site, id: &str) -> String {
             f.append_preformatted(&esc_html(&t("Questions and answers")));
             f.end_tag("legend");
             f.open("span", &[("id", s(p.r("selectable-values-description")))]);
-            f.append_preformatted(&esc_html(&t("One pipe-separated question-answer pair (question|answer) per line.")));
+            f.append_preformatted(&esc_html(&t(
+                "One pipe-separated question-answer pair (question|answer) per line.",
+            )));
             f.end_tag("span");
             f.open("br", &[]);
-            f.open("textarea", &[("required", Att::Bool(true)), ("data-tag-part", s("value")), ("aria-labelledby", s(p.r("selectable-values-legend"))), ("aria-describedby", s(p.r("selectable-values-description")))]);
+            f.open(
+                "textarea",
+                &[
+                    ("required", Att::Bool(true)),
+                    ("data-tag-part", s("value")),
+                    ("aria-labelledby", s(p.r("selectable-values-legend"))),
+                    ("aria-describedby", s(p.r("selectable-values-description"))),
+                ],
+            );
             f.append_preformatted(&esc_html(&t("The capital of Brazil? | Rio")));
             f.end_tag("textarea");
         }
         "file" => {
             for (part, legend, description, pattern, value, option) in [
-                ("filetypes-option", "Acceptable file types", "Pipe-separated file types list. You can use file extensions and MIME types.", "[0-9a-z*\\/\\|]*", "audio/*|video/*|image/*", "filetypes:"),
-                ("limit-option", "File size limit", "In bytes. You can use kb and mb suffixes.", "[1-9][0-9]*([kKmM]?[bB])?", "1mb", "limit:"),
+                (
+                    "filetypes-option",
+                    "Acceptable file types",
+                    "Pipe-separated file types list. You can use file extensions and MIME types.",
+                    "[0-9a-z*\\/\\|]*",
+                    "audio/*|video/*|image/*",
+                    "filetypes:",
+                ),
+                (
+                    "limit-option",
+                    "File size limit",
+                    "In bytes. You can use kb and mb suffixes.",
+                    "[1-9][0-9]*([kKmM]?[bB])?",
+                    "1mb",
+                    "limit:",
+                ),
             ] {
                 f.open("fieldset", &[]);
                 f.open("legend", &[("id", s(p.r(&format!("{part}-legend"))))]);
@@ -763,7 +1523,11 @@ fn generator_panel(site: &Site, id: &str) -> String {
     }
     f.end_tag("div");
     f.open("footer", &[("class", s("insert-box"))]);
-    let footer = if matches!(id, "quiz" | "submit") { p.insert_box_content() } else { p.insert_box_content() + &p.mail_tag_tip() };
+    let footer = if matches!(id, "quiz" | "submit") {
+        p.insert_box_content()
+    } else {
+        p.insert_box_content() + &p.mail_tag_tip()
+    };
     f.append_printed(&footer);
     kses(&f.output())
 }
@@ -773,11 +1537,29 @@ fn tag_generator_panels(site: &Site) -> String {
     let mut f = HtmlFormatter::new(false);
     for generator in GENERATORS {
         let content = format!("tag-generator-panel-{}", generator.id);
-        f.open("dialog", &[("id", s(&content)), ("class", s("tag-generator-dialog"))]);
-        f.open("button", &[("class", s("close-button")), ("title", s(tr(site, "Close this dialog box"))), ("data-taggen", s("close-dialog"))]);
+        f.open(
+            "dialog",
+            &[("id", s(&content)), ("class", s("tag-generator-dialog"))],
+        );
+        f.open(
+            "button",
+            &[
+                ("class", s("close-button")),
+                ("title", s(tr(site, "Close this dialog box"))),
+                ("data-taggen", s("close-dialog")),
+            ],
+        );
         f.append_preformatted(&esc_html(&tr(site, "Close")));
         f.end_tag("button");
-        f.open("form", &[("method", s("dialog")), ("class", s("tag-generator-panel")), ("data-id", s(generator.id)), ("data-version", s("2"))]);
+        f.open(
+            "form",
+            &[
+                ("method", s("dialog")),
+                ("class", s("tag-generator-panel")),
+                ("data-id", s(generator.id)),
+                ("data-version", s("2")),
+            ],
+        );
         f.append_printed(&generator_panel(site, generator.id));
         f.close_all_tags();
     }

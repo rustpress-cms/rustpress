@@ -65,15 +65,34 @@ fn filter_block_content(content: &str) -> String {
 impl Rest<'_> {
     /// `wp_get_wp_version()`, from `wp-includes/version.php`.
     pub(crate) fn wp_version(&self) -> String {
-        let text = std::fs::read_to_string(self.theme.wp_root.join("wp-includes").join("version.php")).unwrap_or_default();
-        text.lines().find_map(|line| line.trim().strip_prefix("$wp_version").and_then(|rest| rest.split('\'').nth(1)).map(str::to_owned)).unwrap_or_else(|| rustpress_core::WP_VERSION.to_owned())
+        let text =
+            std::fs::read_to_string(self.theme.wp_root.join("wp-includes").join("version.php"))
+                .unwrap_or_default();
+        text.lines()
+            .find_map(|line| {
+                line.trim()
+                    .strip_prefix("$wp_version")
+                    .and_then(|rest| rest.split('\'').nth(1))
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| rustpress_core::WP_VERSION.to_owned())
     }
 
     /// `WP_REST_Pattern_Directory_Controller::get_transient_key()` for a request.
     fn directory_key(&self, params: &Params) -> String {
-        let mut args: Vec<(String, Arg)> = vec![("page".into(), Arg::Int(1)), ("per_page".into(), Arg::Int(100)), ("order".into(), Arg::Str("desc".into())), ("orderby".into(), Arg::Str("date".into()))];
+        let mut args: Vec<(String, Arg)> = vec![
+            ("page".into(), Arg::Int(1)),
+            ("per_page".into(), Arg::Int(100)),
+            ("order".into(), Arg::Str("desc".into())),
+            ("orderby".into(), Arg::Str("date".into())),
+        ];
         let int_of = |key: &str| params.get(key).and_then(|v| v.trim().parse::<i64>().ok());
-        for (name, value) in params.raw().split('&').filter_map(|p| p.split_once('=')).map(|(k, v)| (rustpress_core::rewrite::urldecode(k.as_bytes()), v)) {
+        for (name, value) in params
+            .raw()
+            .split('&')
+            .filter_map(|p| p.split_once('='))
+            .map(|(k, v)| (rustpress_core::rewrite::urldecode(k.as_bytes()), v))
+        {
             let name = String::from_utf8_lossy(&name).into_owned();
             let name = name.trim_end_matches("[]").to_owned();
             let arg = match name.as_str() {
@@ -106,14 +125,28 @@ impl Rest<'_> {
             Arg::Str(s) => !s.is_empty() && s != "0",
             Arg::List(l) => !l.is_empty(),
         });
-        format!("wp_remote_block_patterns_{:x}", md5::compute(php_serialize(&args)))
+        format!(
+            "wp_remote_block_patterns_{:x}",
+            md5::compute(php_serialize(&args))
+        )
     }
 
     /// The raw items of the pattern directory for a request, from the site transient.
     async fn directory_raw(&self, params: &Params) -> Vec<Value> {
         let name = format!("_site_transient_{}", self.directory_key(params));
-        let Some(raw) = self.site.options.fetch(&self.site.db, &name).await.ok().flatten() else { return Vec::new() };
-        let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Vec::new() };
+        let Some(raw) = self
+            .site
+            .options
+            .fetch(&self.site.db, &name)
+            .await
+            .ok()
+            .flatten()
+        else {
+            return Vec::new();
+        };
+        let Ok(value) = rustpress_phpser::unserialize(raw.as_bytes()) else {
+            return Vec::new();
+        };
         match rustpress_core::options::php_to_json(&value) {
             Value::Array(items) => items,
             _ => Vec::new(),
@@ -123,13 +156,40 @@ impl Rest<'_> {
     /// `WP_REST_Pattern_Directory_Controller::prepare_item_for_response()` for the patterns of a request.
     pub(crate) async fn directory_items(&self, params: &Params) -> Vec<Value> {
         let sanitize = |s: &str| rustpress_content::sanitize::text_field(s);
-        let text = |v: &Value, path: &str| v.pointer(path).and_then(Value::as_str).unwrap_or_default().to_owned();
-        let absint = |v: Option<&Value>| v.and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))).map_or(0, i64::unsigned_abs);
+        let text = |v: &Value, path: &str| {
+            v.pointer(path)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let absint = |v: Option<&Value>| {
+            v.and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            })
+            .map_or(0, i64::unsigned_abs)
+        };
         let mut out = Vec::new();
         for raw in self.directory_raw(params).await {
-            let categories: Vec<String> = raw.get("category_slugs").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(rustpress_core::slug::sanitize_title).collect()).unwrap_or_default();
-            let keywords: Vec<String> = text(&raw, "/meta/wpop_keywords").split(',').map(sanitize).collect();
-            let block_types: Vec<String> = raw.pointer("/meta/wpop_block_types").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(sanitize).collect()).unwrap_or_default();
+            let categories: Vec<String> = raw
+                .get("category_slugs")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(rustpress_core::slug::sanitize_title)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let keywords: Vec<String> = text(&raw, "/meta/wpop_keywords")
+                .split(',')
+                .map(sanitize)
+                .collect();
+            let block_types: Vec<String> = raw
+                .pointer("/meta/wpop_block_types")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(sanitize).collect())
+                .unwrap_or_default();
             out.push(json!({
                 "id": absint(raw.get("id")),
                 "title": sanitize(&text(&raw, "/title/rendered")),
@@ -153,16 +213,43 @@ impl Rest<'_> {
             content: item["content"].as_str().unwrap_or_default().to_owned(),
             description: item["description"].as_str().unwrap_or_default().to_owned(),
             viewport_width: item["viewport_width"].as_i64(),
-            categories: item["categories"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default(),
-            keywords: item["keywords"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default(),
-            block_types: item["block_types"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default(),
+            categories: item["categories"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            keywords: item["keywords"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            block_types: item["block_types"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
             source: Some(source.to_owned()),
             all_fields: true,
             ..Default::default()
         };
         // The keyword "core" is 11.
         for item in self.directory_items(&Params::parse("keyword=11")).await {
-            let name = format!("core/{}", rustpress_core::slug::sanitize_title(item["title"].as_str().unwrap_or_default()));
+            let name = format!(
+                "core/{}",
+                rustpress_core::slug::sanitize_title(item["title"].as_str().unwrap_or_default())
+            );
             // A pattern registered again under its name keeps its place and takes the new data.
             let new = entry(&item, name.clone(), "pattern-directory/core");
             match out.iter_mut().find(|p| p.name == name) {
@@ -172,7 +259,8 @@ impl Rest<'_> {
         }
         // The category "Featured" is 26; what is registered already as a core pattern stays.
         for item in self.directory_items(&Params::parse("category=26")).await {
-            let name = rustpress_core::slug::sanitize_title(item["title"].as_str().unwrap_or_default());
+            let name =
+                rustpress_core::slug::sanitize_title(item["title"].as_str().unwrap_or_default());
             let taken = |n: &str| out.iter().chain(local).any(|p| p.name == n);
             if !taken(&name) && !taken(&format!("core/{name}")) {
                 out.push(entry(&item, name, "pattern-directory/featured"));

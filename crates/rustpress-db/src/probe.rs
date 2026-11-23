@@ -22,13 +22,25 @@ pub async fn probe(server_url: &str, database: &str, prefix: &str) -> Probe {
         return Probe::NoConnection;
     };
     let quoted = format!("`{}`", database.replace('`', "``"));
-    if connection.execute(AssertSqlSafe(format!("USE {quoted}"))).await.is_err() {
+    if connection
+        .execute(AssertSqlSafe(format!("USE {quoted}")))
+        .await
+        .is_err()
+    {
         return Probe::NoDatabase;
     }
-    if !prefix.is_empty() && connection.execute(AssertSqlSafe(format!("SELECT {prefix}"))).await.is_ok() {
+    if !prefix.is_empty()
+        && connection
+            .execute(AssertSqlSafe(format!("SELECT {prefix}")))
+            .await
+            .is_ok()
+    {
         return Probe::PrefixParses;
     }
-    let version: String = sqlx::query_scalar("SELECT VERSION()").fetch_one(&mut connection).await.unwrap_or_default();
+    let version: String = sqlx::query_scalar("SELECT VERSION()")
+        .fetch_one(&mut connection)
+        .await
+        .unwrap_or_default();
     let _ = connection.close().await;
     Probe::Ready { version }
 }

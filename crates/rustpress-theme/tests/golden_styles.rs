@@ -12,8 +12,8 @@ use std::time::Duration;
 use rustpress_blocks::Registry;
 use rustpress_core::Site;
 use rustpress_db::Db;
-use rustpress_theme::{Theme, render_body};
 use rustpress_theme::global_styles::GlobalStyles;
+use rustpress_theme::{Theme, render_body};
 
 /// Where the WordPress files are when `RUSTPRESS_WP_ROOT` is not set: `wordpress/` in the repository (not checked in).
 const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress");
@@ -21,7 +21,10 @@ const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress
 fn fetch(path: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect("127.0.0.1:8080")?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    write!(stream, "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n"
+    )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     Ok(String::from_utf8_lossy(&raw).into_owned())
@@ -71,31 +74,49 @@ fn normalise(rule: &str) -> String {
             last_space = false;
         }
     }
-    collapsed.replace("{ ", "{").replace(" }", "}").replace("; ", ";")
+    collapsed
+        .replace("{ ", "{")
+        .replace(" }", "}")
+        .replace("; ", ";")
 }
 
 #[tokio::test]
 async fn global_styles_match_wordpress() {
-    let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
-    let (Ok(db), true) = (Db::connect(&url, "wp_").await, root.join("wp-includes").is_dir()) else {
+    let root =
+        PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let (Ok(db), true) = (
+        Db::connect(&url, "wp_").await,
+        root.join("wp-includes").is_dir(),
+    ) else {
         eprintln!("reference stack not available, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
     let Ok(page) = fetch("/ueber-uns/") else {
         eprintln!("WordPress not reachable, skipping");
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return;
     };
-    let reference = style_block(&page, "global-styles-inline-css").expect("global styles in reference page");
+    let reference =
+        style_block(&page, "global-styles-inline-css").expect("global styles in reference page");
 
     let site = Site::load_at(db, &root).await.unwrap();
     let theme = Theme::load(&site, &root).await.unwrap();
     let registry = Registry::new(root.join("wp-includes").join("blocks"));
     let result = site.query("/ueber-uns/", "").await.unwrap();
-    let rendered = render_body(&theme, &site, &result, &registry).await.unwrap();
-    let ours = GlobalStyles::new(&theme.json, &registry).stylesheet(Some(&rendered.state.used_blocks));
+    let rendered = render_body(&theme, &site, &result, &registry)
+        .await
+        .unwrap();
+    let ours =
+        GlobalStyles::new(&theme.json, &registry).stylesheet(Some(&rendered.state.used_blocks));
 
     let theirs: Vec<String> = rules(&reference);
     let mine: Vec<String> = rules(&ours);
@@ -104,7 +125,13 @@ async fn global_styles_match_wordpress() {
     let missing: Vec<&&String> = theirs_set.difference(&mine_set).collect();
     let extra: Vec<&&String> = mine_set.difference(&theirs_set).collect();
 
-    let show = |list: &[&&String]| list.iter().take(12).map(|r| format!("  {}", r.chars().take(240).collect::<String>())).collect::<Vec<_>>().join("\n");
+    let show = |list: &[&&String]| {
+        list.iter()
+            .take(12)
+            .map(|r| format!("  {}", r.chars().take(240).collect::<String>()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     assert!(
         missing.is_empty() && extra.is_empty(),
         "{} rules in WordPress ({} unique) vs {} in ours ({} unique)\nmissing in ours ({}):\n{}\nextra in ours ({}):\n{}",

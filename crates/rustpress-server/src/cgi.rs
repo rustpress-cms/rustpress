@@ -32,11 +32,16 @@ fn var(name: &str) -> Option<String> {
 pub fn config() -> Result<Config, ConfigError> {
     // The web server starts the program in its own directory; `current_exe()` would need `/proc`, which shared
     // hosting may lack.
-    let file = std::env::var_os("RUSTPRESS_CONFIG").map(PathBuf::from).or_else(|| {
-        let beside = std::env::current_dir().ok()?.join("rustpress.toml");
-        beside.is_file().then_some(beside)
-    });
-    let mut config = Config::load_without_database(file, var("DOCUMENT_ROOT").map(|root| local_path(PathBuf::from(root))))?;
+    let file = std::env::var_os("RUSTPRESS_CONFIG")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let beside = std::env::current_dir().ok()?.join("rustpress.toml");
+            beside.is_file().then_some(beside)
+        });
+    let mut config = Config::load_without_database(
+        file,
+        var("DOCUMENT_ROOT").map(|root| local_path(PathBuf::from(root))),
+    )?;
     config.request_https = https();
     Ok(config)
 }
@@ -54,8 +59,12 @@ fn local_path(path: PathBuf) -> PathBuf {
     if path.exists() {
         return path;
     }
-    let script_dir = var("SCRIPT_FILENAME").map(PathBuf::from).and_then(|p| p.parent().map(Path::to_path_buf));
-    let mapped = script_dir.zip(std::env::current_dir().ok()).and_then(|(script_dir, cwd)| translate(&path, &script_dir, &cwd));
+    let script_dir = var("SCRIPT_FILENAME")
+        .map(PathBuf::from)
+        .and_then(|p| p.parent().map(Path::to_path_buf));
+    let mapped = script_dir
+        .zip(std::env::current_dir().ok())
+        .and_then(|(script_dir, cwd)| translate(&path, &script_dir, &cwd));
     mapped.filter(|p| p.exists()).unwrap_or(path)
 }
 
@@ -63,7 +72,12 @@ fn local_path(path: PathBuf) -> PathBuf {
 fn translate(path: &Path, server_dir: &Path, local_dir: &Path) -> Option<PathBuf> {
     let server: Vec<_> = server_dir.components().collect();
     let local: Vec<_> = local_dir.components().collect();
-    let common = server.iter().rev().zip(local.iter().rev()).take_while(|(a, b)| a == b).count();
+    let common = server
+        .iter()
+        .rev()
+        .zip(local.iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
     if common == 0 || common == server.len() {
         return None;
     }
@@ -107,7 +121,10 @@ impl DbTiming {
     /// The number of statements and their time in seconds so far.
     fn totals() -> (u64, f64) {
         use std::sync::atomic::Ordering::Relaxed;
-        (DB_QUERIES.load(Relaxed), DB_NANOS.load(Relaxed) as f64 / 1e9)
+        (
+            DB_QUERIES.load(Relaxed),
+            DB_NANOS.load(Relaxed) as f64 / 1e9,
+        )
     }
 }
 
@@ -125,7 +142,10 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DbTiming {
         let mut elapsed = Elapsed(0.0);
         event.record(&mut elapsed);
         DB_QUERIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        DB_NANOS.fetch_add((elapsed.0 * 1e9) as u64, std::sync::atomic::Ordering::Relaxed);
+        DB_NANOS.fetch_add(
+            (elapsed.0 * 1e9) as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 }
 
@@ -135,7 +155,11 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DbTiming {
 /// (`db`, their number as `desc`), the file system (`stat` and `read`, with their number of calls), the processor time
 /// of the process (`cpu`) and the whole run (`app`, always last), so the time spent in RustPress can be told apart from
 /// the database, the file server, a busy machine and the network in the browser.
-pub async fn serve(router: axum::Router, started: std::time::Instant, load: std::time::Duration) -> std::io::Result<()> {
+pub async fn serve(
+    router: axum::Router,
+    started: std::time::Instant,
+    load: std::time::Duration,
+) -> std::io::Result<()> {
     let request = request_from_env()?;
     let head = request.method() == Method::HEAD;
     let mut response = match router.oneshot(request).await {
@@ -157,7 +181,11 @@ pub async fn serve(router: axum::Router, started: std::time::Instant, load: std:
     if let Some(cpu) = cpu_seconds() {
         let _ = write!(timing, ", cpu;dur={:.1}", ms(cpu));
     }
-    let _ = write!(timing, ", app;dur={:.1}", ms(started.elapsed().as_secs_f64()));
+    let _ = write!(
+        timing,
+        ", app;dur={:.1}",
+        ms(started.elapsed().as_secs_f64())
+    );
     if let Ok(value) = timing.parse() {
         response.headers_mut().insert("server-timing", value);
     }
@@ -170,7 +198,11 @@ fn request_from_env() -> std::io::Result<Request<Body>> {
     let method = var("REQUEST_METHOD").unwrap_or_else(|| "GET".to_owned());
     // Apache keeps the address the visitor asked for in `REQUEST_URI`, also after a rewrite to the program.
     let uri = var("REQUEST_URI").unwrap_or_else(|| {
-        let path = format!("{}{}", var("SCRIPT_NAME").unwrap_or_default(), var("PATH_INFO").unwrap_or_default());
+        let path = format!(
+            "{}{}",
+            var("SCRIPT_NAME").unwrap_or_default(),
+            var("PATH_INFO").unwrap_or_default()
+        );
         match var("QUERY_STRING") {
             Some(query) => format!("{path}?{query}"),
             None => path,
@@ -178,7 +210,9 @@ fn request_from_env() -> std::io::Result<Request<Body>> {
     });
     let mut builder = Request::builder().method(method.as_str()).uri(uri.as_str());
     for (key, value) in std::env::vars_os() {
-        let (Some(key), Some(value)) = (key.to_str(), value.to_str()) else { continue };
+        let (Some(key), Some(value)) = (key.to_str(), value.to_str()) else {
+            continue;
+        };
         let name = match key {
             "CONTENT_TYPE" => "content-type".to_owned(),
             "CONTENT_LENGTH" => "content-length".to_owned(),
@@ -189,17 +223,27 @@ fn request_from_env() -> std::io::Result<Request<Body>> {
                 None => continue,
             },
         };
-        if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
             builder = builder.header(name, value);
         }
     }
     // Apache hands `Authorization` (application passwords) to CGI programs only through a rewrite rule, and after
     // the internal redirect to the program the variable carries a `REDIRECT_` prefix.
-    if std::env::var_os("HTTP_AUTHORIZATION").is_none() && let Some(value) = var("REDIRECT_HTTP_AUTHORIZATION").and_then(|v| HeaderValue::from_str(&v).ok()) {
+    if std::env::var_os("HTTP_AUTHORIZATION").is_none()
+        && let Some(value) =
+            var("REDIRECT_HTTP_AUTHORIZATION").and_then(|v| HeaderValue::from_str(&v).ok())
+    {
         builder = builder.header(header::AUTHORIZATION, value);
     }
-    let length: u64 = var("CONTENT_LENGTH").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let ip = var("REMOTE_ADDR").and_then(|v| v.parse::<IpAddr>().ok()).unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let length: u64 = var("CONTENT_LENGTH")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let ip = var("REMOTE_ADDR")
+        .and_then(|v| v.parse::<IpAddr>().ok())
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
     let port = var("REMOTE_PORT").and_then(|v| v.parse().ok()).unwrap_or(0);
     builder
         .extension(ConnectInfo(SocketAddr::new(ip, port)))
@@ -218,7 +262,10 @@ fn stdin_body(length: u64) -> Body {
             return None;
         }
         let mut chunk = Vec::new();
-        match std::io::stdin().take(left.min(CHUNK)).read_to_end(&mut chunk) {
+        match std::io::stdin()
+            .take(left.min(CHUNK))
+            .read_to_end(&mut chunk)
+        {
             // The web server closed stdin before `CONTENT_LENGTH` bytes came.
             Ok(0) => None,
             Ok(read) => Some((Ok(chunk), left - read as u64)),
@@ -230,9 +277,16 @@ fn stdin_body(length: u64) -> Body {
 /// The response in CGI form: a `Status:` line, the headers, a blank line and the body.
 async fn write_response(response: Response<Body>, head: bool) -> std::io::Result<()> {
     let (parts, body) = response.into_parts();
-    let body = axum::body::to_bytes(body, usize::MAX).await.map_err(std::io::Error::other)?;
+    let body = axum::body::to_bytes(body, usize::MAX)
+        .await
+        .map_err(std::io::Error::other)?;
     let mut out = Vec::with_capacity(body.len() + 512);
-    write!(out, "Status: {} {}\r\n", parts.status.as_u16(), parts.status.canonical_reason().unwrap_or(""))?;
+    write!(
+        out,
+        "Status: {} {}\r\n",
+        parts.status.as_u16(),
+        parts.status.canonical_reason().unwrap_or("")
+    )?;
     for (name, value) in &parts.headers {
         if name == header::TRANSFER_ENCODING || name == header::CONNECTION {
             continue;
@@ -255,15 +309,27 @@ async fn write_response(response: Response<Body>, head: bool) -> std::io::Result
 /// `rustpress-error.log` next to the program, since shared hosting rarely shows the former (in `cgi-bin/` the web
 /// server runs files instead of handing them out, so the log stays private).
 pub fn write_failure(message: &str) {
-    if let Ok(mut log) = std::fs::OpenOptions::new().create(true).append(true).open("rustpress-error.log") {
-        let _ = writeln!(log, "{} {} {message}", unix_seconds(), var("REQUEST_URI").unwrap_or_default());
+    if let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("rustpress-error.log")
+    {
+        let _ = writeln!(
+            log,
+            "{} {} {message}",
+            unix_seconds(),
+            var("REQUEST_URI").unwrap_or_default()
+        );
     }
     let _ = std::io::stdout().lock().write_all(b"Status: 500 Internal Server Error\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nRustPress could not start. The error log of the web server has the details.\n");
 }
 
 /// Seconds since the Unix epoch, enough to order the lines of the error log.
 fn unix_seconds() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -273,12 +339,33 @@ mod tests {
     #[test]
     fn translates_between_mount_points() {
         let mapped = translate(
-            Path::new("/home/strato/http/power/rid/45/67/1234567/htdocs/STRATO-apps/wordpress_02/app/"),
+            Path::new(
+                "/home/strato/http/power/rid/45/67/1234567/htdocs/STRATO-apps/wordpress_02/app/",
+            ),
             Path::new("/home/strato/http/power/rid/45/67/1234567/htdocs/cgi-bin"),
             Path::new("/mnt/web100/c1/67/1234567/htdocs/cgi-bin"),
         );
-        assert_eq!(mapped, Some(PathBuf::from("/mnt/web100/c1/67/1234567/htdocs/STRATO-apps/wordpress_02/app")));
-        assert_eq!(translate(Path::new("/a/x"), Path::new("/a/cgi-bin"), Path::new("/b/other")), None);
-        assert_eq!(translate(Path::new("/elsewhere/x"), Path::new("/a/cgi-bin"), Path::new("/b/cgi-bin")), None);
+        assert_eq!(
+            mapped,
+            Some(PathBuf::from(
+                "/mnt/web100/c1/67/1234567/htdocs/STRATO-apps/wordpress_02/app"
+            ))
+        );
+        assert_eq!(
+            translate(
+                Path::new("/a/x"),
+                Path::new("/a/cgi-bin"),
+                Path::new("/b/other")
+            ),
+            None
+        );
+        assert_eq!(
+            translate(
+                Path::new("/elsewhere/x"),
+                Path::new("/a/cgi-bin"),
+                Path::new("/b/cgi-bin")
+            ),
+            None
+        );
     }
 }

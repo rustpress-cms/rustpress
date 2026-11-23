@@ -2,7 +2,7 @@
 
 use rustpress_core::formatting::{esc_attr, esc_url};
 use rustpress_core::kses::kses_post;
-use rustpress_db::{OrderBy, Order, Post, PostQuery};
+use rustpress_db::{Order, OrderBy, Post, PostQuery};
 use serde_json::{Map, Value, json};
 
 use crate::Result;
@@ -20,16 +20,29 @@ fn str_attr<'a>(attrs: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
 }
 
 fn is_responsive(attrs: &Map<String, Value>) -> bool {
-    let old = attrs.get("isResponsive").and_then(Value::as_bool).unwrap_or(false);
-    attrs.get("overlayMenu").and_then(Value::as_str).is_some_and(|m| m != "never") || old
+    let old = attrs
+        .get("isResponsive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    attrs
+        .get("overlayMenu")
+        .and_then(Value::as_str)
+        .is_some_and(|m| m != "never")
+        || old
 }
 
 /// `block_core_navigation_get_submenu_visibility`.
 fn submenu_visibility(source: &Map<String, Value>) -> String {
     if let Some(v) = source.get("openSubmenusOnClick").filter(|v| !v.is_null()) {
-        return if crate::style_engine::is_empty(v) { "hover".into() } else { "click".into() };
+        return if crate::style_engine::is_empty(v) {
+            "hover".into()
+        } else {
+            "click".into()
+        };
     }
-    str_attr(source, "submenuVisibility").unwrap_or("hover").to_owned()
+    str_attr(source, "submenuVisibility")
+        .unwrap_or("hover")
+        .to_owned()
 }
 
 struct Colors {
@@ -41,41 +54,69 @@ struct Colors {
 
 /// `block_core_navigation_build_css_colors`.
 fn build_colors(attrs: &Map<String, Value>) -> Colors {
-    let mut c = Colors { css_classes: vec![], inline_styles: String::new(), overlay_css_classes: vec![], overlay_inline_styles: String::new() };
+    let mut c = Colors {
+        css_classes: vec![],
+        inline_styles: String::new(),
+        overlay_css_classes: vec![],
+        overlay_inline_styles: String::new(),
+    };
     let named = |k: &str| attrs.contains_key(k);
-    let text = |k: &str| attrs.get(k).map(|v| v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+    let text = |k: &str| {
+        attrs
+            .get(k)
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| v.to_string())
+            })
+            .unwrap_or_default()
+    };
 
     if named("customTextColor") || named("textColor") {
         c.css_classes.push("has-text-color".into());
     }
     if named("textColor") {
-        c.css_classes.push(format!("has-{}-color", text("textColor")));
+        c.css_classes
+            .push(format!("has-{}-color", text("textColor")));
     } else if named("customTextColor") {
-        c.inline_styles.push_str(&format!("color: {};", text("customTextColor")));
+        c.inline_styles
+            .push_str(&format!("color: {};", text("customTextColor")));
     }
     if named("customBackgroundColor") || named("backgroundColor") {
         c.css_classes.push("has-background".into());
     }
     if named("backgroundColor") {
-        c.css_classes.push(format!("has-{}-background-color", text("backgroundColor")));
+        c.css_classes
+            .push(format!("has-{}-background-color", text("backgroundColor")));
     } else if named("customBackgroundColor") {
-        c.inline_styles.push_str(&format!("background-color: {};", text("customBackgroundColor")));
+        c.inline_styles.push_str(&format!(
+            "background-color: {};",
+            text("customBackgroundColor")
+        ));
     }
     if named("customOverlayTextColor") || named("overlayTextColor") {
         c.overlay_css_classes.push("has-text-color".into());
     }
     if named("overlayTextColor") {
-        c.overlay_css_classes.push(format!("has-{}-color", text("overlayTextColor")));
+        c.overlay_css_classes
+            .push(format!("has-{}-color", text("overlayTextColor")));
     } else if named("customOverlayTextColor") {
-        c.overlay_inline_styles.push_str(&format!("color: {};", text("customOverlayTextColor")));
+        c.overlay_inline_styles
+            .push_str(&format!("color: {};", text("customOverlayTextColor")));
     }
     if named("customOverlayBackgroundColor") || named("overlayBackgroundColor") {
         c.overlay_css_classes.push("has-background".into());
     }
     if named("overlayBackgroundColor") {
-        c.overlay_css_classes.push(format!("has-{}-background-color", text("overlayBackgroundColor")));
+        c.overlay_css_classes.push(format!(
+            "has-{}-background-color",
+            text("overlayBackgroundColor")
+        ));
     } else if named("customOverlayBackgroundColor") {
-        c.overlay_inline_styles.push_str(&format!("background-color: {};", text("customOverlayBackgroundColor")));
+        c.overlay_inline_styles.push_str(&format!(
+            "background-color: {};",
+            text("customOverlayBackgroundColor")
+        ));
     }
     c
 }
@@ -83,10 +124,19 @@ fn build_colors(attrs: &Map<String, Value>) -> Colors {
 /// `block_core_navigation_build_css_font_sizes`.
 fn build_font_sizes(attrs: &Map<String, Value>) -> (Vec<String>, String) {
     if let Some(size) = attrs.get("fontSize") {
-        return (vec![format!("has-{}-font-size", size.as_str().unwrap_or_default())], String::new());
+        return (
+            vec![format!(
+                "has-{}-font-size",
+                size.as_str().unwrap_or_default()
+            )],
+            String::new(),
+        );
     }
     if let Some(custom) = attrs.get("customFontSize") {
-        let n = custom.as_str().map(str::to_owned).unwrap_or_else(|| custom.to_string());
+        let n = custom
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| custom.to_string());
         return (vec![], format!("font-size: {n}px;"));
     }
     (vec![], String::new())
@@ -95,7 +145,10 @@ fn build_font_sizes(attrs: &Map<String, Value>) -> (Vec<String>, String) {
 fn layout_class(attrs: &Map<String, Value>) -> String {
     let layout = attrs.get("layout").and_then(Value::as_object);
     let mut class = String::new();
-    if let Some(j) = layout.and_then(|l| l.get("justifyContent")).and_then(Value::as_str) {
+    if let Some(j) = layout
+        .and_then(|l| l.get("justifyContent"))
+        .and_then(Value::as_str)
+    {
         let mapped = match j {
             "left" => Some("items-justified-left"),
             "right" => Some("items-justified-right"),
@@ -107,10 +160,18 @@ fn layout_class(attrs: &Map<String, Value>) -> String {
             class.push_str(m);
         }
     }
-    if layout.and_then(|l| l.get("orientation")).and_then(Value::as_str) == Some("vertical") {
+    if layout
+        .and_then(|l| l.get("orientation"))
+        .and_then(Value::as_str)
+        == Some("vertical")
+    {
         class.push_str(" is-vertical");
     }
-    if layout.and_then(|l| l.get("flexWrap")).and_then(Value::as_str) == Some("nowrap") {
+    if layout
+        .and_then(|l| l.get("flexWrap"))
+        .and_then(Value::as_str)
+        == Some("nowrap")
+    {
         class.push_str(" no-wrap");
     }
     class
@@ -129,7 +190,13 @@ fn nav_classes(attrs: &Map<String, Value>) -> String {
     if !layout.is_empty() {
         classes.push(layout);
     }
-    if let Some(decoration) = attrs.get("style").and_then(|s| s.get("typography")).and_then(|t| t.get("textDecoration")).and_then(Value::as_str).filter(|d| !d.is_empty()) {
+    if let Some(decoration) = attrs
+        .get("style")
+        .and_then(|s| s.get("typography"))
+        .and_then(|t| t.get("textDecoration"))
+        .and_then(Value::as_str)
+        .filter(|d| !d.is_empty())
+    {
         classes.push(format!("has-text-decoration-{decoration}"));
     }
     classes.join(" ")
@@ -139,11 +206,18 @@ fn nav_classes(attrs: &Map<String, Value>) -> String {
 fn nav_styles(attrs: &Map<String, Value>) -> String {
     let colors = build_colors(attrs);
     let (_, font_style) = build_font_sizes(attrs);
-    format!("{}{}{}", str_attr(attrs, "styles").unwrap_or(""), colors.inline_styles, font_style)
+    format!(
+        "{}{}{}",
+        str_attr(attrs, "styles").unwrap_or(""),
+        colors.inline_styles,
+        font_style
+    )
 }
 
 fn tree_has_block(blocks: &[Block], name: &str) -> bool {
-    blocks.iter().any(|b| b.name.as_deref() == Some(name) || tree_has_block(&b.inner_blocks, name))
+    blocks
+        .iter()
+        .any(|b| b.name.as_deref() == Some(name) || tree_has_block(&b.inner_blocks, name))
 }
 
 fn only_named(blocks: Vec<Block>) -> Vec<Block> {
@@ -154,12 +228,16 @@ fn only_named(blocks: Vec<Block>) -> Vec<Block> {
 /// children, or the fallback (newest navigation post, else the page list).
 async fn inner_blocks(bc: &BlockCtx<'_>) -> Result<Vec<Block>> {
     let attrs = &bc.attrs;
-    let reference = attrs.get("navigationMenuId").or_else(|| attrs.get("ref")).and_then(Value::as_u64);
+    let reference = attrs
+        .get("navigationMenuId")
+        .or_else(|| attrs.get("ref"))
+        .and_then(Value::as_u64);
     if let Some(id) = reference {
         if let Some(post) = bc.env.site.db.post(id).await?
-            && post.post_status == "publish" {
-                return Ok(only_named(parse_blocks(&post.post_content)));
-            }
+            && post.post_status == "publish"
+        {
+            return Ok(only_named(parse_blocks(&post.post_content)));
+        }
         return fallback_blocks(bc).await;
     }
     if !bc.block.inner_blocks.is_empty() {
@@ -223,9 +301,18 @@ async fn published_pages(bc: &BlockCtx<'_>) -> Result<Vec<Post>> {
     if let Some(pages) = bc.env.with_state(|s| s.published_pages.clone()) {
         return Ok(pages);
     }
-    let mut pages = bc.env.site.db.posts(&PostQuery { post_types: vec!["page".into()], ..PostQuery::default() }).await?;
+    let mut pages = bc
+        .env
+        .site
+        .db
+        .posts(&PostQuery {
+            post_types: vec!["page".into()],
+            ..PostQuery::default()
+        })
+        .await?;
     pages.sort_by_key(|a| (a.menu_order, a.post_title.to_lowercase(), a.id));
-    bc.env.with_state(|s| s.published_pages = Some(pages.clone()));
+    bc.env
+        .with_state(|s| s.published_pages = Some(pages.clone()));
     Ok(pages)
 }
 
@@ -238,24 +325,42 @@ pub(super) async fn navigation(bc: &BlockCtx<'_>) -> Result<String> {
     let attrs = &bc.attrs;
     let responsive = is_responsive(attrs);
     let visibility = submenu_visibility(attrs);
-    let show_icon = attrs.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let show_icon = attrs
+        .get("showSubmenuIcon")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
     let interactive = (submenus && (visibility == "click" || show_icon)) || responsive;
     if interactive {
-        bc.env.with_state(|s| s.script_modules.insert("@wordpress/block-library/navigation/view".to_owned()));
+        bc.env.with_state(|s| {
+            s.script_modules
+                .insert("@wordpress/block-library/navigation/view".to_owned())
+        });
     }
 
     // Inner blocks as <ul> items.
     let class = nav_classes(attrs);
     let style = nav_styles(attrs);
-    let container = bc.wrapper_attributes(&[("class", format!("wp-block-navigation__container {class}")), ("style", style.clone())]);
+    let container = bc.wrapper_attributes(&[
+        ("class", format!("wp-block-navigation__container {class}")),
+        ("style", style.clone()),
+    ]);
     let mut html = String::new();
     let mut list_open = false;
     for block in &blocks {
-        let mut markup = bc.env.render_block(block, bc.available, Some(bc.block)).await?;
-        if !markup.is_empty() && matches!(block.name.as_deref(), Some("core/site-title" | "core/site-logo" | "core/social-links")) {
+        let mut markup = bc
+            .env
+            .render_block(block, bc.available, Some(bc.block))
+            .await?;
+        if !markup.is_empty()
+            && matches!(
+                block.name.as_deref(),
+                Some("core/site-title" | "core/site-logo" | "core/social-links")
+            )
+        {
             markup = format!("<li class=\"wp-block-navigation-item\">{markup}</li>");
         }
-        let is_list_item = tags(&markup, 0).iter().any(|t| !t.is_closer && t.name == "li");
+        let is_list_item = tags(&markup, 0)
+            .iter()
+            .any(|t| !t.is_closer && t.name == "li");
         if is_list_item && !list_open {
             list_open = true;
             html.push_str(&format!("<ul {container}>"));
@@ -273,7 +378,11 @@ pub(super) async fn navigation(bc: &BlockCtx<'_>) -> Result<String> {
         html = add_directives_to_submenu(&html, &visibility);
     }
 
-    let body = if responsive { responsive_container(bc, &html, interactive) } else { html };
+    let body = if responsive {
+        responsive_container(bc, &html, interactive)
+    } else {
+        html
+    };
 
     // The <nav> element.
     let name = unique_navigation_name(bc).await?;
@@ -284,7 +393,10 @@ pub(super) async fn navigation(bc: &BlockCtx<'_>) -> Result<String> {
     let mut wrapper = bc.wrapper_attributes(&extra);
     if responsive && interactive {
         let context = json!({"overlayOpenedBy": {"click": false, "hover": false, "focus": false}, "type": "overlay", "roleAttribute": "", "ariaLabel": bc.env.site.tr("Menu")});
-        wrapper.push_str(&format!(" \n\t\t data-wp-interactive=\"core/navigation\" data-wp-context='{}'", php_json::encode(&context)));
+        wrapper.push_str(&format!(
+            " \n\t\t data-wp-interactive=\"core/navigation\" data-wp-context='{}'",
+            php_json::encode(&context)
+        ));
     }
     Ok(format!("<nav {wrapper}>{body}</nav>"))
 }
@@ -293,16 +405,21 @@ async fn unique_navigation_name(bc: &BlockCtx<'_>) -> Result<String> {
     let mut name = str_attr(&bc.attrs, "ariaLabel").unwrap_or("").to_owned();
     if name.is_empty()
         && let Some(id) = bc.attrs.get("ref").and_then(Value::as_u64)
-            && let Some(post) = bc.env.site.db.post(id).await?
-                && post.post_status == "publish" {
-                    name = post.post_title;
-                }
+        && let Some(post) = bc.env.site.db.post(id).await?
+        && post.post_status == "publish"
+    {
+        name = post.post_title;
+    }
     let count = bc.env.with_state(|s| {
         let c = s.seen_menu_names.entry(name.clone()).or_insert(0);
         *c += 1;
         *c
     });
-    Ok(if count > 1 { format!("{name} {count}") } else { name })
+    Ok(if count > 1 {
+        format!("{name} {count}")
+    } else {
+        name
+    })
 }
 
 /// The overlay markup for responsive navigation.
@@ -317,9 +434,19 @@ fn responsive_container(bc: &BlockCtx<'_>, inner_html: &str, interactive: bool) 
         container_classes.push("hidden-by-default".into());
     }
     container_classes.push(colors.overlay_css_classes.join(" "));
-    let open_classes = ["wp-block-navigation__responsive-container-open", if hidden_by_default { "always-shown" } else { "" }];
+    let open_classes = [
+        "wp-block-navigation__responsive-container-open",
+        if hidden_by_default {
+            "always-shown"
+        } else {
+            ""
+        },
+    ];
 
-    let has_icon = attrs.get("hasIcon").and_then(Value::as_bool).unwrap_or(false);
+    let has_icon = attrs
+        .get("hasIcon")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let open_icon = "<svg width=\"24\" height=\"24\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M4 7.5h16v1.5H4z\"></path><path d=\"M4 15h16v1.5H4z\"></path></svg>";
     let open_icon = if str_attr(attrs, "icon") == Some("menu") {
         "<svg width=\"24\" height=\"24\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M5 5v1.5h14V5H5z\"></path><path d=\"M5 12.8h14v-1.5H5v1.5z\"></path><path d=\"M5 19h14v-1.5H5V19z\"></path></svg>"
@@ -328,12 +455,34 @@ fn responsive_container(bc: &BlockCtx<'_>, inner_html: &str, interactive: bool) 
     };
     let close_icon = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"m13.06 12 6.47-6.47-1.06-1.06L12 10.94 5.53 4.47 4.47 5.53 10.94 12l-6.47 6.47 1.06 1.06L12 13.06l6.47 6.47 1.06-1.06L13.06 12Z\"></path></svg>";
     let site = bc.env.site;
-    let open_content = if has_icon { open_icon.to_owned() } else { site.tr("Menu") };
-    let close_content = if has_icon { close_icon.to_owned() } else { site.tr("Close") };
-    let aria_open = if has_icon { format!("aria-label=\"{}\"", site.tr("Open menu")) } else { String::new() };
-    let aria_close = if has_icon { format!("aria-label=\"{}\"", site.tr("Close menu")) } else { String::new() };
+    let open_content = if has_icon {
+        open_icon.to_owned()
+    } else {
+        site.tr("Menu")
+    };
+    let close_content = if has_icon {
+        close_icon.to_owned()
+    } else {
+        site.tr("Close")
+    };
+    let aria_open = if has_icon {
+        format!("aria-label=\"{}\"", site.tr("Open menu"))
+    } else {
+        String::new()
+    };
+    let aria_close = if has_icon {
+        format!("aria-label=\"{}\"", site.tr("Close menu"))
+    } else {
+        String::new()
+    };
 
-    let (open_directives, container_directives, dialog_directives, close_directives, content_directives) = if interactive {
+    let (
+        open_directives,
+        container_directives,
+        dialog_directives,
+        close_directives,
+        content_directives,
+    ) = if interactive {
         (
             "\n\t\t\t\tdata-wp-on--click=\"actions.openMenuOnClick\"\n\t\t\t\tdata-wp-on--keydown=\"actions.handleMenuKeydown\"\n\t\t\t",
             "\n\t\t\t\tdata-wp-class--has-modal-open=\"state.isMenuOpen\"\n\t\t\t\tdata-wp-class--is-menu-open=\"state.isMenuOpen\"\n\t\t\t\tdata-wp-watch=\"callbacks.initMenu\"\n\t\t\t\tdata-wp-on--keydown=\"actions.handleMenuKeydown\"\n\t\t\t\tdata-wp-on--focusout=\"actions.handleMenuFocusout\"\n\t\t\t\ttabindex=\"-1\"\n\t\t\t",
@@ -346,12 +495,26 @@ fn responsive_container(bc: &BlockCtx<'_>, inner_html: &str, interactive: bool) 
     };
 
     let overlay_style = safecss_filter_attr(&colors.overlay_inline_styles);
-    let overlay_style = if overlay_style.is_empty() { String::new() } else { format!("style=\"{}\"", esc_attr(&overlay_style)) };
-    let close_button = format!("<button {aria_close} class=\"wp-block-navigation__responsive-container-close\" {close_directives}>{close_content}</button>");
+    let overlay_style = if overlay_style.is_empty() {
+        String::new()
+    } else {
+        format!("style=\"{}\"", esc_attr(&overlay_style))
+    };
+    let close_button = format!(
+        "<button {aria_close} class=\"wp-block-navigation__responsive-container-close\" {close_directives}>{close_content}</button>"
+    );
 
     format!(
         "<button aria-haspopup=\"dialog\" {aria_open} class=\"{open}\" {open_directives}>{open_content}</button>\n\t\t\t\t<div class=\"{container}\" {overlay_style} id=\"{id}\" {container_directives}>\n\t\t\t\t\t<div class=\"wp-block-navigation__responsive-close\" tabindex=\"-1\">\n\t\t\t\t\t\t<div class=\"wp-block-navigation__responsive-dialog\" {dialog_directives}>\n\t\t\t\t\t\t\t{close_button}\n\t\t\t\t\t\t\t<div class=\"wp-block-navigation__responsive-container-content\" {content_directives} id=\"{id}-content\">\n\t\t\t\t\t\t\t\t{inner_html}\n\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t\t\t</div>",
-        open = esc_attr(open_classes.iter().filter(|c| !c.is_empty()).copied().collect::<Vec<_>>().join(" ").trim()),
+        open = esc_attr(
+            open_classes
+                .iter()
+                .filter(|c| !c.is_empty())
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+        ),
         container = esc_attr(container_classes.join(" ").trim()),
     )
 }
@@ -360,14 +523,20 @@ fn responsive_container(bc: &BlockCtx<'_>, inner_html: &str, interactive: bool) 
 /// on every `li.has-child`, the toggle button after it and its submenu container.
 fn add_directives_to_submenu(html: &str, visibility: &str) -> String {
     fn has_class(tag: &crate::html::Tag, class: &str) -> bool {
-        tag.attr("class").is_some_and(|c| c.split_whitespace().any(|x| x == class))
+        tag.attr("class")
+            .is_some_and(|c| c.split_whitespace().any(|x| x == class))
     }
     let mut out = html.to_owned();
     let mut index = 0;
     loop {
         let all = tags(&out, 0);
-        let items: Vec<_> = all.iter().filter(|t| !t.is_closer && t.name == "li" && has_class(t, "has-child")).collect();
-        let Some(li) = items.get(index).map(|t| (*t).clone()) else { break };
+        let items: Vec<_> = all
+            .iter()
+            .filter(|t| !t.is_closer && t.name == "li" && has_class(t, "has-child"))
+            .collect();
+        let Some(li) = items.get(index).map(|t| (*t).clone()) else {
+            break;
+        };
         index += 1;
 
         let mut editor = TagEditor::from_tag(&out, li.clone());
@@ -386,10 +555,23 @@ fn add_directives_to_submenu(html: &str, visibility: &str) -> String {
         // The toggle button and the submenu container that follow this item.
         let mut cursor = li.start;
         for (tag_name, class, attrs) in [
-            ("button", "wp-block-navigation-submenu__toggle", &[("data-wp-on--click", "actions.toggleMenuOnClick"), ("data-wp-bind--aria-expanded", "state.isSubmenuOpen")][..]),
-            ("ul", "wp-block-navigation__submenu-container", &[("data-wp-on--focus", "actions.openMenuOnFocus")][..]),
+            (
+                "button",
+                "wp-block-navigation-submenu__toggle",
+                &[
+                    ("data-wp-on--click", "actions.toggleMenuOnClick"),
+                    ("data-wp-bind--aria-expanded", "state.isSubmenuOpen"),
+                ][..],
+            ),
+            (
+                "ul",
+                "wp-block-navigation__submenu-container",
+                &[("data-wp-on--focus", "actions.openMenuOnFocus")][..],
+            ),
         ] {
-            let found = tags(&out, cursor).into_iter().find(|t| !t.is_closer && t.name == tag_name && has_class(t, class));
+            let found = tags(&out, cursor)
+                .into_iter()
+                .find(|t| !t.is_closer && t.name == tag_name && has_class(t, class));
             if let Some(tag) = found {
                 cursor = tag.start;
                 let mut editor = TagEditor::from_tag(&out, tag);
@@ -406,7 +588,10 @@ fn add_directives_to_submenu(html: &str, visibility: &str) -> String {
 
 pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
     let parent_page_id = bc.attr_u64("parentPageID").unwrap_or(0);
-    let is_nested = bc.context.get("core/isInsideSubmenu").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let is_nested = bc
+        .context
+        .get("core/isInsideSubmenu")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
     let pages = published_pages(bc).await?;
     if pages.is_empty() {
         return Ok(String::new());
@@ -429,24 +614,47 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
             let mut parent = page.post_parent;
             while parent != 0 && !active_ancestors.contains(&parent) && parent != page.id {
                 active_ancestors.push(parent);
-                parent = pages.iter().find(|p| p.id == parent).map_or(0, |p| p.post_parent);
+                parent = pages
+                    .iter()
+                    .find(|p| p.id == parent)
+                    .map_or(0, |p| p.post_parent);
             }
         }
         let link = bc.env.site.permalink(page).await?;
-        let title = if page.post_title.is_empty() { bc.env.site.tr("(no title)") } else { page.post_title.clone() };
-        items.push(Item { id: page.id, title, link, active, parent: page.post_parent });
+        let title = if page.post_title.is_empty() {
+            bc.env.site.tr("(no title)")
+        } else {
+            page.post_title.clone()
+        };
+        items.push(Item {
+            id: page.id,
+            title,
+            link,
+            active,
+            parent: page.post_parent,
+        });
     }
 
     let colors = page_list_colors(&bc.attrs, &bc.context.values);
     let is_navigation_child = bc.context.values.contains_key("showSubmenuIcon");
-    let visibility = if is_navigation_child { submenu_visibility(&bc.context.values) } else { "hover".to_owned() };
-    let show_icons = bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let visibility = if is_navigation_child {
+        submenu_visibility(&bc.context.values)
+    } else {
+        "hover".to_owned()
+    };
+    let show_icons = bc
+        .context
+        .get("showSubmenuIcon")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
 
     let roots: Vec<&Item> = if parent_page_id != 0 {
         if !items.iter().any(|i| i.parent == parent_page_id) {
             return Ok(String::new());
         }
-        items.iter().filter(|i| i.parent == parent_page_id).collect()
+        items
+            .iter()
+            .filter(|i| i.parent == parent_page_id)
+            .collect()
     } else {
         items.iter().filter(|i| i.parent == 0).collect()
     };
@@ -467,8 +675,16 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
             return markup;
         }
         for page in pages {
-            let mut css = if page.active { " current-menu-item".to_owned() } else { String::new() };
-            let aria_current = if page.active { " aria-current=\"page\"" } else { "" };
+            let mut css = if page.active {
+                " current-menu-item".to_owned()
+            } else {
+                String::new()
+            };
+            let aria_current = if page.active {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
             let mut style = String::new();
             if ctx.ancestors.contains(&page.id) {
                 css.push_str(" current-menu-ancestor");
@@ -487,7 +703,11 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
                     css.push_str(" open-always");
                 }
             }
-            let content_class = if ctx.is_navigation_child { " wp-block-navigation-item__content" } else { "" };
+            let content_class = if ctx.is_navigation_child {
+                " wp-block-navigation-item__content"
+            } else {
+                ""
+            };
             if ((depth > 0 && !ctx.is_nested) || ctx.is_nested) && true {
                 css.push(' ');
                 css.push_str(ctx.overlay_classes.trim());
@@ -499,8 +719,16 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
                 css.push_str(" menu-item-home");
             }
             let title = page.title.clone();
-            let aria_label = rustpress_core::i18n::sprintf(&ctx.submenu_label, &[&rustpress_core::formatting::esc_html(&strip_tags(&title)).replace("&amp;", "&")]);
-            markup.push_str(&format!("<li class=\"wp-block-pages-list__item{}\"{style}>", esc_attr(&css)));
+            let aria_label =
+                rustpress_core::i18n::sprintf(
+                    &ctx.submenu_label,
+                    &[&rustpress_core::formatting::esc_html(&strip_tags(&title))
+                        .replace("&amp;", "&")],
+                );
+            markup.push_str(&format!(
+                "<li class=\"wp-block-pages-list__item{}\"{style}>",
+                esc_attr(&css)
+            ));
             if !children.is_empty() && ctx.is_navigation_child && ctx.visibility == "click" {
                 markup.push_str(&format!(
                     "<button aria-label=\"{}\" class=\"{} wp-block-navigation-submenu__toggle\" aria-expanded=\"false\">{title}</button><span class=\"wp-block-page-list__submenu-icon wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>",
@@ -551,7 +779,8 @@ pub(super) async fn page_list(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(items_markup);
     }
     let class = colors.css_classes.join(" ");
-    let wrapper = bc.wrapper_attributes(&[("class", class), ("style", colors.inline_styles.clone())]);
+    let wrapper =
+        bc.wrapper_attributes(&[("class", class), ("style", colors.inline_styles.clone())]);
     Ok(format!("<ul {wrapper}>{items_markup}</ul>"))
 }
 
@@ -571,19 +800,42 @@ fn strip_tags(text: &str) -> String {
 
 /// `block_core_page_list_build_css_colors`.
 fn page_list_colors(_attrs: &Map<String, Value>, context: &Map<String, Value>) -> Colors {
-    let mut c = Colors { css_classes: vec![], inline_styles: String::new(), overlay_css_classes: vec![], overlay_inline_styles: String::new() };
+    let mut c = Colors {
+        css_classes: vec![],
+        inline_styles: String::new(),
+        overlay_css_classes: vec![],
+        overlay_inline_styles: String::new(),
+    };
     let has = |k: &str| context.contains_key(k);
-    let val = |k: &str| context.get(k).and_then(Value::as_str).unwrap_or_default().to_owned();
-    let style_text = context.get("style").and_then(|s| s.get("color")).and_then(|c| c.get("text")).and_then(Value::as_str).map(str::to_owned);
-    let style_bg = context.get("style").and_then(|s| s.get("color")).and_then(|c| c.get("background")).and_then(Value::as_str).map(str::to_owned);
+    let val = |k: &str| {
+        context
+            .get(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let style_text = context
+        .get("style")
+        .and_then(|s| s.get("color"))
+        .and_then(|c| c.get("text"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let style_bg = context
+        .get("style")
+        .and_then(|s| s.get("color"))
+        .and_then(|c| c.get("background"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
 
     if style_text.is_some() || has("customTextColor") || has("textColor") {
         c.css_classes.push("has-text-color".into());
     }
     if has("textColor") {
-        c.css_classes.push(format!("has-{}-color", to_kebab_case(&val("textColor"))));
+        c.css_classes
+            .push(format!("has-{}-color", to_kebab_case(&val("textColor"))));
     } else if has("customTextColor") {
-        c.inline_styles.push_str(&format!("color: {};", val("customTextColor")));
+        c.inline_styles
+            .push_str(&format!("color: {};", val("customTextColor")));
     } else if let Some(t) = style_text {
         c.inline_styles.push_str(&format!("color: {t};"));
     }
@@ -591,9 +843,15 @@ fn page_list_colors(_attrs: &Map<String, Value>, context: &Map<String, Value>) -
         c.css_classes.push("has-background".into());
     }
     if has("backgroundColor") {
-        c.css_classes.push(format!("has-{}-background-color", to_kebab_case(&val("backgroundColor"))));
+        c.css_classes.push(format!(
+            "has-{}-background-color",
+            to_kebab_case(&val("backgroundColor"))
+        ));
     } else if has("customBackgroundColor") {
-        c.inline_styles.push_str(&format!("background-color: {};", val("customBackgroundColor")));
+        c.inline_styles.push_str(&format!(
+            "background-color: {};",
+            val("customBackgroundColor")
+        ));
     } else if let Some(b) = style_bg {
         c.inline_styles.push_str(&format!("background-color: {b};"));
     }
@@ -601,17 +859,27 @@ fn page_list_colors(_attrs: &Map<String, Value>, context: &Map<String, Value>) -
         c.overlay_css_classes.push("has-text-color".into());
     }
     if has("overlayTextColor") {
-        c.overlay_css_classes.push(format!("has-{}-color", to_kebab_case(&val("overlayTextColor"))));
+        c.overlay_css_classes.push(format!(
+            "has-{}-color",
+            to_kebab_case(&val("overlayTextColor"))
+        ));
     } else if has("customOverlayTextColor") {
-        c.overlay_inline_styles.push_str(&format!("color: {};", val("customOverlayTextColor")));
+        c.overlay_inline_styles
+            .push_str(&format!("color: {};", val("customOverlayTextColor")));
     }
     if has("overlayBackgroundColor") || has("customOverlayBackgroundColor") {
         c.overlay_css_classes.push("has-background".into());
     }
     if has("overlayBackgroundColor") {
-        c.overlay_css_classes.push(format!("has-{}-background-color", to_kebab_case(&val("overlayBackgroundColor"))));
+        c.overlay_css_classes.push(format!(
+            "has-{}-background-color",
+            to_kebab_case(&val("overlayBackgroundColor"))
+        ));
     } else if has("customOverlayBackgroundColor") {
-        c.overlay_inline_styles.push_str(&format!("background-color: {};", val("customOverlayBackgroundColor")));
+        c.overlay_inline_styles.push_str(&format!(
+            "background-color: {};",
+            val("customOverlayBackgroundColor")
+        ));
     }
     c
 }
@@ -630,13 +898,24 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
 
     let mut inner_html = String::new();
     for inner in &bc.block.inner_blocks {
-        inner_html.push_str(&bc.env.render_block(inner, bc.available, Some(bc.block)).await?);
+        inner_html.push_str(
+            &bc.env
+                .render_block(inner, bc.available, Some(bc.block))
+                .await?,
+        );
     }
     let has_submenu = !inner_html.trim().is_empty();
     let queried_id = bc.env.query.queried_object_id();
-    let is_active = attrs.get("id").and_then(Value::as_u64).is_some_and(|id| id != 0 && id == queried_id);
+    let is_active = attrs
+        .get("id")
+        .and_then(Value::as_u64)
+        .is_some_and(|id| id != 0 && id == queried_id);
 
-    let class = format!(" wp-block-navigation-item{}{}", if has_submenu { " has-child" } else { "" }, if is_active { " current-menu-item" } else { "" });
+    let class = format!(
+        " wp-block-navigation-item{}{}",
+        if has_submenu { " has-child" } else { "" },
+        if is_active { " current-menu-item" } else { "" }
+    );
     let wrapper = bc.wrapper_attributes(&[("class", class.trim().to_owned())]);
     let mut html = format!("<li {wrapper}><a class=\"wp-block-navigation-item__content\" ");
     if let Some(url) = str_attr(attrs, "url") {
@@ -650,18 +929,37 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
     }
     if let Some(rel) = str_attr(attrs, "rel") {
         html.push_str(&format!(" rel=\"{}\"", esc_attr(rel)));
-    } else if attrs.get("nofollow").is_some_and(|v| !crate::style_engine::is_empty(v)) {
+    } else if attrs
+        .get("nofollow")
+        .is_some_and(|v| !crate::style_engine::is_empty(v))
+    {
         html.push_str(" rel=\"nofollow\"");
     }
     if let Some(title) = str_attr(attrs, "title") {
         html.push_str(&format!(" title=\"{}\"", esc_attr(title)));
     }
-    html.push_str(&format!(">{}{}</a>", format_args!("<span class=\"wp-block-navigation-item__label\">{}</span>", kses_post(label)), description(attrs)));
-    if bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v)) && has_submenu {
-        html.push_str(&format!("<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"));
+    html.push_str(&format!(
+        ">{}{}</a>",
+        format_args!(
+            "<span class=\"wp-block-navigation-item__label\">{}</span>",
+            kses_post(label)
+        ),
+        description(attrs)
+    ));
+    if bc
+        .context
+        .get("showSubmenuIcon")
+        .is_some_and(|v| !crate::style_engine::is_empty(v))
+        && has_submenu
+    {
+        html.push_str(&format!(
+            "<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"
+        ));
     }
     if has_submenu {
-        html.push_str(&format!("<ul class=\"wp-block-navigation__submenu-container\">{inner_html}</ul>"));
+        html.push_str(&format!(
+            "<ul class=\"wp-block-navigation__submenu-container\">{inner_html}</ul>"
+        ));
     }
     html.push_str("</li>");
     Ok(html)
@@ -670,10 +968,20 @@ pub(super) async fn navigation_link(bc: &BlockCtx<'_>) -> Result<String> {
 /// `block_core_shared_navigation_item_should_render()`.
 async fn item_should_render(bc: &BlockCtx<'_>) -> Result<bool> {
     let attrs = &bc.attrs;
-    let id = attrs.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
-    let is_post_type = str_attr(attrs, "kind") == Some("post-type") || matches!(str_attr(attrs, "type"), Some("post" | "page"));
+    let id = attrs.get("id").and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    });
+    let is_post_type = str_attr(attrs, "kind") == Some("post-type")
+        || matches!(str_attr(attrs, "type"), Some("post" | "page"));
     Ok(match id {
-        Some(id) if is_post_type => bc.env.site.db.post(id).await?.is_some_and(|p| p.post_status == "publish"),
+        Some(id) if is_post_type => bc
+            .env
+            .site
+            .db
+            .post(id)
+            .await?
+            .is_some_and(|p| p.post_status == "publish"),
         _ => true,
     })
 }
@@ -684,17 +992,32 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
         return Ok(String::new());
     }
     let attrs = &bc.attrs;
-    let Some(raw_label) = str_attr(attrs, "label").filter(|l| !l.is_empty() && *l != "0") else { return Ok(String::new()) };
+    let Some(raw_label) = str_attr(attrs, "label").filter(|l| !l.is_empty() && *l != "0") else {
+        return Ok(String::new());
+    };
     let mut inner_html = String::new();
     for inner in &bc.block.inner_blocks {
-        inner_html.push_str(&bc.env.render_block(inner, bc.available, Some(bc.block)).await?);
+        inner_html.push_str(
+            &bc.env
+                .render_block(inner, bc.available, Some(bc.block))
+                .await?,
+        );
     }
     let has_submenu = !inner_html.trim().is_empty();
 
     // `! empty( get_queried_object()->$kind )`: a post has a `post_type`, a term a `taxonomy`.
-    let kind = str_attr(attrs, "kind").filter(|k| !k.is_empty()).unwrap_or("post-type").replace('-', "_");
+    let kind = str_attr(attrs, "kind")
+        .filter(|k| !k.is_empty())
+        .unwrap_or("post-type")
+        .replace('-', "_");
     let query = bc.env.query;
-    let id = attrs.get("id").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+    let id = attrs
+        .get("id")
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .unwrap_or(0);
     let mut is_active = id != 0
         && id == query.queried_object_id()
         && match &query.queried {
@@ -702,11 +1025,19 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
             rustpress_core::Queried::Term(_) => kind == "taxonomy",
             _ => false,
         };
-    if let (true, rustpress_core::Queried::PostType(post_type), Some(url)) = (query.flags.is_post_type_archive, &query.queried, str_attr(attrs, "url")) {
-        is_active = is_active || bc.env.site.post_type_archive_link(post_type).as_deref() == Some(url);
+    if let (true, rustpress_core::Queried::PostType(post_type), Some(url)) = (
+        query.flags.is_post_type_archive,
+        &query.queried,
+        str_attr(attrs, "url"),
+    ) {
+        is_active =
+            is_active || bc.env.site.post_type_archive_link(post_type).as_deref() == Some(url);
     }
 
-    let show_indicators = bc.context.get("showSubmenuIcon").is_some_and(|v| !crate::style_engine::is_empty(v));
+    let show_indicators = bc
+        .context
+        .get("showSubmenuIcon")
+        .is_some_and(|v| !crate::style_engine::is_empty(v));
     let visibility = submenu_visibility(&bc.context.values);
     let open_on_click = visibility == "click";
     let mut classes = vec!["wp-block-navigation-item"];
@@ -726,16 +1057,25 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
         classes.push("current-menu-item");
     }
     // `$block->block_type->supports['color'] = true` below stays on the registered block type for the rest of the request.
-    let colored_type = bc.block_type.as_deref().map(|block_type| block_type.with_color_support());
+    let colored_type = bc
+        .block_type
+        .as_deref()
+        .map(|block_type| block_type.with_color_support());
     let earlier_submenu = bc.env.with_state(|s| s.submenu_colors);
     let wrapper = if earlier_submenu {
-        crate::supports::wrapper_attributes_with(colored_type.as_ref(), &bc.raw_attrs, &[("class", classes.join(" "))], Some(bc.env.theme.global_settings()))
+        crate::supports::wrapper_attributes_with(
+            colored_type.as_ref(),
+            &bc.raw_attrs,
+            &[("class", classes.join(" "))],
+            Some(bc.env.theme.global_settings()),
+        )
     } else {
         bc.wrapper_attributes(&[("class", classes.join(" "))])
     };
 
     let label = kses_post(raw_label);
-    let aria_label = rustpress_core::i18n::sprintf(&bc.env.site.tr("%s submenu"), &[strip_tags(&label).trim()]);
+    let aria_label =
+        rustpress_core::i18n::sprintf(&bc.env.site.tr("%s submenu"), &[strip_tags(&label).trim()]);
     let mut html = format!("<li {wrapper}>");
     if open_on_click {
         html.push_str(&format!(
@@ -744,7 +1084,9 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
             description(attrs)
         ));
         if has_submenu {
-            html.push_str(&format!("<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"));
+            html.push_str(&format!(
+                "<span class=\"wp-block-navigation__submenu-icon\">{SUBMENU_ICON}</span>"
+            ));
         }
     } else {
         html.push_str("<a class=\"wp-block-navigation-item__content\"");
@@ -759,13 +1101,19 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
         }
         if let Some(rel) = str_attr(attrs, "rel") {
             html.push_str(&format!(" rel=\"{}\"", esc_attr(rel)));
-        } else if attrs.get("nofollow").is_some_and(|v| !crate::style_engine::is_empty(v)) {
+        } else if attrs
+            .get("nofollow")
+            .is_some_and(|v| !crate::style_engine::is_empty(v))
+        {
             html.push_str(" rel=\"nofollow\"");
         }
         if let Some(title) = str_attr(attrs, "title") {
             html.push_str(&format!(" title=\"{}\"", esc_attr(title)));
         }
-        html.push_str(&format!("><span class=\"wp-block-navigation-item__label\">{label}</span>{}</a>", description(attrs)));
+        html.push_str(&format!(
+            "><span class=\"wp-block-navigation-item__label\">{label}</span>{}</a>",
+            description(attrs)
+        ));
         if show_indicators && has_submenu {
             html.push_str(&format!(
                 "<button aria-label=\"{}\" class=\"wp-block-navigation__submenu-icon wp-block-navigation-submenu__toggle\" aria-expanded=\"false\">{SUBMENU_ICON}</button>",
@@ -777,16 +1125,41 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
     if has_submenu {
         // Some attributes come from the parent block; `wp_apply_colors_support()` with `color` turned on.
         let context = &bc.context;
-        let color = |preset_key: &str, attribute: &str, custom_key: &str, custom_name: &str| -> Option<String> {
-            let preset = context.get(preset_key).and_then(Value::as_str).or_else(|| str_attr(attrs, attribute));
-            let custom = context.get(custom_key).and_then(Value::as_str).or_else(|| attrs.get("style").and_then(|s| s.get("color")).and_then(|c| c.get(custom_name)).and_then(Value::as_str));
-            preset.map(|preset| format!("var:preset|color|{preset}")).or_else(|| custom.map(str::to_owned))
+        let color = |preset_key: &str,
+                     attribute: &str,
+                     custom_key: &str,
+                     custom_name: &str|
+         -> Option<String> {
+            let preset = context
+                .get(preset_key)
+                .and_then(Value::as_str)
+                .or_else(|| str_attr(attrs, attribute));
+            let custom = context.get(custom_key).and_then(Value::as_str).or_else(|| {
+                attrs
+                    .get("style")
+                    .and_then(|s| s.get("color"))
+                    .and_then(|c| c.get(custom_name))
+                    .and_then(Value::as_str)
+            });
+            preset
+                .map(|preset| format!("var:preset|color|{preset}"))
+                .or_else(|| custom.map(str::to_owned))
         };
         let mut colors = Map::new();
-        if let Some(text) = color("overlayTextColor", "textColor", "customOverlayTextColor", "text") {
+        if let Some(text) = color(
+            "overlayTextColor",
+            "textColor",
+            "customOverlayTextColor",
+            "text",
+        ) {
             colors.insert("text".to_owned(), Value::String(text));
         }
-        if let Some(background) = color("overlayBackgroundColor", "backgroundColor", "customOverlayBackgroundColor", "background") {
+        if let Some(background) = color(
+            "overlayBackgroundColor",
+            "backgroundColor",
+            "customOverlayBackgroundColor",
+            "background",
+        ) {
             colors.insert("background".to_owned(), Value::String(background));
         }
         let styles = crate::style_engine::get_styles(&serde_json::json!({ "color": colors }), true);
@@ -795,9 +1168,18 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
             container_class.push(' ');
             container_class.push_str(&styles.classnames);
         }
-        if inner_html.find("current-menu-item").is_some_and(|at| at != 0) {
+        if inner_html
+            .find("current-menu-item")
+            .is_some_and(|at| at != 0)
+        {
             let mut from = 0;
-            while let Some(tag) = crate::html::tags(&html, from).into_iter().find(|t| !t.is_closer && t.attr("class").is_some_and(|c| c.split_ascii_whitespace().any(|x| x == "wp-block-navigation-item"))) {
+            while let Some(tag) = crate::html::tags(&html, from).into_iter().find(|t| {
+                !t.is_closer
+                    && t.attr("class").is_some_and(|c| {
+                        c.split_ascii_whitespace()
+                            .any(|x| x == "wp-block-navigation-item")
+                    })
+            }) {
                 let mut editor = crate::html::TagEditor::from_tag(&html, tag);
                 editor.add_class("current-menu-ancestor");
                 let (start, _, text) = editor.tag_replacement();
@@ -806,7 +1188,12 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
             }
         }
         bc.env.with_state(|s| s.submenu_colors = true);
-        let list_wrapper = crate::supports::wrapper_attributes_with(colored_type.as_ref(), &bc.raw_attrs, &[("class", container_class), ("style", styles.css)], Some(bc.env.theme.global_settings()));
+        let list_wrapper = crate::supports::wrapper_attributes_with(
+            colored_type.as_ref(),
+            &bc.raw_attrs,
+            &[("class", container_class), ("style", styles.css)],
+            Some(bc.env.theme.global_settings()),
+        );
         html.push_str(&format!("<ul {list_wrapper}>{inner_html}</ul>"));
     }
     html.push_str("</li>");
@@ -815,7 +1202,10 @@ pub(super) async fn navigation_submenu(bc: &BlockCtx<'_>) -> Result<String> {
 
 fn description(attrs: &Map<String, Value>) -> String {
     match str_attr(attrs, "description").filter(|d| !d.is_empty()) {
-        Some(d) => format!("<span class=\"wp-block-navigation-item__description\">{}</span>", kses_post(d)),
+        Some(d) => format!(
+            "<span class=\"wp-block-navigation-item__description\">{}</span>",
+            kses_post(d)
+        ),
         None => String::new(),
     }
 }

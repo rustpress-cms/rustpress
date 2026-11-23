@@ -10,8 +10,19 @@ use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 fn site_name_title(icon: &Option<(String, String)>, site_title: &str) -> (&'static str, String) {
     match icon {
         Some((icon, icon_2x)) => {
-            let srcset = if !icon_2x.is_empty() && icon != icon_2x { format!(" srcset=\"{} 2x\"", esc_url(icon_2x)) } else { String::new() };
-            ("menupop has-site-icon", format!("<img class=\"site-icon\" src=\"{}\"{srcset} alt=\"\" width=\"20\" height=\"20\" />{}", esc_url(icon), esc_html(site_title)))
+            let srcset = if !icon_2x.is_empty() && icon != icon_2x {
+                format!(" srcset=\"{} 2x\"", esc_url(icon_2x))
+            } else {
+                String::new()
+            };
+            (
+                "menupop has-site-icon",
+                format!(
+                    "<img class=\"site-icon\" src=\"{}\"{srcset} alt=\"\" width=\"20\" height=\"20\" />{}",
+                    esc_url(icon),
+                    esc_html(site_title)
+                ),
+            )
         }
         None => ("menupop", esc_html(site_title)),
     }
@@ -41,9 +52,19 @@ pub struct BarContext {
 /// registrations; then the ones only the rewrite rules know.
 fn new_content_types(site: &Site) -> Vec<(String, String)> {
     let registered = site.types.admin_post_types();
-    let mut out: Vec<(String, String)> = registered.iter().filter(|t| t.show_in_admin_bar).map(|t| (t.name.clone(), t.label("name_admin_bar").unwrap_or_else(|| t.name.clone()))).collect();
+    let mut out: Vec<(String, String)> = registered
+        .iter()
+        .filter(|t| t.show_in_admin_bar)
+        .map(|t| {
+            (
+                t.name.clone(),
+                t.label("name_admin_bar").unwrap_or_else(|| t.name.clone()),
+            )
+        })
+        .collect();
     for custom in &site.types.post_types {
-        if !registered.iter().any(|r| r.name == custom.name) && (custom.public || custom.queryable) {
+        if !registered.iter().any(|r| r.name == custom.name) && (custom.public || custom.queryable)
+        {
             out.push((custom.name.clone(), custom.singular_label()));
         }
     }
@@ -51,23 +72,45 @@ fn new_content_types(site: &Site) -> Vec<(String, String)> {
 }
 
 fn item(id: &str, class: &str, inner: &str) -> String {
-    let class = if class.is_empty() { String::new() } else { format!(" class=\"{class}\"") };
+    let class = if class.is_empty() {
+        String::new()
+    } else {
+        format!(" class=\"{class}\"")
+    };
     format!("<li role='group' id='wp-admin-bar-{id}'{class}>{inner}</li>")
 }
 
 fn link(href: &str, inner: &str, popup: bool) -> String {
-    let expanded = if popup { " aria-expanded=\"false\"" } else { "" };
+    let expanded = if popup {
+        " aria-expanded=\"false\""
+    } else {
+        ""
+    };
     format!("<a class='ab-item' role=\"menuitem\"{expanded} href='{href}'>{inner}</a>")
 }
 
 fn submenu(label: &str, id: &str, class: &str, items: &[String]) -> String {
-    format!("<ul role='menu' aria-label='{}' id='wp-admin-bar-{id}' class=\"{class}\">{}</ul>", esc_attr(label), items.concat())
+    format!(
+        "<ul role='menu' aria-label='{}' id='wp-admin-bar-{id}' class=\"{class}\">{}</ul>",
+        esc_attr(label),
+        items.concat()
+    )
 }
 
 /// `get_avatar()` the way the toolbar prints it.
 fn avatar(site: &Site, email: &str, size: u64) -> String {
-    let url = |s: u64| esc_url(&rustpress_blocks::content::avatar_url(&site.options, email, s));
-    format!("<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>", url(size), url(size * 2))
+    let url = |s: u64| {
+        esc_url(&rustpress_blocks::content::avatar_url(
+            &site.options,
+            email,
+            s,
+        ))
+    };
+    format!(
+        "<img alt='' src='{}' srcset='{} 2x' class='avatar avatar-{size} photo' height='{size}' width='{size}' loading='lazy' decoding='async'/>",
+        url(size),
+        url(size * 2)
+    )
 }
 
 /// The toolbar for the administration area.
@@ -77,7 +120,9 @@ fn comments_off_everywhere(site: &Site, user: &CurrentUser) -> bool {
         return false;
     }
     let caps = user.clone();
-    site.plugins.comments_off_everywhere(Some(&rustpress_core::Viewer::new(user.id, move |c| caps.can(c)).with_roles(&user.roles)))
+    site.plugins.comments_off_everywhere(Some(
+        &rustpress_core::Viewer::new(user.id, move |c| caps.can(c)).with_roles(&user.roles),
+    ))
 }
 
 pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String {
@@ -93,14 +138,54 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     let about = tr("About WordPress");
     let logo_primary = vec![
         item("about", "", &link(&admin("about.php"), &about, false)),
-        item("contribute", "", &link(&admin("contribute.php"), &tr("Get Involved"), false)),
+        item(
+            "contribute",
+            "",
+            &link(&admin("contribute.php"), &tr("Get Involved"), false),
+        ),
     ];
     let logo_secondary = vec![
-        item("wporg", "", &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false)),
-        item("documentation", "", &link(&tr("https://wordpress.org/documentation/"), &tr("Documentation"), false)),
-        item("learn", "", &link(&tr("https://learn.wordpress.org/"), &tr("Learn WordPress"), false)),
-        item("support-forums", "", &link(&tr("https://wordpress.org/support/forums/"), &tr("Support"), false)),
-        item("feedback", "", &link(&tr("https://wordpress.org/support/forum/requests-and-feedback"), &tr("Feedback"), false)),
+        item(
+            "wporg",
+            "",
+            &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false),
+        ),
+        item(
+            "documentation",
+            "",
+            &link(
+                &tr("https://wordpress.org/documentation/"),
+                &tr("Documentation"),
+                false,
+            ),
+        ),
+        item(
+            "learn",
+            "",
+            &link(
+                &tr("https://learn.wordpress.org/"),
+                &tr("Learn WordPress"),
+                false,
+            ),
+        ),
+        item(
+            "support-forums",
+            "",
+            &link(
+                &tr("https://wordpress.org/support/forums/"),
+                &tr("Support"),
+                false,
+            ),
+        ),
+        item(
+            "feedback",
+            "",
+            &link(
+                &tr("https://wordpress.org/support/forum/requests-and-feedback"),
+                &tr("Feedback"),
+                false,
+            ),
+        ),
     ];
     top.push(item(
         "wp-logo",
@@ -114,18 +199,41 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     ));
 
     // Site name
-    let site_title = if blog_name.is_empty() { tr("Dashboard") } else { blog_name.clone() };
-    let visit = vec![item("view-site", "", &link(&esc_url(&site.home_url("/")), &tr("Visit Site"), false))];
+    let site_title = if blog_name.is_empty() {
+        tr("Dashboard")
+    } else {
+        blog_name.clone()
+    };
+    let visit = vec![item(
+        "view-site",
+        "",
+        &link(&esc_url(&site.home_url("/")), &tr("Visit Site"), false),
+    )];
     let (name_class, name_title) = site_name_title(&ctx.site_icon, &site_title);
     top.push(item(
         "site-name",
         name_class,
-        &format!("{}<div class=\"ab-sub-wrapper\">{}</div>", link(&esc_url(&site.home_url("/")), &name_title, true), submenu(&site_title, "site-name-default", "ab-submenu", &visit)),
+        &format!(
+            "{}<div class=\"ab-sub-wrapper\">{}</div>",
+            link(&esc_url(&site.home_url("/")), &name_title, true),
+            submenu(&site_title, "site-name-default", "ab-submenu", &visit)
+        ),
     ));
 
     // Updates
-    if ctx.updates > 0 && ["update_core", "update_plugins", "update_themes"].iter().any(|c| user.can(c)) {
-        let text = rustpress_core::i18n::sprintf(&site.trn("%s update available", "%s updates available", ctx.updates as i64), &[&number(ctx.updates)]);
+    if ctx.updates > 0
+        && ["update_core", "update_plugins", "update_themes"]
+            .iter()
+            .any(|c| user.can(c))
+    {
+        let text = rustpress_core::i18n::sprintf(
+            &site.trn(
+                "%s update available",
+                "%s updates available",
+                ctx.updates as i64,
+            ),
+            &[&number(ctx.updates)],
+        );
         top.push(item(
             "updates",
             "",
@@ -136,8 +244,18 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     // Command palette
     if ctx.command_palette {
         let shortcut = site.trx("Ctrl+K", "keyboard shortcut to open the command palette");
-        let flags = rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false };
-        let apple = rustpress_blocks::php_json::encode_with(&serde_json::Value::from(site.trx("\u{2318}K", "keyboard shortcut to open the command palette")), flags).replace('<', "\\u003C").replace('>', "\\u003E");
+        let flags = rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        };
+        let apple = rustpress_blocks::php_json::encode_with(
+            &serde_json::Value::from(
+                site.trx("\u{2318}K", "keyboard shortcut to open the command palette"),
+            ),
+            flags,
+        )
+        .replace('<', "\\u003C")
+        .replace('>', "\\u003E");
         // A nowdoc whose closing marker is indented by one tab: every line loses one.
         let script = format!(
             "( \t( applePattern, appleOSLabel ) => {{\n\t\tif ( ! ( new RegExp( applePattern, 'i' ) ).test( navigator.userAgent ) ) {{\n\t\t\treturn;\n\t\t}}\n\t\tconst kbd = document.querySelector( '#wp-admin-bar-command-palette .ab-label kbd' );\n\t\tif ( kbd ) {{\n\t\t\tkbd.textContent = appleOSLabel;\n\t\t}}\n\t}} )( \"Macintosh|Mac OS X|Mac_PowerPC\", {apple} );\n//# sourceURL=wp_admin_bar_command_palette_menu"
@@ -150,7 +268,14 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
 
     // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
     if user.can("edit_posts") && !comments_off_everywhere(site, user) {
-        let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
+        let text = rustpress_core::i18n::sprintf(
+            &site.trn(
+                "%s Comment in moderation",
+                "%s Comments in moderation",
+                ctx.pending_comments as i64,
+            ),
+            &[&number(ctx.pending_comments)],
+        );
         top.push(item(
             "comments",
             "",
@@ -164,26 +289,58 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
 
     // New
     let mut new_items: Vec<String> = Vec::new();
-    let mut add_new = |id: &str, href: String, label: &str| new_items.push(item(&format!("new-{id}"), "", &link(&href, &esc_html(label), false)));
+    let mut add_new = |id: &str, href: String, label: &str| {
+        new_items.push(item(
+            &format!("new-{id}"),
+            "",
+            &link(&href, &esc_html(label), false),
+        ))
+    };
     if user.can("edit_posts") {
-        add_new("post", admin("post-new.php"), &site.trx("Post", "post type singular name"));
+        add_new(
+            "post",
+            admin("post-new.php"),
+            &site.trx("Post", "post type singular name"),
+        );
     }
     if user.can("upload_files") {
-        add_new("media", admin("media-new.php"), &site.trx("Media", "add new from admin bar"));
+        add_new(
+            "media",
+            admin("media-new.php"),
+            &site.trx("Media", "add new from admin bar"),
+        );
     }
     if user.can("edit_pages") {
-        add_new("page", admin("post-new.php?post_type=page"), &site.trx("Page", "post type singular name"));
+        add_new(
+            "page",
+            admin("post-new.php?post_type=page"),
+            &site.trx("Page", "post type singular name"),
+        );
     }
     for (name, label) in new_content_types(site) {
         if user.can("edit_posts") {
-            add_new(&name, admin(&format!("post-new.php?post_type={name}")), &label);
+            add_new(
+                &name,
+                admin(&format!("post-new.php?post_type={name}")),
+                &label,
+            );
         }
     }
     if user.can("create_users") || user.can("promote_users") {
-        add_new("user", admin("user-new.php"), &site.trx("User", "add new from admin bar"));
+        add_new(
+            "user",
+            admin("user-new.php"),
+            &site.trx("User", "add new from admin bar"),
+        );
     }
     if !new_items.is_empty() {
-        let first = admin(if user.can("edit_posts") { "post-new.php" } else if user.can("upload_files") { "media-new.php" } else { "user-new.php" });
+        let first = admin(if user.can("edit_posts") {
+            "post-new.php"
+        } else if user.can("upload_files") {
+            "media-new.php"
+        } else {
+            "user-new.php"
+        });
         top.push(item(
             "new-content",
             "menupop",
@@ -203,19 +360,51 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     }
 
     // My account
-    let howdy = rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&format!("<span class=\"display-name\">{}</span>", esc_html(&user.display_name))]);
+    let howdy = rustpress_core::i18n::sprintf(
+        &tr("Howdy, %s"),
+        &[&format!(
+            "<span class=\"display-name\">{}</span>",
+            esc_html(&user.display_name)
+        )],
+    );
     let profile = admin("profile.php");
     let info = item(
         "user-info",
         "",
-        &link(&profile, &format!("{}<span class='display-name'>{}</span><span class='display-name edit-profile'>{}</span>", avatar(site, &user.email, 64), esc_html(&user.display_name), tr("Edit Profile")), false),
+        &link(
+            &profile,
+            &format!(
+                "{}<span class='display-name'>{}</span><span class='display-name edit-profile'>{}</span>",
+                avatar(site, &user.email, 64),
+                esc_html(&user.display_name),
+                tr("Edit Profile")
+            ),
+            false,
+        ),
     );
-    let logout_url = esc_url(&format!("{}?action=logout&_wpnonce={}", site.site_url("wp-login.php"), ctx.logout_nonce));
+    let logout_url = esc_url(&format!(
+        "{}?action=logout&_wpnonce={}",
+        site.site_url("wp-login.php"),
+        ctx.logout_nonce
+    ));
     let logout = item("logout", "", &link(&logout_url, &tr("Log Out"), false));
     let account = item(
         "my-account",
         "menupop with-avatar",
-        &format!("{}<div class=\"ab-sub-wrapper\">{}</div>", link(&profile, &format!("{howdy}{}", avatar(site, &user.email, 28)), true), submenu(&rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&user.display_name]), "user-actions", "ab-submenu", &[info, logout])),
+        &format!(
+            "{}<div class=\"ab-sub-wrapper\">{}</div>",
+            link(
+                &profile,
+                &format!("{howdy}{}", avatar(site, &user.email, 28)),
+                true
+            ),
+            submenu(
+                &rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&user.display_name]),
+                "user-actions",
+                "ab-submenu",
+                &[info, logout]
+            )
+        ),
     );
 
     format!(
@@ -263,14 +452,54 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
     let about = tr("About WordPress");
     let logo_primary = vec![
         item("about", "", &link(&admin("about.php"), &about, false)),
-        item("contribute", "", &link(&admin("contribute.php"), &tr("Get Involved"), false)),
+        item(
+            "contribute",
+            "",
+            &link(&admin("contribute.php"), &tr("Get Involved"), false),
+        ),
     ];
     let logo_secondary = vec![
-        item("wporg", "", &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false)),
-        item("documentation", "", &link(&tr("https://wordpress.org/documentation/"), &tr("Documentation"), false)),
-        item("learn", "", &link(&tr("https://learn.wordpress.org/"), &tr("Learn WordPress"), false)),
-        item("support-forums", "", &link(&tr("https://wordpress.org/support/forums/"), &tr("Support"), false)),
-        item("feedback", "", &link(&tr("https://wordpress.org/support/forum/requests-and-feedback"), &tr("Feedback"), false)),
+        item(
+            "wporg",
+            "",
+            &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false),
+        ),
+        item(
+            "documentation",
+            "",
+            &link(
+                &tr("https://wordpress.org/documentation/"),
+                &tr("Documentation"),
+                false,
+            ),
+        ),
+        item(
+            "learn",
+            "",
+            &link(
+                &tr("https://learn.wordpress.org/"),
+                &tr("Learn WordPress"),
+                false,
+            ),
+        ),
+        item(
+            "support-forums",
+            "",
+            &link(
+                &tr("https://wordpress.org/support/forums/"),
+                &tr("Support"),
+                false,
+            ),
+        ),
+        item(
+            "feedback",
+            "",
+            &link(
+                &tr("https://wordpress.org/support/forum/requests-and-feedback"),
+                &tr("Feedback"),
+                false,
+            ),
+        ),
     ];
     top.push(item(
         "wp-logo",
@@ -284,56 +513,139 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
     ));
 
     // Site name: the dashboard, plugins and themes
-    let site_title = if blog_name.is_empty() { tr("Dashboard") } else { blog_name.clone() };
-    let mut default_items = vec![item("dashboard", "", &link(&admin(""), &tr("Dashboard"), false))];
+    let site_title = if blog_name.is_empty() {
+        tr("Dashboard")
+    } else {
+        blog_name.clone()
+    };
+    let mut default_items = vec![item(
+        "dashboard",
+        "",
+        &link(&admin(""), &tr("Dashboard"), false),
+    )];
     if user.can("activate_plugins") {
-        default_items.push(item("plugins", "", &link(&admin("plugins.php"), &tr("Plugins"), false)));
+        default_items.push(item(
+            "plugins",
+            "",
+            &link(&admin("plugins.php"), &tr("Plugins"), false),
+        ));
     }
-    let mut groups = submenu(&site_title, "site-name-default", "ab-submenu", &default_items);
+    let mut groups = submenu(
+        &site_title,
+        "site-name-default",
+        "ab-submenu",
+        &default_items,
+    );
     if user.can("switch_themes") || user.can("edit_theme_options") {
         let mut appearance = Vec::new();
         if user.can("switch_themes") {
-            appearance.push(item("themes", "", &link(&admin("themes.php"), &tr("Themes"), false)));
+            appearance.push(item(
+                "themes",
+                "",
+                &link(&admin("themes.php"), &tr("Themes"), false),
+            ));
         }
         if ctx.classic_theme && user.can("edit_theme_options") {
-            appearance.push(item("widgets", "", &link(&admin("widgets.php"), &tr("Widgets"), false)));
-            appearance.push(item("menus", "", &link(&admin("nav-menus.php"), &tr("Menus"), false)));
+            appearance.push(item(
+                "widgets",
+                "",
+                &link(&admin("widgets.php"), &tr("Widgets"), false),
+            ));
+            appearance.push(item(
+                "menus",
+                "",
+                &link(&admin("nav-menus.php"), &tr("Menus"), false),
+            ));
             if ctx.custom_background {
-                appearance.push(item("background", "hide-if-customize", &link(&admin("themes.php?page=custom-background"), &tr("Background"), false)));
+                appearance.push(item(
+                    "background",
+                    "hide-if-customize",
+                    &link(
+                        &admin("themes.php?page=custom-background"),
+                        &tr("Background"),
+                        false,
+                    ),
+                ));
             } else {
                 // `current_theme_supports( 'custom-header' )`: Twenty Seventeen.
-                appearance.push(item("header", "hide-if-customize", &link(&admin("themes.php?page=custom-header"), &tr("Header"), false)));
+                appearance.push(item(
+                    "header",
+                    "hide-if-customize",
+                    &link(
+                        &admin("themes.php?page=custom-header"),
+                        &tr("Header"),
+                        false,
+                    ),
+                ));
             }
         }
-        groups.push_str(&submenu(&site_title, "appearance", "ab-submenu", &appearance));
+        groups.push_str(&submenu(
+            &site_title,
+            "appearance",
+            "ab-submenu",
+            &appearance,
+        ));
     }
     let (name_class, name_title) = site_name_title(&ctx.site_icon, &site_title);
-    top.push(item("site-name", name_class, &format!("{}<div class=\"ab-sub-wrapper\">{groups}</div>", link(&admin(""), &name_title, true))));
+    top.push(item(
+        "site-name",
+        name_class,
+        &format!(
+            "{}<div class=\"ab-sub-wrapper\">{groups}</div>",
+            link(&admin(""), &name_title, true)
+        ),
+    ));
 
     // Edit Site
     if let Some(url) = &ctx.site_editor_url {
-        top.push(item("site-editor", "", &link(&esc_url(url), &tr("Edit Site"), false)));
+        top.push(item(
+            "site-editor",
+            "",
+            &link(&esc_url(url), &tr("Edit Site"), false),
+        ));
     }
 
     // `wp_admin_bar_customize_menu()`
     // A block theme has the menu when something uses the Customizer: in its preview, the Customizer itself.
-    let customize = (ctx.classic_theme || ctx.customize_changeset.is_some()) && user.can("edit_theme_options");
+    let customize =
+        (ctx.classic_theme || ctx.customize_changeset.is_some()) && user.can("edit_theme_options");
     if customize {
         // In the preview the Customizer opens the changeset again, and the page comes without it.
         let current = match &ctx.customize_changeset {
-            Some(_) => rustpress_core::urls::remove_query_arg(&ctx.current_url, "customize_changeset_uuid"),
+            Some(_) => {
+                rustpress_core::urls::remove_query_arg(&ctx.current_url, "customize_changeset_uuid")
+            }
             None => ctx.current_url.clone(),
         };
-        let mut url = rustpress_core::urls::add_query_arg(&site.site_url("wp-admin/customize.php"), "url", &rustpress_core::canonical::php_urlencode(&current));
+        let mut url = rustpress_core::urls::add_query_arg(
+            &site.site_url("wp-admin/customize.php"),
+            "url",
+            &rustpress_core::canonical::php_urlencode(&current),
+        );
         if let Some(uuid) = &ctx.customize_changeset {
             url = rustpress_core::urls::add_query_arg(&url, "changeset_uuid", uuid);
         }
-        top.push(item("customize", "hide-if-no-customize", &link(&esc_url(&url), &tr("Customize"), false)));
+        top.push(item(
+            "customize",
+            "hide-if-no-customize",
+            &link(&esc_url(&url), &tr("Customize"), false),
+        ));
     }
 
     // Updates
-    if ctx.updates > 0 && ["update_core", "update_plugins", "update_themes"].iter().any(|c| user.can(c)) {
-        let text = rustpress_core::i18n::sprintf(&site.trn("%s update available", "%s updates available", ctx.updates as i64), &[&number(ctx.updates)]);
+    if ctx.updates > 0
+        && ["update_core", "update_plugins", "update_themes"]
+            .iter()
+            .any(|c| user.can(c))
+    {
+        let text = rustpress_core::i18n::sprintf(
+            &site.trn(
+                "%s update available",
+                "%s updates available",
+                ctx.updates as i64,
+            ),
+            &[&number(ctx.updates)],
+        );
         top.push(item(
             "updates",
             "",
@@ -343,7 +655,14 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
 
     // Comments; a plugin that turns comments off everywhere removes `wp_admin_bar_comments_menu()`.
     if user.can("edit_posts") && !comments_off_everywhere(site, user) {
-        let text = rustpress_core::i18n::sprintf(&site.trn("%s Comment in moderation", "%s Comments in moderation", ctx.pending_comments as i64), &[&number(ctx.pending_comments)]);
+        let text = rustpress_core::i18n::sprintf(
+            &site.trn(
+                "%s Comment in moderation",
+                "%s Comments in moderation",
+                ctx.pending_comments as i64,
+            ),
+            &[&number(ctx.pending_comments)],
+        );
         top.push(item(
             "comments",
             "",
@@ -357,26 +676,58 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
 
     // New
     let mut new_items: Vec<String> = Vec::new();
-    let mut add_new = |id: &str, href: String, label: &str| new_items.push(item(&format!("new-{id}"), "", &link(&href, &esc_html(label), false)));
+    let mut add_new = |id: &str, href: String, label: &str| {
+        new_items.push(item(
+            &format!("new-{id}"),
+            "",
+            &link(&href, &esc_html(label), false),
+        ))
+    };
     if user.can("edit_posts") {
-        add_new("post", admin("post-new.php"), &site.trx("Post", "post type singular name"));
+        add_new(
+            "post",
+            admin("post-new.php"),
+            &site.trx("Post", "post type singular name"),
+        );
     }
     if user.can("upload_files") {
-        add_new("media", admin("media-new.php"), &site.trx("Media", "add new from admin bar"));
+        add_new(
+            "media",
+            admin("media-new.php"),
+            &site.trx("Media", "add new from admin bar"),
+        );
     }
     if user.can("edit_pages") {
-        add_new("page", admin("post-new.php?post_type=page"), &site.trx("Page", "post type singular name"));
+        add_new(
+            "page",
+            admin("post-new.php?post_type=page"),
+            &site.trx("Page", "post type singular name"),
+        );
     }
     for (name, label) in new_content_types(site) {
         if user.can("edit_posts") {
-            add_new(&name, admin(&format!("post-new.php?post_type={name}")), &label);
+            add_new(
+                &name,
+                admin(&format!("post-new.php?post_type={name}")),
+                &label,
+            );
         }
     }
     if user.can("create_users") || user.can("promote_users") {
-        add_new("user", admin("user-new.php"), &site.trx("User", "add new from admin bar"));
+        add_new(
+            "user",
+            admin("user-new.php"),
+            &site.trx("User", "add new from admin bar"),
+        );
     }
     if !new_items.is_empty() {
-        let first = admin(if user.can("edit_posts") { "post-new.php" } else if user.can("upload_files") { "media-new.php" } else { "user-new.php" });
+        let first = admin(if user.can("edit_posts") {
+            "post-new.php"
+        } else if user.can("upload_files") {
+            "media-new.php"
+        } else {
+            "user-new.php"
+        });
         top.push(item(
             "new-content",
             "menupop",
@@ -390,23 +741,59 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
 
     // The item of the page
     if let Some((label, url)) = &ctx.edit {
-        top.push(item("edit", "", &link(&esc_url(url), &esc_html(label), false)));
+        top.push(item(
+            "edit",
+            "",
+            &link(&esc_url(url), &esc_html(label), false),
+        ));
     }
 
     // My account and the search
-    let howdy = rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&format!("<span class=\"display-name\">{}</span>", esc_html(&user.display_name))]);
+    let howdy = rustpress_core::i18n::sprintf(
+        &tr("Howdy, %s"),
+        &[&format!(
+            "<span class=\"display-name\">{}</span>",
+            esc_html(&user.display_name)
+        )],
+    );
     let profile = admin("profile.php");
     let info = item(
         "user-info",
         "",
-        &link(&profile, &format!("{}<span class='display-name'>{}</span><span class='display-name edit-profile'>{}</span>", avatar(site, &user.email, 64), esc_html(&user.display_name), tr("Edit Profile")), false),
+        &link(
+            &profile,
+            &format!(
+                "{}<span class='display-name'>{}</span><span class='display-name edit-profile'>{}</span>",
+                avatar(site, &user.email, 64),
+                esc_html(&user.display_name),
+                tr("Edit Profile")
+            ),
+            false,
+        ),
     );
-    let logout_url = esc_url(&format!("{}?action=logout&_wpnonce={}", site.site_url("wp-login.php"), ctx.logout_nonce));
+    let logout_url = esc_url(&format!(
+        "{}?action=logout&_wpnonce={}",
+        site.site_url("wp-login.php"),
+        ctx.logout_nonce
+    ));
     let logout = item("logout", "", &link(&logout_url, &tr("Log Out"), false));
     let account = item(
         "my-account",
         "menupop with-avatar",
-        &format!("{}<div class=\"ab-sub-wrapper\">{}</div>", link(&profile, &format!("{howdy}{}", avatar(site, &user.email, 28)), true), submenu(&rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&user.display_name]), "user-actions", "ab-submenu", &[info, logout])),
+        &format!(
+            "{}<div class=\"ab-sub-wrapper\">{}</div>",
+            link(
+                &profile,
+                &format!("{howdy}{}", avatar(site, &user.email, 28)),
+                true
+            ),
+            submenu(
+                &rustpress_core::i18n::sprintf(&tr("Howdy, %s"), &[&user.display_name]),
+                "user-actions",
+                "ab-submenu",
+                &[info, logout]
+            )
+        ),
     );
     let search = format!(
         "<li role='group' id='wp-admin-bar-search' class=\"admin-bar-search\"><div class=\"ab-item ab-empty-item\" tabindex=\"-1\" role=\"menuitem\"><form action=\"{}\" method=\"get\" id=\"adminbarsearch\"><input class=\"adminbar-input\" name=\"s\" id=\"adminbar-search\" type=\"text\" value=\"\" maxlength=\"150\" /><label for=\"adminbar-search\" class=\"screen-reader-text\">{}</label><input type=\"submit\" class=\"adminbar-button\" value=\"{}\" /></form></div></li>",
@@ -415,7 +802,11 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         tr("Search")
     );
 
-    let script = if customize { CUSTOMIZE_SUPPORT_SCRIPT } else { "" };
+    let script = if customize {
+        CUSTOMIZE_SUPPORT_SCRIPT
+    } else {
+        ""
+    };
     format!(
         "{script}\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{account}{search}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
         esc_attr(&tr("Toolbar")),

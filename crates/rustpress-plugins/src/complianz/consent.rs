@@ -33,7 +33,14 @@ fn stripslashes(text: &str) -> String {
 /// The leading numeric part of a PHP string (whitespace, sign, digits, fraction, exponent).
 fn numeric_prefix(text: &str) -> Option<regex::Match<'_>> {
     static NUMBER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    NUMBER.get_or_init(|| regex::Regex::new(r"^[ \t\n\r\x0B\x0C]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?").expect("valid regex")).find(text)
+    NUMBER
+        .get_or_init(|| {
+            regex::Regex::new(
+                r"^[ \t\n\r\x0B\x0C]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?",
+            )
+            .expect("valid regex")
+        })
+        .find(text)
 }
 
 /// `1 == $value` for a value of `json_decode()`: numbers and numeric strings equal to one, `true`, and objects
@@ -42,7 +49,15 @@ fn loose_eq_one(value: &Json) -> bool {
     match value {
         Json::Bool(b) => *b,
         Json::Number(n) => n.as_f64() == Some(1.0),
-        Json::String(s) => numeric_prefix(s).is_some_and(|m| s[m.end()..].trim_matches([' ', '\t', '\n', '\r', '\x0B', '\x0C']).is_empty() && m.as_str().trim_start().parse::<f64>().is_ok_and(|n| n == 1.0)),
+        Json::String(s) => numeric_prefix(s).is_some_and(|m| {
+            s[m.end()..]
+                .trim_matches([' ', '\t', '\n', '\r', '\x0B', '\x0C'])
+                .is_empty()
+                && m.as_str()
+                    .trim_start()
+                    .parse::<f64>()
+                    .is_ok_and(|n| n == 1.0)
+        }),
         Json::Object(_) => true,
         Json::Null | Json::Array(_) => false,
     }
@@ -92,16 +107,27 @@ pub struct Atts<'a> {
 pub enum Area {
     Html(String),
     /// The consent is given: `prefix`, then `do_shortcode( $content )`.
-    Consented { prefix: String },
+    Consented {
+        prefix: String,
+    },
 }
 
 /// `show_consent_area()` (and `show_consent_area_clientside()`), `post_id` being `global $post`'s ID or 0.
 /// `locale` is `get_locale()` (for the `remove_accents()` of `sanitize_title()`).
-pub fn show_consent_area(atts: &Atts, post_id: u64, consent_type: &str, locale: &str, cookie: &dyn Fn(&str) -> Option<String>) -> Area {
+pub fn show_consent_area(
+    atts: &Atts,
+    post_id: u64,
+    consent_type: &str,
+    locale: &str,
+    cookie: &dyn Fn(&str) -> Option<String>,
+) -> Area {
     let block_id = rustpress_core::slug::sanitize_title_save(atts.id.unwrap_or("default"), locale);
     if truthy(atts.clientside) {
         // shortcode_atts() a second time: `service` is 'general' by then, `category` still false.
-        let category = atts.category.filter(|c| truthy(Some(c))).map_or("marketing", sanitize_category);
+        let category = atts
+            .category
+            .filter(|c| truthy(Some(c)))
+            .map_or("marketing", sanitize_category);
         let service = super::blocker::sanitize_service_name(atts.service.unwrap_or("general"));
         let category = esc_attr(category);
         return Area::Html(format!(
@@ -114,10 +140,25 @@ pub fn show_consent_area(atts: &Atts, post_id: u64, consent_type: &str, locale: 
     let cache_redirect = matches!(atts.cache_redirect, Some("true" | "1"));
     let scroll_into_view = atts.scroll_into_view.is_none_or(|v| v == "true");
     let has_category = truthy(atts.category);
-    let category = if has_category { sanitize_category(atts.category.unwrap_or_default()).to_owned() } else { "no-category".to_owned() };
-    let service = if has_category { "no-service".to_owned() } else { super::blocker::sanitize_service_name(atts.service.unwrap_or("general")) };
+    let category = if has_category {
+        sanitize_category(atts.category.unwrap_or_default()).to_owned()
+    } else {
+        "no-category".to_owned()
+    };
+    let service = if has_category {
+        "no-service".to_owned()
+    } else {
+        super::blocker::sanitize_service_name(atts.service.unwrap_or("general"))
+    };
 
-    let consented = has_service_consent(consent_type, cookie("cmplz_consented_services").as_deref(), &service) || has_consent(consent_type, cookie(&format!("cmplz_{category}")).as_deref());
+    let consented = has_service_consent(
+        consent_type,
+        cookie("cmplz_consented_services").as_deref(),
+        &service,
+    ) || has_consent(
+        consent_type,
+        cookie(&format!("cmplz_{category}")).as_deref(),
+    );
     let (service, category) = (esc_attr(&service), esc_attr(&category));
     if consented {
         let mut prefix = String::new();
@@ -127,7 +168,11 @@ pub fn show_consent_area(atts: &Atts, post_id: u64, consent_type: &str, locale: 
         prefix.push_str("<a id=\"cmplz_consent_area_anchor\"></a>");
         return Area::Consented { prefix };
     }
-    let redirect_uri = if scroll_into_view { "cmplz_consent=1#cmplz_consent_area_anchor" } else { "cmplz_consent=1" };
+    let redirect_uri = if scroll_into_view {
+        "cmplz_consent=1#cmplz_consent_area_anchor"
+    } else {
+        "cmplz_consent=1"
+    };
     let mut out = String::new();
     if cache_redirect {
         out.push_str("\t\t\t\t\t<script>\n\t\t\t\t\t\tvar url = window.location.href;\n\t\t\t\t\t\tvar consented_area_visible = document.getElementById('cmplz_consent_area_anchor');\n\t\t\t\t\t\tif (url.indexOf('cmplz_consent=1') !== -1 && !consented_area_visible ) {\n\t\t\t\t\t\t\turl = url.replace('cmplz_consent=1', '');\n\t\t\t\t\t\t\turl = url.replace('#cmplz_consent_area_anchor', '');\n\t\t\t\t\t\t\turl = url.replace('?&', '?');\n\t\t\t\t\t\t\turl = url.replace('&&', '?');\n\t\t\t\t\t\t\t//if last character is ? or &, drop it\n\t\t\t\t\t\t\tif (url.substring(url.length-1) === \"&\" || url.substring(url.length-1) === \"?\")\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\turl = url.substring(0, url.length-1);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\twindow.location.replace(url);\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tdocument.addEventListener(\"cmplz_enable_category\", cmplzEnableCustomBlockedContent);\n\t\t\t\t\t\tfunction cmplzEnableCustomBlockedContent(e) {\n\t\t\t\t\t\t\tif ( cmplz_has_service_consent('");
@@ -160,8 +205,13 @@ fn attr_text(attrs: &serde_json::Map<String, Json>, key: &str) -> Option<String>
 /// `(int)` of a block attribute.
 fn attr_int(attrs: &serde_json::Map<String, Json>, key: &str) -> i64 {
     match attrs.get(key) {
-        Some(Json::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).unwrap_or(0),
-        Some(Json::String(s)) => numeric_prefix(s).and_then(|m| m.as_str().trim_start().parse::<f64>().ok()).map_or(0, |f| f as i64),
+        Some(Json::Number(n)) => n
+            .as_i64()
+            .or_else(|| n.as_f64().map(|f| f as i64))
+            .unwrap_or(0),
+        Some(Json::String(s)) => numeric_prefix(s)
+            .and_then(|m| m.as_str().trim_start().parse::<f64>().ok())
+            .map_or(0, |f| f as i64),
         Some(Json::Bool(true)) => 1,
         _ => 0,
     }
@@ -179,7 +229,10 @@ pub fn render_block(attrs: &serde_json::Map<String, Json>, locale: &str) -> Stri
         Some(s) => super::blocker::sanitize_service_name(&s),
     };
     let post_id = attr_int(attrs, "postId");
-    let block_id = rustpress_core::slug::sanitize_title_save(&attr_text(attrs, "blockId").unwrap_or_default(), locale);
+    let block_id = rustpress_core::slug::sanitize_title_save(
+        &attr_text(attrs, "blockId").unwrap_or_default(),
+        locale,
+    );
     let placeholder = attr_text(attrs, "placeholderContent").unwrap_or_default();
     format!(
         "<div class=\"cmplz-consent-area cmplz-placeholder\" data-post_id=\"{post_id}\" data-block_id=\"{}\" data-category=\"{}\" data-service=\"{}\">\n\t\t{}\t</div>\n\t",
@@ -195,9 +248,12 @@ pub fn render_block(attrs: &serde_json::Map<String, Json>, locale: &str) -> Stri
 /// shortcode with the id.
 pub fn consented_content(content: &str, block_id: &str) -> String {
     if content.contains("<!-- wp:complianz/consent-area") {
-        let mut queue: std::collections::VecDeque<rustpress_blocks::parser::Block> = rustpress_blocks::parser::parse_blocks(content).into();
+        let mut queue: std::collections::VecDeque<rustpress_blocks::parser::Block> =
+            rustpress_blocks::parser::parse_blocks(content).into();
         while let Some(block) = queue.pop_front() {
-            if block.name.as_deref() == Some("complianz/consent-area") && matches!(block.attrs.get("blockId"), Some(Json::String(id)) if id == block_id) {
+            if block.name.as_deref() == Some("complianz/consent-area")
+                && matches!(block.attrs.get("blockId"), Some(Json::String(id)) if id == block_id)
+            {
                 return attr_text(&block.attrs, "consentedContent").unwrap_or_default();
             }
             queue.extend(block.inner_blocks);
@@ -207,9 +263,15 @@ pub fn consented_content(content: &str, block_id: &str) -> String {
         let pattern = if block_id == "default" {
             r"(?is)\[cmplz-consent-area[^\]]*?\](.*?)\[/cmplz-consent-area\]".to_owned()
         } else {
-            format!(r#"(?is)\[cmplz-consent-area[^\]]*?id=["']{}["'][^\]]*?\](.*?)\[/cmplz-consent-area\]"#, regex::escape(block_id))
+            format!(
+                r#"(?is)\[cmplz-consent-area[^\]]*?id=["']{}["'][^\]]*?\](.*?)\[/cmplz-consent-area\]"#,
+                regex::escape(block_id)
+            )
         };
-        regex::Regex::new(&pattern).ok().and_then(|re| re.captures(content).map(|c| c[1].to_owned())).unwrap_or_default()
+        regex::Regex::new(&pattern)
+            .ok()
+            .and_then(|re| re.captures(content).map(|c| c[1].to_owned()))
+            .unwrap_or_default()
     } else {
         String::new()
     }
@@ -221,9 +283,21 @@ mod tests {
 
     #[test]
     fn service_consent_reads_the_cookie() {
-        assert!(has_service_consent("optin", Some(r#"{\"youtube\":1}"#), "youtube"));
-        assert!(has_service_consent("optin", Some(r#"{"youtube":"1"}"#), "youtube"));
-        assert!(!has_service_consent("optin", Some(r#"{"youtube":0}"#), "youtube"));
+        assert!(has_service_consent(
+            "optin",
+            Some(r#"{\"youtube\":1}"#),
+            "youtube"
+        ));
+        assert!(has_service_consent(
+            "optin",
+            Some(r#"{"youtube":"1"}"#),
+            "youtube"
+        ));
+        assert!(!has_service_consent(
+            "optin",
+            Some(r#"{"youtube":0}"#),
+            "youtube"
+        ));
         assert!(!has_service_consent("optin", None, "youtube"));
         assert!(has_service_consent("optout", None, "youtube"));
     }

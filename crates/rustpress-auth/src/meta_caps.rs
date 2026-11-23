@@ -26,9 +26,21 @@ pub struct TypeCaps {
 impl TypeCaps {
     pub fn of(post_type: &str) -> Self {
         // The types of the site editor and the font library: everything is `edit_theme_options`.
-        if matches!(post_type, "wp_navigation" | "wp_template" | "wp_template_part" | "wp_global_styles" | "wp_font_family" | "wp_font_face") {
+        if matches!(
+            post_type,
+            "wp_navigation"
+                | "wp_template"
+                | "wp_template_part"
+                | "wp_global_styles"
+                | "wp_font_family"
+                | "wp_font_face"
+        ) {
             let cap = || "edit_theme_options".to_owned();
-            let read = if post_type == "wp_global_styles" { "edit_posts".to_owned() } else { cap() };
+            let read = if post_type == "wp_global_styles" {
+                "edit_posts".to_owned()
+            } else {
+                cap()
+            };
             return Self {
                 read,
                 create_posts: cap(),
@@ -44,14 +56,22 @@ impl TypeCaps {
                 edit_published: cap(),
             };
         }
-        let plural = if post_type == "page" { "pages" } else { "posts" };
+        let plural = if post_type == "page" {
+            "pages"
+        } else {
+            "posts"
+        };
         let create_posts = match post_type {
             "attachment" => "upload_files".to_owned(),
             "wp_block" => "publish_posts".to_owned(),
             _ => format!("edit_{plural}"),
         };
         Self {
-            read: if post_type == "wp_block" { "edit_posts".to_owned() } else { "read".to_owned() },
+            read: if post_type == "wp_block" {
+                "edit_posts".to_owned()
+            } else {
+                "read".to_owned()
+            },
             create_posts,
             edit_posts: format!("edit_{plural}"),
             edit_others: format!("edit_others_{plural}"),
@@ -87,7 +107,15 @@ impl CurrentUser {
     /// The caps of `edit_post`/`delete_post` for a post of the user or of somebody else (`map_meta_cap()`).
     /// A trashed post counts as not published (WordPress reads `_wp_trash_meta_status` here; only a contributor
     /// whose published post somebody else trashed would be answered differently).
-    fn post_caps<'a>(&self, post: &Post, own_plain: &'a str, own_published: &'a str, others: &'a str, others_published: &'a str, others_private: &'a str) -> Vec<&'a str> {
+    fn post_caps<'a>(
+        &self,
+        post: &Post,
+        own_plain: &'a str,
+        own_published: &'a str,
+        others: &'a str,
+        others_published: &'a str,
+        others_private: &'a str,
+    ) -> Vec<&'a str> {
         let own = post.post_author != 0 && post.post_author == self.id;
         let published = matches!(post.post_status.as_str(), "publish" | "future");
         if own {
@@ -109,8 +137,18 @@ impl CurrentUser {
             return false;
         }
         let caps = TypeCaps::of(&post.post_type);
-        let needed = self.post_caps(post, &caps.edit_posts, &caps.edit_published, &caps.edit_others, &caps.edit_published, &caps.edit_private);
-        self.all(&needed) && (post.id == 0 || post.id != self.site_caps.privacy_page || self.can("manage_privacy_options"))
+        let needed = self.post_caps(
+            post,
+            &caps.edit_posts,
+            &caps.edit_published,
+            &caps.edit_others,
+            &caps.edit_published,
+            &caps.edit_private,
+        );
+        self.all(&needed)
+            && (post.id == 0
+                || post.id != self.site_caps.privacy_page
+                || self.can("manage_privacy_options"))
     }
 
     /// `current_user_can( 'delete_post', $post )`.
@@ -118,19 +156,33 @@ impl CurrentUser {
         if post.post_type == "revision" {
             return false;
         }
-        if post.id != 0 && (post.id == self.site_caps.page_on_front || post.id == self.site_caps.page_for_posts) {
+        if post.id != 0
+            && (post.id == self.site_caps.page_on_front || post.id == self.site_caps.page_for_posts)
+        {
             return self.can("manage_options");
         }
         let caps = TypeCaps::of(&post.post_type);
-        let needed = self.post_caps(post, &caps.delete_posts, &caps.delete_published, &caps.delete_others, &caps.delete_published, &caps.delete_private);
-        self.all(&needed) && (post.id == 0 || post.id != self.site_caps.privacy_page || self.can("manage_privacy_options"))
+        let needed = self.post_caps(
+            post,
+            &caps.delete_posts,
+            &caps.delete_published,
+            &caps.delete_others,
+            &caps.delete_published,
+            &caps.delete_private,
+        );
+        self.all(&needed)
+            && (post.id == 0
+                || post.id != self.site_caps.privacy_page
+                || self.can("manage_privacy_options"))
     }
 
     /// `current_user_can( 'read_post', $post )`. For a revision pass its parent.
     pub fn can_read_post(&self, post: &Post) -> bool {
         let caps = TypeCaps::of(&post.post_type);
         // Public statuses (`publish`, and `inherit` of attachments) need only `read`.
-        if post.post_status == "publish" || (post.post_type == "attachment" && post.post_status == "inherit") {
+        if post.post_status == "publish"
+            || (post.post_type == "attachment" && post.post_status == "inherit")
+        {
             return self.can(&caps.read);
         }
         if post.post_author != 0 && post.post_author == self.id {

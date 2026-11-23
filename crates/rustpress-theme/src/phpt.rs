@@ -47,14 +47,36 @@ impl std::error::Error for PhpError {}
 
 /// The `'content'` of a pattern file that `return`s an array (classic `register_block_pattern()` files).
 pub fn pattern_array_content(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
-    let Some(ret) = source.find("return array(") else { return Err(PhpError { message: "no return array()".into(), offset: 0 }) };
-    let Some(key) = source[ret..].find("'content'") else { return Err(PhpError { message: "no content key".into(), offset: ret }) };
+    let Some(ret) = source.find("return array(") else {
+        return Err(PhpError {
+            message: "no return array()".into(),
+            offset: 0,
+        });
+    };
+    let Some(key) = source[ret..].find("'content'") else {
+        return Err(PhpError {
+            message: "no content key".into(),
+            offset: ret,
+        });
+    };
     let after_key = ret + key + "'content'".len();
-    let Some(arrow) = source[after_key..].find("=>") else { return Err(PhpError { message: "no => after content".into(), offset: after_key }) };
+    let Some(arrow) = source[after_key..].find("=>") else {
+        return Err(PhpError {
+            message: "no => after content".into(),
+            offset: after_key,
+        });
+    };
     let start = after_key + arrow + 2;
     let mut vars = std::collections::HashMap::new();
     let mut branches = Vec::new();
-    let mut parser = Parser { src: source, pos: start, base: 0, host, vars: &mut vars, branches: &mut branches };
+    let mut parser = Parser {
+        src: source,
+        pos: start,
+        base: 0,
+        host,
+        vars: &mut vars,
+        branches: &mut branches,
+    };
     parser.expression()
 }
 
@@ -75,16 +97,35 @@ pub fn render(source: &str, host: &dyn PhpHost) -> Result<String, PhpError> {
         } else if after.starts_with('=') {
             (open + 3, true)
         } else {
-            return Err(PhpError { message: "unsupported PHP open tag".into(), offset: base + open });
+            return Err(PhpError {
+                message: "unsupported PHP open tag".into(),
+                offset: base + open,
+            });
         };
         let code_area = &rest[code_start..];
         let Some(close) = find_close_tag(code_area) else {
             // An unclosed trailing block runs to the end of the file.
             let code = code_area;
-            run_block(code, echo_tag, host, &mut vars, &mut branches, &mut out, base + code_start)?;
+            run_block(
+                code,
+                echo_tag,
+                host,
+                &mut vars,
+                &mut branches,
+                &mut out,
+                base + code_start,
+            )?;
             return finish(out, &branches);
         };
-        run_block(&code_area[..close], echo_tag, host, &mut vars, &mut branches, &mut out, base + code_start)?;
+        run_block(
+            &code_area[..close],
+            echo_tag,
+            host,
+            &mut vars,
+            &mut branches,
+            &mut out,
+            base + code_start,
+        )?;
         let mut consumed = code_start + close + 2;
         // A newline directly after `?>` is swallowed, like PHP does.
         if rest[consumed..].starts_with("\r\n") {
@@ -114,7 +155,14 @@ fn active(branches: &[Branch]) -> bool {
 }
 
 fn finish(out: String, branches: &[Branch]) -> Result<String, PhpError> {
-    if branches.is_empty() { Ok(out) } else { Err(PhpError { message: "missing endif".into(), offset: 0 }) }
+    if branches.is_empty() {
+        Ok(out)
+    } else {
+        Err(PhpError {
+            message: "missing endif".into(),
+            offset: 0,
+        })
+    }
 }
 
 /// Finds `?>` that is not inside a string or comment.
@@ -156,8 +204,23 @@ fn find_close_tag(code: &str) -> Option<usize> {
     None
 }
 
-fn run_block(code: &str, echo_tag: bool, host: &dyn PhpHost, vars: &mut std::collections::HashMap<String, String>, branches: &mut Vec<Branch>, out: &mut String, offset: usize) -> Result<(), PhpError> {
-    let mut parser = Parser { src: code, pos: 0, base: offset, host, vars, branches };
+fn run_block(
+    code: &str,
+    echo_tag: bool,
+    host: &dyn PhpHost,
+    vars: &mut std::collections::HashMap<String, String>,
+    branches: &mut Vec<Branch>,
+    out: &mut String,
+    offset: usize,
+) -> Result<(), PhpError> {
+    let mut parser = Parser {
+        src: code,
+        pos: 0,
+        base: offset,
+        host,
+        vars,
+        branches,
+    };
     parser.skip_ws();
     if !active(parser.branches) {
         // Code of a branch that does not run is only scanned for the statements that end the branch.
@@ -196,7 +259,10 @@ struct Parser<'a> {
 
 impl Parser<'_> {
     fn err<T>(&self, message: impl Into<String>) -> Result<T, PhpError> {
-        Err(PhpError { message: message.into(), offset: self.base + self.pos })
+        Err(PhpError {
+            message: message.into(),
+            offset: self.base + self.pos,
+        })
     }
 
     fn rest(&self) -> &str {
@@ -238,7 +304,9 @@ impl Parser<'_> {
     fn identifier(&mut self) -> Option<String> {
         self.skip_ws();
         let rest = self.rest();
-        let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '\\')).unwrap_or(rest.len());
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '\\'))
+            .unwrap_or(rest.len());
         if end == 0 || rest.as_bytes()[0].is_ascii_digit() {
             return None;
         }
@@ -251,7 +319,9 @@ impl Parser<'_> {
     fn variable_name(&mut self) -> Option<String> {
         self.skip_ws();
         let rest = self.rest().strip_prefix('$')?;
-        let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
         if end == 0 {
             return None;
         }
@@ -264,7 +334,9 @@ impl Parser<'_> {
         self.skip_ws();
         let start = self.pos;
         if self.rest().starts_with('$') {
-            let Some(name) = self.variable_name() else { return self.err("unsupported variable") };
+            let Some(name) = self.variable_name() else {
+                return self.err("unsupported variable");
+            };
             if !self.eat('=') {
                 return self.err("only assignments are supported for variables");
             }
@@ -277,14 +349,21 @@ impl Parser<'_> {
             if self.eat(';') {
                 return Ok(());
             }
-            return self.err(format!("unsupported PHP statement: {}", self.rest().chars().take(30).collect::<String>()));
+            return self.err(format!(
+                "unsupported PHP statement: {}",
+                self.rest().chars().take(30).collect::<String>()
+            ));
         };
         match name.as_str() {
             "if" => {
                 let outer = active(self.branches);
                 let on = self.condition()?;
                 self.branch_colon()?;
-                self.branches.push(Branch { outer, taken: on, on });
+                self.branches.push(Branch {
+                    outer,
+                    taken: on,
+                    on,
+                });
                 Ok(())
             }
             "elseif" | "else" | "endif" => self.branch_keyword(&name),
@@ -314,12 +393,18 @@ impl Parser<'_> {
 
     /// `elseif ( … ) :`, `else :` and `endif;` of the innermost `if`.
     fn branch_keyword(&mut self, keyword: &str) -> Result<(), PhpError> {
-        let Some(branch) = self.branches.last() else { return self.err(format!("{keyword} without if")) };
+        let Some(branch) = self.branches.last() else {
+            return self.err(format!("{keyword} without if"));
+        };
         let (outer, taken) = (branch.outer, branch.taken);
         match keyword {
             "elseif" => {
                 // The condition is only evaluated when no earlier branch ran.
-                let on = if outer && !taken { self.condition()? } else { self.skip_condition()? };
+                let on = if outer && !taken {
+                    self.condition()?
+                } else {
+                    self.skip_condition()?
+                };
                 self.branch_colon()?;
                 let branch = self.branches.last_mut().expect("checked above");
                 branch.on = outer && !taken && on;
@@ -340,7 +425,11 @@ impl Parser<'_> {
     }
 
     fn branch_colon(&mut self) -> Result<(), PhpError> {
-        if self.eat(':') { Ok(()) } else { self.err("only the alternative syntax of if is supported") }
+        if self.eat(':') {
+            Ok(())
+        } else {
+            self.err("only the alternative syntax of if is supported")
+        }
     }
 
     /// The rest of an island inside a branch that does not run: only `if`/`elseif`/`else`/`endif` count.
@@ -355,7 +444,11 @@ impl Parser<'_> {
                 Some("if") => {
                     self.skip_condition()?;
                     self.branch_colon()?;
-                    self.branches.push(Branch { outer: false, taken: false, on: false });
+                    self.branches.push(Branch {
+                        outer: false,
+                        taken: false,
+                        on: false,
+                    });
                 }
                 Some(keyword @ ("elseif" | "else" | "endif")) => {
                     let keyword = keyword.to_owned();
@@ -481,7 +574,8 @@ impl Parser<'_> {
 
     fn eat_operator(&mut self, operator: &str) -> bool {
         self.skip_ws();
-        if self.rest().starts_with(operator) && !(operator == "!" && self.rest().starts_with("!=")) {
+        if self.rest().starts_with(operator) && !(operator == "!" && self.rest().starts_with("!="))
+        {
             self.pos += operator.len();
             true
         } else {
@@ -509,7 +603,13 @@ impl Parser<'_> {
                 b'(' | b'[' => depth += 1,
                 b')' | b']' if depth == 0 => return,
                 b')' | b']' => depth -= 1,
-                b'&' | b'|' if depth == 0 && !whole_group && bytes.get(self.pos + 1) == Some(&bytes[self.pos]) => return,
+                b'&' | b'|'
+                    if depth == 0
+                        && !whole_group
+                        && bytes.get(self.pos + 1) == Some(&bytes[self.pos]) =>
+                {
+                    return;
+                }
                 b':' | b';' if depth == 0 => return,
                 _ => {}
             }
@@ -543,7 +643,9 @@ impl Parser<'_> {
             return self.string_literal().map(Value::Str);
         }
         if rest.starts_with('$') {
-            let Some(name) = self.variable_name() else { return self.err("unsupported variable") };
+            let Some(name) = self.variable_name() else {
+                return self.err("unsupported variable");
+            };
             return match self.vars.get(&name) {
                 Some(value) => Ok(Value::Str(value.clone())),
                 None => self.err(format!("undefined variable ${name}")),
@@ -558,7 +660,10 @@ impl Parser<'_> {
             return Ok(Value::Str(v));
         }
         let Some(name) = self.identifier() else {
-            return self.err(format!("unsupported PHP expression: {}", self.rest().chars().take(30).collect::<String>()));
+            return self.err(format!(
+                "unsupported PHP expression: {}",
+                self.rest().chars().take(30).collect::<String>()
+            ));
         };
         if !self.eat('(') {
             return match name.as_str() {
@@ -646,7 +751,11 @@ impl Parser<'_> {
                     "esc_attr__" | "esc_attr_e" => esc_attr(&text),
                     _ => text,
                 };
-                if name.ends_with("_e") { Ok(Value::Printed(value)) } else { string(value) }
+                if name.ends_with("_e") {
+                    Ok(Value::Printed(value))
+                } else {
+                    string(value)
+                }
             }
             "_x" | "_ex" | "esc_html_x" | "esc_attr_x" => {
                 let text = host.translate(arg(0), Some(arg(1)), arg(2));
@@ -655,7 +764,11 @@ impl Parser<'_> {
                     "esc_attr_x" => esc_attr(&text),
                     _ => text,
                 };
-                if name == "_ex" { Ok(Value::Printed(value)) } else { string(value) }
+                if name == "_ex" {
+                    Ok(Value::Printed(value))
+                } else {
+                    string(value)
+                }
             }
             "esc_url" | "esc_url_raw" => string(esc_url(arg(0))),
             "esc_html" => string(esc_html(arg(0))),
@@ -663,14 +776,28 @@ impl Parser<'_> {
             "wp_kses_post" | "trim" | "strval" | "wp_kses_data" => string(arg(0).to_owned()),
             "strtolower" => string(arg(0).to_lowercase()),
             "strtoupper" => string(arg(0).to_uppercase()),
-            "get_template_directory_uri" | "get_parent_theme_file_uri_base" => string(host.template_directory_uri()),
+            "get_template_directory_uri" | "get_parent_theme_file_uri_base" => {
+                string(host.template_directory_uri())
+            }
             "get_stylesheet_directory_uri" => string(host.stylesheet_directory_uri()),
             "get_theme_file_uri" | "get_parent_theme_file_uri" => {
-                let base = if name == "get_parent_theme_file_uri" { host.template_directory_uri() } else { host.stylesheet_directory_uri() };
+                let base = if name == "get_parent_theme_file_uri" {
+                    host.template_directory_uri()
+                } else {
+                    host.stylesheet_directory_uri()
+                };
                 let path = arg(0);
-                string(if path.is_empty() { base } else { format!("{base}/{}", path.trim_start_matches('/')) })
+                string(if path.is_empty() {
+                    base
+                } else {
+                    format!("{base}/{}", path.trim_start_matches('/'))
+                })
             }
-            "has_custom_logo" => string(if host.has_custom_logo() { "1".into() } else { String::new() }),
+            "has_custom_logo" => string(if host.has_custom_logo() {
+                "1".into()
+            } else {
+                String::new()
+            }),
             // Patterns are rendered for the website (the REST API does not render them for the editor here).
             "is_admin" => string(String::new()),
             "defined" if arg(0) == "REST_REQUEST" => string(String::new()),
@@ -679,13 +806,28 @@ impl Parser<'_> {
             // WordPress sets PHP's default time zone to UTC, so `date()` is `gmdate()` (frost/footer-default uses
             // `gmdate( 'Y' )`).
             "gmdate" | "date" => {
-                let timestamp = args.get(1).and_then(|t| t.trim().parse().ok()).unwrap_or_else(|| host.now());
-                let moment = chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_default().fixed_offset();
-                string(rustpress_core::datetime::php_date(arg(0), &moment, "UTC", "UTC", false))
+                let timestamp = args
+                    .get(1)
+                    .and_then(|t| t.trim().parse().ok())
+                    .unwrap_or_else(|| host.now());
+                let moment = chrono::DateTime::from_timestamp(timestamp, 0)
+                    .unwrap_or_default()
+                    .fixed_offset();
+                string(rustpress_core::datetime::php_date(
+                    arg(0),
+                    &moment,
+                    "UTC",
+                    "UTC",
+                    false,
+                ))
             }
             "sprintf" | "printf" => {
                 let formatted = php_sprintf(arg(0), &args[1.min(args.len())..]);
-                if name == "printf" { Ok(Value::Printed(formatted)) } else { string(formatted) }
+                if name == "printf" {
+                    Ok(Value::Printed(formatted))
+                } else {
+                    string(formatted)
+                }
             }
             other => self.err(format!("unsupported PHP function {other}()")),
         }
@@ -723,7 +865,11 @@ fn php_sprintf(format: &str, args: &[String]) -> String {
                     chars.next();
                     chars.next();
                     let index: usize = number.parse().unwrap_or(1);
-                    out.push_str(args.get(index.saturating_sub(1)).map(String::as_str).unwrap_or(""));
+                    out.push_str(
+                        args.get(index.saturating_sub(1))
+                            .map(String::as_str)
+                            .unwrap_or(""),
+                    );
                 }
             }
             Some(_) => {
@@ -778,7 +924,10 @@ mod tests {
             }
         }
         let src = "<p>&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> <?php echo date( 'Y-m-d H:i' ); ?></p>";
-        assert_eq!(render(src, &Fixed).unwrap(), "<p>&copy; 2026 2026-12-31 23:59</p>");
+        assert_eq!(
+            render(src, &Fixed).unwrap(),
+            "<p>&copy; 2026 2026-12-31 23:59</p>"
+        );
     }
 
     fn run(src: &str) -> String {
@@ -798,29 +947,56 @@ mod tests {
 
     #[test]
     fn translation_helpers_escape_correctly() {
-        assert_eq!(run("<p><?php esc_html_e( 'Tom & \"Jerry\"', 'td' ); ?></p>"), "<p>Tom &amp; &quot;Jerry&quot;</p>");
-        assert_eq!(run("<i alt=\"<?php echo esc_attr__( 'a\"b', 'td' ); ?>\">"), "<i alt=\"a&quot;b\">");
-        assert_eq!(run("<?php echo esc_html_x( 'Search', 'Search form label.', 'td' ); ?>"), "Search");
-        assert_eq!(run("<?php echo esc_attr_x( 'Type here...', 'placeholder', 'td' ); ?>"), "Type here...");
+        assert_eq!(
+            run("<p><?php esc_html_e( 'Tom & \"Jerry\"', 'td' ); ?></p>"),
+            "<p>Tom &amp; &quot;Jerry&quot;</p>"
+        );
+        assert_eq!(
+            run("<i alt=\"<?php echo esc_attr__( 'a\"b', 'td' ); ?>\">"),
+            "<i alt=\"a&quot;b\">"
+        );
+        assert_eq!(
+            run("<?php echo esc_html_x( 'Search', 'Search form label.', 'td' ); ?>"),
+            "Search"
+        );
+        assert_eq!(
+            run("<?php echo esc_attr_x( 'Type here...', 'placeholder', 'td' ); ?>"),
+            "Type here..."
+        );
         assert_eq!(run("<?= __( 'Raw & text', 'td' ) ?>"), "Raw & text");
     }
 
     #[test]
     fn escaped_quotes_inside_php_strings() {
-        assert_eq!(run("<?php echo esc_html_x( 'doesn\\'t exist', '404', 'td' ); ?>"), "doesn&#039;t exist");
+        assert_eq!(
+            run("<?php echo esc_html_x( 'doesn\\'t exist', '404', 'td' ); ?>"),
+            "doesn&#039;t exist"
+        );
     }
 
     #[test]
     fn uri_helpers() {
-        assert_eq!(run("<img src=\"<?php echo esc_url( get_template_directory_uri() ); ?>/a.webp\"/>"), "<img src=\"http://x/wp-content/themes/t/a.webp\"/>");
-        assert_eq!(run("<?php echo esc_url( get_theme_file_uri( 'assets/b.png' ) ); ?>"), "http://x/wp-content/themes/t/assets/b.png");
-        assert_eq!(run("<?php echo esc_url( home_url( '/' ) ); ?>"), "http://x/");
+        assert_eq!(
+            run("<img src=\"<?php echo esc_url( get_template_directory_uri() ); ?>/a.webp\"/>"),
+            "<img src=\"http://x/wp-content/themes/t/a.webp\"/>"
+        );
+        assert_eq!(
+            run("<?php echo esc_url( get_theme_file_uri( 'assets/b.png' ) ); ?>"),
+            "http://x/wp-content/themes/t/assets/b.png"
+        );
+        assert_eq!(
+            run("<?php echo esc_url( home_url( '/' ) ); ?>"),
+            "http://x/"
+        );
     }
 
     #[test]
     fn printf_with_concatenation_and_comments() {
         let src = "<p>\n<?php\nprintf(\n\t/* translators: %s: link */\n\tesc_html__( 'Designed with %s', 'td' ),\n\t'<a href=\"' . esc_url( __( 'https://wordpress.org', 'td' ) ) . '\" rel=\"nofollow\">WordPress</a>'\n);\n?>\n</p>";
-        assert_eq!(run(src), "<p>\nDesigned with <a href=\"https://wordpress.org\" rel=\"nofollow\">WordPress</a></p>");
+        assert_eq!(
+            run(src),
+            "<p>\nDesigned with <a href=\"https://wordpress.org\" rel=\"nofollow\">WordPress</a></p>"
+        );
     }
 
     #[test]
@@ -833,15 +1009,31 @@ mod tests {
     fn alternative_if_syntax() {
         // Bluehost Blueprint's site headers: without a logo the site title.
         let src = "<div>\n<?php\n$has_logo = has_custom_logo();\nif ( is_admin() || ( defined( 'REST_REQUEST' ) && REST_REQUEST && isset( $_GET['context'] ) && 'edit' === sanitize_text_field( wp_unslash( $_GET['context'] ) ) ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended\n\t?>\n\t<!-- wp:site-logo /-->\n<?php elseif ( $has_logo ) : ?>\n\t<!-- wp:site-logo /-->\n<?php else : ?>\n\t<!-- wp:site-title /-->\n<?php endif; ?>\n\n<!-- wp:navigation /--></div>";
-        assert_eq!(run(src), "<div>\n\t<!-- wp:site-title /-->\n\n<!-- wp:navigation /--></div>");
-        assert_eq!(run("<?php if ( ! false && ( 'a' === 'a' ) ) : ?>y<?php if ( true ) : ?>z<?php endif; ?><?php else : ?>n<?php endif; ?>"), "yz");
-        assert_eq!(run("<?php if ( false ) : ?>a<?php if ( mystery() ) : ?>b<?php endif; ?><?php elseif ( '0' ) : ?>c<?php else : echo 'd'; ?>e<?php endif; ?>"), "de");
+        assert_eq!(
+            run(src),
+            "<div>\n\t<!-- wp:site-title /-->\n\n<!-- wp:navigation /--></div>"
+        );
+        assert_eq!(
+            run(
+                "<?php if ( ! false && ( 'a' === 'a' ) ) : ?>y<?php if ( true ) : ?>z<?php endif; ?><?php else : ?>n<?php endif; ?>"
+            ),
+            "yz"
+        );
+        assert_eq!(
+            run(
+                "<?php if ( false ) : ?>a<?php if ( mystery() ) : ?>b<?php endif; ?><?php elseif ( '0' ) : ?>c<?php else : echo 'd'; ?>e<?php endif; ?>"
+            ),
+            "de"
+        );
         assert!(render("<?php if ( true ) : ?>a", &Host).is_err());
     }
 
     #[test]
     fn sprintf_positions() {
-        assert_eq!(php_sprintf("%2$s-%1$s %% %s", &["a".into(), "b".into()]), "b-a % a");
+        assert_eq!(
+            php_sprintf("%2$s-%1$s %% %s", &["a".into(), "b".into()]),
+            "b-a % a"
+        );
     }
 
     #[test]

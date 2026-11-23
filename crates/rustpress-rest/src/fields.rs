@@ -8,7 +8,9 @@ pub fn is_included(field: &str, fields: &[String]) -> bool {
 }
 
 fn included(field: &str, fields: &[String]) -> bool {
-    fields.iter().any(|f| f == field || f.starts_with(&format!("{field}.")) || field.starts_with(&format!("{f}.")))
+    fields.iter().any(|f| {
+        f == field || f.starts_with(&format!("{field}.")) || field.starts_with(&format!("{f}."))
+    })
 }
 
 fn filter_value(value: &mut Value, prefix: &str, fields: &[String]) {
@@ -25,13 +27,26 @@ fn filter_value(value: &mut Value, prefix: &str, fields: &[String]) {
 
 /// The attachments controller adds these with `in_array( $field, $fields )`, so only an
 /// exact mention keeps them; `media_details.width` or `description.rendered` do not.
-const MEDIA_EXACT_ONLY: &[&str] = &["description", "caption", "alt_text", "media_type", "mime_type", "media_details", "post", "source_url", "missing_image_sizes"];
+const MEDIA_EXACT_ONLY: &[&str] = &[
+    "description",
+    "caption",
+    "alt_text",
+    "media_type",
+    "mime_type",
+    "media_details",
+    "post",
+    "source_url",
+    "missing_image_sizes",
+];
 
 fn filter_item(item: &mut Value, fields: &[String]) {
     if item.get("type") == Some(&Value::from("attachment"))
-        && let Value::Object(map) = item {
-            map.retain(|key, _| !MEDIA_EXACT_ONLY.contains(&key.as_str()) || fields.iter().any(|f| f == key));
-        }
+        && let Value::Object(map) = item
+    {
+        map.retain(|key, _| {
+            !MEDIA_EXACT_ONLY.contains(&key.as_str()) || fields.iter().any(|f| f == key)
+        });
+    }
     filter_value(item, "", fields);
 }
 
@@ -55,7 +70,8 @@ mod tests {
 
     #[test]
     fn keeps_requested_members_only() {
-        let mut data = json!({"id": 1, "title": {"rendered": "x", "raw": "y"}, "link": "l", "_links": {}});
+        let mut data =
+            json!({"id": 1, "title": {"rendered": "x", "raw": "y"}, "link": "l", "_links": {}});
         filter(&mut data, &["id".into(), "title.rendered".into()]);
         assert_eq!(data, json!({"id": 1, "title": {"rendered": "x"}}));
     }

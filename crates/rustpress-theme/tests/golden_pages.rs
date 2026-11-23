@@ -23,13 +23,22 @@ const DEFAULT_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wordpress
 fn get(path: &str) -> std::io::Result<(u16, Option<String>, String)> {
     let mut stream = TcpStream::connect(WP)?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    write!(stream, "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n")?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.0\r\nHost: localhost:8080\r\nConnection: close\r\n\r\n"
+    )?;
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw)?;
     let text = String::from_utf8_lossy(&raw).into_owned();
     let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-    let status = head.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let location = head.lines().find_map(|l| l.strip_prefix("Location: ").map(str::to_owned));
+    let status = head
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let location = head
+        .lines()
+        .find_map(|l| l.strip_prefix("Location: ").map(str::to_owned));
     Ok((status, location, body.to_owned()))
 }
 
@@ -38,7 +47,12 @@ fn fetch(path: &str) -> std::io::Result<(u16, String)> {
     for _ in 0..5 {
         let (status, location, body) = get(&path)?;
         match (status, location) {
-            (301 | 302, Some(l)) => path = l.strip_prefix("http://localhost:8080").unwrap_or(&l).to_owned(),
+            (301 | 302, Some(l)) => {
+                path = l
+                    .strip_prefix("http://localhost:8080")
+                    .unwrap_or(&l)
+                    .to_owned()
+            }
             _ => return Ok((status, body)),
         }
     }
@@ -47,8 +61,14 @@ fn fetch(path: &str) -> std::io::Result<(u16, String)> {
 
 /// From the skip link to the end of `div.wp-site-blocks`.
 fn reference_body(html: &str) -> String {
-    let start = html.find("<a class=\"skip-link").or_else(|| html.find("<div class=\"wp-site-blocks\">")).unwrap_or(0);
-    let end = html.find("<script type=\"speculationrules\">").or_else(|| html.rfind("</body>")).unwrap_or(html.len());
+    let start = html
+        .find("<a class=\"skip-link")
+        .or_else(|| html.find("<div class=\"wp-site-blocks\">"))
+        .unwrap_or(0);
+    let end = html
+        .find("<script type=\"speculationrules\">")
+        .or_else(|| html.rfind("</body>"))
+        .unwrap_or(html.len());
     html[start..end].to_owned()
 }
 
@@ -70,23 +90,41 @@ fn normalize(html: &str) -> String {
 }
 
 fn first_difference(a: &str, b: &str) -> Option<usize> {
-    a.char_indices().zip(b.chars()).find(|((_, x), y)| x != y).map(|((i, _), _)| i).or_else(|| (a.len() != b.len()).then_some(a.len().min(b.len())))
+    a.char_indices()
+        .zip(b.chars())
+        .find(|((_, x), y)| x != y)
+        .map(|((i, _), _)| i)
+        .or_else(|| (a.len() != b.len()).then_some(a.len().min(b.len())))
 }
 
 fn window(s: &str, at: usize, before: usize, after: usize) -> String {
-    let start = s.char_indices().map(|(i, _)| i).rev().find(|&i| i <= at.saturating_sub(before)).unwrap_or(0);
-    let end = s.char_indices().map(|(i, _)| i).find(|&i| i >= (at + after).min(s.len())).unwrap_or(s.len());
+    let start = s
+        .char_indices()
+        .map(|(i, _)| i)
+        .rev()
+        .find(|&i| i <= at.saturating_sub(before))
+        .unwrap_or(0);
+    let end = s
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= (at + after).min(s.len()))
+        .unwrap_or(s.len());
     s[start..end].to_owned()
 }
 
 async fn setup() -> Option<(Site, Theme, Registry)> {
-    let root = PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
+    let root =
+        PathBuf::from(std::env::var("RUSTPRESS_WP_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.into()));
     if !root.join("wp-includes").is_dir() {
         eprintln!("WordPress files not found at {}, skipping", root.display());
-        assert!(std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(), "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself");
+        assert!(
+            std::env::var_os("RUSTPRESS_REQUIRE_REFERENCE").is_none(),
+            "RUSTPRESS_REQUIRE_REFERENCE is set, so this test must not skip itself"
+        );
         return None;
     }
-    let url = std::env::var("RUSTPRESS_TEST_DB").unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
+    let url = std::env::var("RUSTPRESS_TEST_DB")
+        .unwrap_or_else(|_| "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into());
     let db = Db::connect(&url, "wp_").await.ok()?;
     get("/").ok()?;
     let site = Site::load_at(db, &root).await.ok()?;
@@ -97,7 +135,9 @@ async fn setup() -> Option<(Site, Theme, Registry)> {
 
 #[tokio::test]
 async fn page_bodies_match_wordpress() {
-    let Some((site, theme, registry)) = setup().await else { return };
+    let Some((site, theme, registry)) = setup().await else {
+        return;
+    };
     let urls: Vec<String> = match std::env::var("RUSTPRESS_ONLY") {
         Ok(one) => vec![one],
         Err(_) => [
@@ -133,12 +173,17 @@ async fn page_bodies_match_wordpress() {
     for url in &urls {
         let (path, query) = url.split_once('?').unwrap_or((url, ""));
         let result = site.query(path, query).await.unwrap();
-        let rendered = render_body(&theme, &site, &result, &registry).await.unwrap();
+        let rendered = render_body(&theme, &site, &result, &registry)
+            .await
+            .unwrap();
         let (_, reference) = fetch(url).unwrap();
         let ours = normalize(&rendered.html);
         let theirs = normalize(&reference_body(&reference));
         if verbose {
-            eprintln!("--- OURS ({})\n{ours}\n--- THEIRS\n{theirs}", rendered.template_slug);
+            eprintln!(
+                "--- OURS ({})\n{ours}\n--- THEIRS\n{theirs}",
+                rendered.template_slug
+            );
         }
         if ours != theirs {
             let at = first_difference(&ours, &theirs).unwrap_or(0);
@@ -152,5 +197,11 @@ async fn page_bodies_match_wordpress() {
             ));
         }
     }
-    assert!(failures.is_empty(), "{} of {} pages differ:\n{}", failures.len(), urls.len(), failures.join("\n\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} pages differ:\n{}",
+        failures.len(),
+        urls.len(),
+        failures.join("\n\n")
+    );
 }

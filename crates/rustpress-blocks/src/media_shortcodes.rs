@@ -93,7 +93,13 @@ pub fn audio(env: &Env<'_>, post_id: u64, atts: &Atts) -> Option<String> {
     if !src.is_empty() {
         match check_filetype(src) {
             Some((ext, _)) if AUDIO_EXTENSIONS.contains(&ext.as_str()) => {}
-            _ => return Some(format!("<a class=\"wp-embedded-audio\" href=\"{}\">{}</a>", esc_url(src), esc_html(src))),
+            _ => {
+                return Some(format!(
+                    "<a class=\"wp-embedded-audio\" href=\"{}\">{}</a>",
+                    esc_url(src),
+                    esc_html(src)
+                ));
+            }
         }
         primary = true;
         types.insert(0, "src");
@@ -117,25 +123,51 @@ pub fn audio(env: &Env<'_>, post_id: u64, atts: &Atts) -> Option<String> {
         }
     });
     let pairs = [
-        ("class", attr_value(atts, "class", "wp-audio-shortcode").to_owned()),
+        (
+            "class",
+            attr_value(atts, "class", "wp-audio-shortcode").to_owned(),
+        ),
         ("id", format!("audio-{post_id}-{instance}")),
-        ("loop", u8::from(validate_boolean(attr_value(atts, "loop", ""))).to_string()),
-        ("autoplay", u8::from(validate_boolean(attr_value(atts, "autoplay", ""))).to_string()),
-        ("muted", u8::from(validate_boolean(attr_value(atts, "muted", "false"))).to_string()),
+        (
+            "loop",
+            u8::from(validate_boolean(attr_value(atts, "loop", ""))).to_string(),
+        ),
+        (
+            "autoplay",
+            u8::from(validate_boolean(attr_value(atts, "autoplay", ""))).to_string(),
+        ),
+        (
+            "muted",
+            u8::from(validate_boolean(attr_value(atts, "muted", "false"))).to_string(),
+        ),
         ("preload", attr_value(atts, "preload", "none").to_owned()),
-        ("style", attr_value(atts, "style", "width: 100%;").to_owned()),
+        (
+            "style",
+            attr_value(atts, "style", "width: 100%;").to_owned(),
+        ),
     ];
     // Booleans that are off are left out; `preload` stays only when it is not empty.
-    let pairs: Vec<(&str, String)> = pairs.into_iter().filter(|(n, v)| !(matches!(*n, "loop" | "autoplay" | "muted") && v == "0")).collect();
-    let mut html = format!("<audio {} controls=\"controls\">", element_attributes(&pairs, &["loop", "autoplay", "muted"]));
+    let pairs: Vec<(&str, String)> = pairs
+        .into_iter()
+        .filter(|(n, v)| !(matches!(*n, "loop" | "autoplay" | "muted") && v == "0"))
+        .collect();
+    let mut html = format!(
+        "<audio {} controls=\"controls\">",
+        element_attributes(&pairs, &["loop", "autoplay", "muted"])
+    );
     let mut fileurl = String::new();
     for kind in types {
-        let Some(url) = atts.get(kind).filter(|u| !u.is_empty()) else { continue };
+        let Some(url) = atts.get(kind).filter(|u| !u.is_empty()) else {
+            continue;
+        };
         if fileurl.is_empty() {
             fileurl = url.to_owned();
         }
         let mime = check_filetype(url).map_or("", |(_, m)| m);
-        html.push_str(&format!("<source type=\"{mime}\" src=\"{}\" />", esc_url(&add_query_arg(url, "_", &instance.to_string()))));
+        html.push_str(&format!(
+            "<source type=\"{mime}\" src=\"{}\" />",
+            esc_url(&add_query_arg(url, "_", &instance.to_string()))
+        ));
     }
     html.push_str(&fallback(&fileurl));
     html.push_str("</audio>");
@@ -153,12 +185,23 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
     let (mut is_vimeo, mut is_youtube) = (false, false);
     let mut primary = false;
     if !src.is_empty() {
-        is_vimeo = rustpress_core::formatting::cached_plain_regex(r"^https?://(.+\.)?vimeo\.com/.*").is_match(&src);
-        is_youtube = rustpress_core::formatting::cached_plain_regex(r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)").is_match(&src);
+        is_vimeo =
+            rustpress_core::formatting::cached_plain_regex(r"^https?://(.+\.)?vimeo\.com/.*")
+                .is_match(&src);
+        is_youtube = rustpress_core::formatting::cached_plain_regex(
+            r"^https?://(?:www\.)?(?:youtube\.com/watch|youtu\.be/)",
+        )
+        .is_match(&src);
         if !is_youtube && !is_vimeo {
             match check_filetype(&src) {
                 Some((ext, _)) if VIDEO_EXTENSIONS.contains(&ext.as_str()) => {}
-                _ => return Some(format!("<a class=\"wp-embedded-video\" href=\"{}\">{}</a>", esc_url(&src), esc_html(&src))),
+                _ => {
+                    return Some(format!(
+                        "<a class=\"wp-embedded-video\" href=\"{}\">{}</a>",
+                        esc_url(&src),
+                        esc_html(&src)
+                    ));
+                }
             }
         }
         primary = true;
@@ -192,10 +235,19 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
         let parsed = src.split_once("://").map_or("", |(_, r)| r);
         let (host, path) = parsed.split_once('/').map_or((parsed, ""), |(h, p)| (h, p));
         let path = path.split(['?', '#']).next().unwrap_or("");
-        let loop_value = if validate_boolean(attr_value(atts, "loop", "")) { "1" } else { "0" };
+        let loop_value = if validate_boolean(attr_value(atts, "loop", "")) {
+            "1"
+        } else {
+            "0"
+        };
         src = add_query_arg(&format!("https://{host}/{path}"), "loop", loop_value);
     }
-    let number = |name: &str, default: u64| attr_value(atts, name, "").trim().parse::<u64>().unwrap_or(default);
+    let number = |name: &str, default: u64| {
+        attr_value(atts, name, "")
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(default)
+    };
     let mut width = number("width", 640);
     let mut height = number("height", 360);
     // The video is bigger than the theme.
@@ -206,21 +258,53 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
     }
     let poster = attr_value(atts, "poster", "");
     let pairs = [
-        ("class", attr_value(atts, "class", "wp-video-shortcode").to_owned()),
+        (
+            "class",
+            attr_value(atts, "class", "wp-video-shortcode").to_owned(),
+        ),
         ("id", format!("video-{post_id}-{instance}")),
         ("width", width.to_string()),
         ("height", height.to_string()),
-        ("poster", if poster.is_empty() { String::new() } else { esc_url(poster) }),
-        ("loop", u8::from(validate_boolean(attr_value(atts, "loop", ""))).to_string()),
-        ("autoplay", u8::from(validate_boolean(attr_value(atts, "autoplay", ""))).to_string()),
-        ("muted", u8::from(validate_boolean(attr_value(atts, "muted", "false"))).to_string()),
-        ("preload", attr_value(atts, "preload", "metadata").to_owned()),
+        (
+            "poster",
+            if poster.is_empty() {
+                String::new()
+            } else {
+                esc_url(poster)
+            },
+        ),
+        (
+            "loop",
+            u8::from(validate_boolean(attr_value(atts, "loop", ""))).to_string(),
+        ),
+        (
+            "autoplay",
+            u8::from(validate_boolean(attr_value(atts, "autoplay", ""))).to_string(),
+        ),
+        (
+            "muted",
+            u8::from(validate_boolean(attr_value(atts, "muted", "false"))).to_string(),
+        ),
+        (
+            "preload",
+            attr_value(atts, "preload", "metadata").to_owned(),
+        ),
     ];
-    let pairs: Vec<(&str, String)> = pairs.into_iter().filter(|(n, v)| !(matches!(*n, "loop" | "autoplay" | "muted") && v == "0")).collect();
-    let mut html = format!("<video {} controls=\"controls\">", element_attributes(&pairs, &["loop", "autoplay", "muted"]));
+    let pairs: Vec<(&str, String)> = pairs
+        .into_iter()
+        .filter(|(n, v)| !(matches!(*n, "loop" | "autoplay" | "muted") && v == "0"))
+        .collect();
+    let mut html = format!(
+        "<video {} controls=\"controls\">",
+        element_attributes(&pairs, &["loop", "autoplay", "muted"])
+    );
     let mut fileurl = String::new();
     for kind in types {
-        let url = if kind == "src" { src.as_str() } else { attr_value(atts, kind, "") };
+        let url = if kind == "src" {
+            src.as_str()
+        } else {
+            attr_value(atts, kind, "")
+        };
         if url.is_empty() {
             continue;
         }
@@ -234,16 +318,29 @@ pub fn video(env: &Env<'_>, post_id: u64, atts: &Atts, content: &str) -> Option<
         } else {
             check_filetype(url).map_or("", |(_, m)| m)
         };
-        html.push_str(&format!("<source type=\"{mime}\" src=\"{}\" />", esc_url(&add_query_arg(url, "_", &instance.to_string()))));
+        html.push_str(&format!(
+            "<source type=\"{mime}\" src=\"{}\" />",
+            esc_url(&add_query_arg(url, "_", &instance.to_string()))
+        ));
     }
     if !content.is_empty() {
-        let content = if content.contains('\n') { content.replace("\r\n", "").replace(['\n', '\t'], "") } else { content.to_owned() };
+        let content = if content.contains('\n') {
+            content.replace("\r\n", "").replace(['\n', '\t'], "")
+        } else {
+            content.to_owned()
+        };
         html.push_str(content.trim());
     }
     html.push_str(&fallback(&fileurl));
     html.push_str("</video>");
-    let width_rule = if width != 0 { format!("width: {width}px;") } else { String::new() };
-    Some(format!("<div style=\"{width_rule}\" class=\"wp-video\">{html}</div>"))
+    let width_rule = if width != 0 {
+        format!("width: {width}px;")
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "<div style=\"{width_rule}\" class=\"wp-video\">{html}</div>"
+    ))
 }
 
 /// `[embed]`: without a network the address becomes a link (`WP_Embed::maybe_make_link()`).

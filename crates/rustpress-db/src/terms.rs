@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use sqlx::AssertSqlSafe;
 use crate::models::{TERM_COLUMNS, Term};
 use crate::sql::Sql;
 use crate::{Db, Result};
+use sqlx::AssertSqlSafe;
 
 tokio::task_local! {
     /// The terms of the posts of a list, read in one query (`update_object_term_cache()`); filled by
@@ -31,21 +31,36 @@ struct PostTerm {
 impl Db {
     /// Runs `future` with a cache of the terms of posts for this request (see [`Db::prime_terms`]).
     pub async fn with_term_cache<F: std::future::Future>(future: F) -> F::Output {
-        let comments = crate::primed::PRIMED_COMMENTS.scope(RefCell::new(HashMap::new()), crate::primed::PRIMED_APPROVED.scope(RefCell::new(HashMap::new()), future));
+        let comments = crate::primed::PRIMED_COMMENTS.scope(
+            RefCell::new(HashMap::new()),
+            crate::primed::PRIMED_APPROVED.scope(RefCell::new(HashMap::new()), future),
+        );
         let posts = crate::primed::PRIMED_POSTS.scope(RefCell::new(HashMap::new()), comments);
         let users = crate::primed::PRIMED_USERS.scope(RefCell::new(HashMap::new()), posts);
         let user_meta = crate::primed::PRIMED_USER_META.scope(RefCell::new(HashMap::new()), users);
         let meta = crate::primed::PRIMED_META.scope(RefCell::new(HashMap::new()), user_meta);
         let taxonomies = PRIMED_TAXONOMIES.scope(RefCell::new(HashMap::new()), meta);
-        PRIMED_TERMS.scope(RefCell::new(HashMap::new()), PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), taxonomies)).await
+        PRIMED_TERMS
+            .scope(
+                RefCell::new(HashMap::new()),
+                PRIMED_REVISIONS.scope(RefCell::new(HashMap::new()), taxonomies),
+            )
+            .await
     }
 
     /// How many revisions a post has and the ID of the newest (by ID), from the primed cache or one query.
     pub async fn revision_summary(&self, post_id: u64) -> Result<(u64, u64)> {
-        if let Ok(Some(summary)) = PRIMED_REVISIONS.try_with(|cache| cache.borrow().get(&post_id).copied()) {
+        if let Ok(Some(summary)) =
+            PRIMED_REVISIONS.try_with(|cache| cache.borrow().get(&post_id).copied())
+        {
             return Ok(summary);
         }
-        Ok(self.revision_summaries(&[post_id]).await?.get(&post_id).copied().unwrap_or((0, 0)))
+        Ok(self
+            .revision_summaries(&[post_id])
+            .await?
+            .get(&post_id)
+            .copied()
+            .unwrap_or((0, 0)))
     }
 
     async fn revision_summaries(&self, post_ids: &[u64]) -> Result<HashMap<u64, (u64, u64)>> {
@@ -61,7 +76,12 @@ impl Db {
         for id in post_ids {
             query = query.bind(*id);
         }
-        Ok(query.fetch_all(&self.pool).await?.into_iter().map(|(parent, count, latest)| (parent, (count as u64, latest))).collect())
+        Ok(query
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|(parent, count, latest)| (parent, (count as u64, latest)))
+            .collect())
     }
 
     /// [`Db::revision_summary`] for all `post_ids` in one query, for the scope of [`Db::with_term_cache`].
@@ -84,7 +104,11 @@ impl Db {
     pub async fn prime_terms(&self, post_ids: &[u64]) -> Result<()> {
         let Ok(missing) = PRIMED_TERMS.try_with(|cache| {
             let cache = cache.borrow();
-            post_ids.iter().copied().filter(|id| !cache.contains_key(id)).collect::<Vec<u64>>()
+            post_ids
+                .iter()
+                .copied()
+                .filter(|id| !cache.contains_key(id))
+                .collect::<Vec<u64>>()
         }) else {
             return Ok(());
         };
@@ -98,7 +122,8 @@ impl Db {
             self.prefix.table("term_relationships"),
         ));
         // `update_object_term_cache()` asks `wp_get_object_terms()` with `orderby => name`.
-        sql.push_list(missing.iter().copied()).push(") ORDER BY tr.object_id, t.name, t.term_id");
+        sql.push_list(missing.iter().copied())
+            .push(") ORDER BY tr.object_id, t.name, t.term_id");
         let rows: Vec<PostTerm> = sql.fetch_all(&self.pool).await?;
         let _ = PRIMED_TERMS.try_with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -127,8 +152,13 @@ impl Db {
 
     /// Terms attached to a post, optionally restricted to one taxonomy.
     pub async fn terms_for_post(&self, post_id: u64, taxonomy: Option<&str>) -> Result<Vec<Term>> {
-        if let Ok(Some(terms)) = PRIMED_TERMS.try_with(|cache| cache.borrow().get(&post_id).cloned()) {
-            return Ok(terms.into_iter().filter(|t| taxonomy.is_none_or(|tax| t.taxonomy == tax)).collect());
+        if let Ok(Some(terms)) =
+            PRIMED_TERMS.try_with(|cache| cache.borrow().get(&post_id).cloned())
+        {
+            return Ok(terms
+                .into_iter()
+                .filter(|t| taxonomy.is_none_or(|tax| t.taxonomy == tax))
+                .collect());
         }
         let mut sql = Sql::new(format!(
             "SELECT {TERM_COLUMNS} FROM {} JOIN {} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id \
@@ -146,8 +176,14 @@ impl Db {
 
     /// `get_term_meta( $term_id, $key, true )` of every term that has the key: the first value per term.
     pub async fn term_meta_by_key(&self, key: &str) -> Result<Vec<(u64, String)>> {
-        let sql = format!("SELECT term_id, meta_value FROM {} WHERE meta_key = ? ORDER BY meta_id", self.prefix.table("termmeta"));
-        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql)).bind(key).fetch_all(&self.pool).await?;
+        let sql = format!(
+            "SELECT term_id, meta_value FROM {} WHERE meta_key = ? ORDER BY meta_id",
+            self.prefix.table("termmeta")
+        );
+        let rows: Vec<(u64, Option<String>)> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(key)
+            .fetch_all(&self.pool)
+            .await?;
         let mut values: Vec<(u64, String)> = Vec::new();
         for (term_id, value) in rows {
             if !values.iter().any(|(id, _)| *id == term_id) {
@@ -162,25 +198,40 @@ impl Db {
         if term_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let ids = term_ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+        let ids = term_ids
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT DISTINCT tr.object_id FROM {} AS tr INNER JOIN {} AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tt.taxonomy = ? AND tt.term_id IN ({ids})",
             self.prefix.table("term_relationships"),
             self.prefix.table("term_taxonomy")
         );
-        let rows: Vec<(u64,)> = sqlx::query_as(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        let rows: Vec<(u64,)> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(taxonomy)
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
     pub async fn term_by_slug(&self, taxonomy: &str, slug: &str) -> Result<Option<Term>> {
-        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ", self.term_from()));
-        sql.push_bind(taxonomy).push(" AND t.slug = ").push_bind(slug);
+        let mut sql = Sql::new(format!(
+            "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ",
+            self.term_from()
+        ));
+        sql.push_bind(taxonomy)
+            .push(" AND t.slug = ")
+            .push_bind(slug);
         sql.fetch_optional(&self.pool).await
     }
 
     /// A term by its `term_id`, optionally restricted to a taxonomy.
     pub async fn term_by_id(&self, taxonomy: Option<&str>, term_id: u64) -> Result<Option<Term>> {
-        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE t.term_id = ", self.term_from()));
+        let mut sql = Sql::new(format!(
+            "SELECT {TERM_COLUMNS} FROM {} WHERE t.term_id = ",
+            self.term_from()
+        ));
         sql.push_bind(term_id);
         if let Some(taxonomy) = taxonomy {
             sql.push(" AND tt.taxonomy = ").push_bind(taxonomy);
@@ -192,8 +243,14 @@ impl Db {
     /// `wp_popular_terms_checklist()`: the used terms, ties in the order of the database.
     pub async fn popular_terms(&self, taxonomy: &str, limit: u64) -> Result<Vec<Term>> {
         // Two steps, as `WP_Term_Query`: terms with the same count come in the order of this statement.
-        let sql = format!("SELECT t.term_id FROM {} WHERE tt.taxonomy IN (?) AND tt.count > 0 ORDER BY tt.count DESC LIMIT {limit}", self.term_from());
-        let ids: Vec<u64> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(taxonomy).fetch_all(&self.pool).await?;
+        let sql = format!(
+            "SELECT t.term_id FROM {} WHERE tt.taxonomy IN (?) AND tt.count > 0 ORDER BY tt.count DESC LIMIT {limit}",
+            self.term_from()
+        );
+        let ids: Vec<u64> = sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(taxonomy)
+            .fetch_all(&self.pool)
+            .await?;
         let mut terms = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(term) = self.term_by_id(Some(taxonomy), id).await? {
@@ -206,13 +263,22 @@ impl Db {
     /// All terms of a taxonomy by name; inside [`Db::with_term_cache`] read once per request (term permalinks walk
     /// their parents through it).
     pub async fn terms(&self, taxonomy: &str) -> Result<Vec<Term>> {
-        if let Ok(Some(terms)) = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow().get(taxonomy).cloned()) {
+        if let Ok(Some(terms)) =
+            PRIMED_TAXONOMIES.try_with(|cache| cache.borrow().get(taxonomy).cloned())
+        {
             return Ok(terms);
         }
-        let mut sql = Sql::new(format!("SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ", self.term_from()));
+        let mut sql = Sql::new(format!(
+            "SELECT {TERM_COLUMNS} FROM {} WHERE tt.taxonomy = ",
+            self.term_from()
+        ));
         sql.push_bind(taxonomy).push(" ORDER BY t.name");
         let terms: Vec<Term> = sql.fetch_all(&self.pool).await?;
-        let _ = PRIMED_TAXONOMIES.try_with(|cache| cache.borrow_mut().insert(taxonomy.to_owned(), terms.clone()));
+        let _ = PRIMED_TAXONOMIES.try_with(|cache| {
+            cache
+                .borrow_mut()
+                .insert(taxonomy.to_owned(), terms.clone())
+        });
         Ok(terms)
     }
 }

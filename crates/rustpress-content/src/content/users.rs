@@ -8,7 +8,9 @@ use rustpress_phpser::{Key, Value};
 /// The `pre_user_display_name`, `pre_user_first_name`, `pre_user_last_name` and `pre_user_nickname` filters:
 /// `sanitize_text_field`, `wp_filter_kses` and `_wp_specialchars` (`&` becomes `&amp;`, entities stay).
 fn name_field(value: &str) -> String {
-    rustpress_core::formatting::specialchars_noquotes(&rustpress_core::kses::kses_data(&sanitize::text_field(value)))
+    rustpress_core::formatting::specialchars_noquotes(&rustpress_core::kses::kses_data(
+        &sanitize::text_field(value),
+    ))
 }
 
 /// The fields `wp_insert_user( $userdata )` takes. `None` keeps the stored value on update.
@@ -44,7 +46,12 @@ fn level_of(site_roles: &rustpress_auth::Roles, role: &str) -> i64 {
         "author" => 2,
         "contributor" => 1,
         "subscriber" => 0,
-        other => site_roles.capabilities(other).map_or(0, |caps| (0..=10).rev().find(|n| caps.get(&format!("level_{n}")).copied().unwrap_or(false)).unwrap_or(0) as i64),
+        other => site_roles.capabilities(other).map_or(0, |caps| {
+            (0..=10)
+                .rev()
+                .find(|n| caps.get(&format!("level_{n}")).copied().unwrap_or(false))
+                .unwrap_or(0) as i64
+        }),
     }
 }
 
@@ -57,10 +64,21 @@ impl Content<'_> {
     /// `WP_User::set_role()`: the user has exactly this role (none when empty).
     pub async fn set_user_role(&self, user_id: u64, role: &str) -> Result<()> {
         let prefix = self.writer.table_prefix().to_owned();
-        let caps = if role.is_empty() { Value::Array(Vec::new()) } else { Value::Array(vec![(Key::Str(role.as_bytes().to_vec()), Value::Bool(true))]) };
+        let caps = if role.is_empty() {
+            Value::Array(Vec::new())
+        } else {
+            Value::Array(vec![(
+                Key::Str(role.as_bytes().to_vec()),
+                Value::Bool(true),
+            )])
+        };
         // The user's own capabilities that are not roles stay.
         let roles = self.user_roles();
-        let existing = self.db.user_meta(user_id, &format!("{prefix}capabilities")).await?.and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
+        let existing = self
+            .db
+            .user_meta(user_id, &format!("{prefix}capabilities"))
+            .await?
+            .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
         let mut items: Vec<(Key, Value)> = Vec::new();
         if let Some(Value::Array(old)) = existing {
             for (key, value) in old {
@@ -74,9 +92,19 @@ impl Content<'_> {
         if let Value::Array(new) = caps {
             items.extend(new);
         }
-        let serialized = String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(items))).into_owned();
-        self.writer.update_user_meta(user_id, &format!("{prefix}capabilities"), &serialized).await?;
-        self.writer.update_user_meta(user_id, &format!("{prefix}user_level"), &level_of(&roles, role).to_string()).await?;
+        let serialized =
+            String::from_utf8_lossy(&rustpress_phpser::serialize(&Value::Array(items)))
+                .into_owned();
+        self.writer
+            .update_user_meta(user_id, &format!("{prefix}capabilities"), &serialized)
+            .await?;
+        self.writer
+            .update_user_meta(
+                user_id,
+                &format!("{prefix}user_level"),
+                &level_of(&roles, role).to_string(),
+            )
+            .await?;
         Ok(())
     }
 
@@ -84,7 +112,12 @@ impl Content<'_> {
     pub async fn insert_user(&self, data: &UserData) -> Result<u64> {
         let tr = |s: &str| self.site.tr(s);
         let existing = match data.id.filter(|id| *id != 0) {
-            Some(id) => Some(self.db.user(id).await?.ok_or_else(|| ContentError::Message(tr("Invalid user ID.")))?),
+            Some(id) => Some(
+                self.db
+                    .user(id)
+                    .await?
+                    .ok_or_else(|| ContentError::Message(tr("Invalid user ID.")))?,
+            ),
             None => None,
         };
         let update = existing.is_some();
@@ -96,18 +129,27 @@ impl Content<'_> {
         };
         if !update {
             if login.is_empty() {
-                return Err(ContentError::Message(tr("Cannot create a user with an empty login name.")));
+                return Err(ContentError::Message(tr(
+                    "Cannot create a user with an empty login name.",
+                )));
             }
             if login.chars().count() > 60 {
-                return Err(ContentError::Message(tr("Username may not be longer than 60 characters.")));
+                return Err(ContentError::Message(tr(
+                    "Username may not be longer than 60 characters.",
+                )));
             }
             if self.db.user_by_login(&login).await?.is_some() {
-                return Err(ContentError::Message(tr("Sorry, that username already exists!")));
+                return Err(ContentError::Message(tr(
+                    "Sorry, that username already exists!",
+                )));
             }
         }
         let email = match &data.user_email {
             Some(email) => crate::sanitize::sanitize_email(email),
-            None => existing.as_ref().map(|u| u.user_email.clone()).unwrap_or_default(),
+            None => existing
+                .as_ref()
+                .map(|u| u.user_email.clone())
+                .unwrap_or_default(),
         };
         if email.is_empty() && !update {
             // WordPress allows an empty address only when the caller does not give one.
@@ -116,15 +158,23 @@ impl Content<'_> {
             && let Some(other) = self.db.user_by_email(&email).await?
             && Some(other.id) != existing.as_ref().map(|u| u.id)
         {
-            return Err(ContentError::Message(tr("Sorry, that email address is already used!")));
+            return Err(ContentError::Message(tr(
+                "Sorry, that email address is already used!",
+            )));
         }
 
-        let nicename = match (&existing, data.user_nicename.as_deref().filter(|n| !n.is_empty())) {
+        let nicename = match (
+            &existing,
+            data.user_nicename.as_deref().filter(|n| !n.is_empty()),
+        ) {
             // `sanitize_user( $nicename, true )`, `sanitize_title()`, then a number when another user has it.
             (_, Some(wanted)) => {
-                let base = rustpress_core::slug::sanitize_title(&sanitize::user_login(wanted, true));
+                let base =
+                    rustpress_core::slug::sanitize_title(&sanitize::user_login(wanted, true));
                 if base.chars().count() > 50 {
-                    return Err(ContentError::Message(tr("Nicename may not be longer than 50 characters.")));
+                    return Err(ContentError::Message(tr(
+                        "Nicename may not be longer than 50 characters.",
+                    )));
                 }
                 let own = existing.as_ref().map_or(0, |u| u.id);
                 let mut nicename = base.clone();
@@ -138,7 +188,11 @@ impl Content<'_> {
             }
             (Some(user), None) => user.user_nicename.clone(),
             (None, None) => {
-                let base: String = rustpress_core::slug::sanitize_title_save(&login, &self.site.locale()).chars().take(50).collect();
+                let base: String =
+                    rustpress_core::slug::sanitize_title_save(&login, &self.site.locale())
+                        .chars()
+                        .take(50)
+                        .collect();
                 let mut nicename = base.clone();
                 let mut suffix = 2;
                 while self.db.user_nicename_taken(&nicename, 0).await? {
@@ -149,11 +203,20 @@ impl Content<'_> {
                 nicename
             }
         };
-        let display_name = data.display_name.clone().or_else(|| existing.as_ref().map(|u| u.display_name.clone())).unwrap_or_else(|| login.clone());
+        let display_name = data
+            .display_name
+            .clone()
+            .or_else(|| existing.as_ref().map(|u| u.display_name.clone()))
+            .unwrap_or_else(|| login.clone());
         let url = match &data.user_url {
-            Some(url) if !url.trim().is_empty() => rustpress_core::formatting::esc_url_raw(url.trim()),
+            Some(url) if !url.trim().is_empty() => {
+                rustpress_core::formatting::esc_url_raw(url.trim())
+            }
             Some(_) => String::new(),
-            None => existing.as_ref().map(|u| u.user_url.clone()).unwrap_or_default(),
+            None => existing
+                .as_ref()
+                .map(|u| u.user_url.clone())
+                .unwrap_or_default(),
         };
         let mut fields: Vec<(&str, Val)> = vec![
             ("user_nicename", Val::Str(nicename)),
@@ -162,13 +225,20 @@ impl Content<'_> {
             ("display_name", Val::Str(name_field(&display_name))),
         ];
         if let Some(password) = data.user_pass.as_deref().filter(|p| !p.is_empty()) {
-            fields.push(("user_pass", Val::Str(rustpress_auth::password::hash_password(password))));
+            fields.push((
+                "user_pass",
+                Val::Str(rustpress_auth::password::hash_password(password)),
+            ));
         } else if !update {
-            return Err(ContentError::Message(tr("Cannot create a user with an empty password.")));
+            return Err(ContentError::Message(tr(
+                "Cannot create a user with an empty password.",
+            )));
         }
         let user_id = match &existing {
             Some(user) => {
-                self.writer.update_rows("users", "ID", user.id, &fields).await?;
+                self.writer
+                    .update_rows("users", "ID", user.id, &fields)
+                    .await?;
                 user.id
             }
             None => {
@@ -190,20 +260,57 @@ impl Content<'_> {
         };
         let nickname = data.nickname.as_ref().map(|n| name_field(n));
         let mut pairs: Vec<(String, String)> = Vec::new();
-        pairs.extend(meta("nickname", nickname.as_ref().or(if update { None } else { Some(&login) }), &login));
-        pairs.extend(meta("first_name", data.first_name.as_ref().map(|v| name_field(v)).as_ref(), ""));
-        pairs.extend(meta("last_name", data.last_name.as_ref().map(|v| name_field(v)).as_ref(), ""));
+        pairs.extend(meta(
+            "nickname",
+            nickname
+                .as_ref()
+                .or(if update { None } else { Some(&login) }),
+            &login,
+        ));
+        pairs.extend(meta(
+            "first_name",
+            data.first_name.as_ref().map(|v| name_field(v)).as_ref(),
+            "",
+        ));
+        pairs.extend(meta(
+            "last_name",
+            data.last_name.as_ref().map(|v| name_field(v)).as_ref(),
+            "",
+        ));
         // `pre_user_description`: `wp_filter_kses`.
-        pairs.extend(meta("description", data.description.as_ref().map(|v| rustpress_core::kses::kses_data(v)).as_ref(), ""));
+        pairs.extend(meta(
+            "description",
+            data.description
+                .as_ref()
+                .map(|v| rustpress_core::kses::kses_data(v))
+                .as_ref(),
+            "",
+        ));
         pairs.extend(meta("rich_editing", data.rich_editing.as_ref(), "true"));
-        pairs.extend(meta("syntax_highlighting", data.syntax_highlighting.as_ref(), "true"));
-        pairs.extend(meta("infinite_scrolling", data.infinite_scrolling.as_ref(), "true"));
-        pairs.extend(meta("comment_shortcuts", data.comment_shortcuts.as_ref(), "false"));
+        pairs.extend(meta(
+            "syntax_highlighting",
+            data.syntax_highlighting.as_ref(),
+            "true",
+        ));
+        pairs.extend(meta(
+            "infinite_scrolling",
+            data.infinite_scrolling.as_ref(),
+            "true",
+        ));
+        pairs.extend(meta(
+            "comment_shortcuts",
+            data.comment_shortcuts.as_ref(),
+            "false",
+        ));
         pairs.extend(meta("admin_color", data.admin_color.as_ref(), "modern"));
         if !update {
             pairs.push(("use_ssl".into(), "0".into()));
         }
-        pairs.extend(meta("show_admin_bar_front", data.show_admin_bar_front.as_ref(), "true"));
+        pairs.extend(meta(
+            "show_admin_bar_front",
+            data.show_admin_bar_front.as_ref(),
+            "true",
+        ));
         pairs.extend(meta("locale", data.locale.as_ref(), ""));
         for (key, value) in pairs {
             self.writer.update_user_meta(user_id, &key, &value).await?;
@@ -228,20 +335,49 @@ impl Content<'_> {
         let posts = self.db.post_ids_of_author(id).await?;
         match reassign {
             Some(to) if to != 0 && to != id => {
-                self.writer.execute(format!("UPDATE {} SET post_author = {to} WHERE post_author = {id}", self.writer.table("posts"))).await?;
-                self.writer.execute(format!("UPDATE {} SET link_owner = {to} WHERE link_owner = {id}", self.writer.table("links"))).await.ok();
+                self.writer
+                    .execute(format!(
+                        "UPDATE {} SET post_author = {to} WHERE post_author = {id}",
+                        self.writer.table("posts")
+                    ))
+                    .await?;
+                self.writer
+                    .execute(format!(
+                        "UPDATE {} SET link_owner = {to} WHERE link_owner = {id}",
+                        self.writer.table("links")
+                    ))
+                    .await
+                    .ok();
             }
             _ => {
                 // The types with `delete_with_user` (or with authors and no say); `wp_delete_post()` without force
                 // puts posts and pages into the trash.
                 for (post_id, post_type) in posts {
-                    let delete_with_user = matches!(post_type.as_str(), "post" | "page" | "attachment" | "revision" | "wp_template" | "wp_template_part")
-                        || self.site.types.post_type(&post_type).is_some_and(|t| t.supports("author"));
+                    let delete_with_user = matches!(
+                        post_type.as_str(),
+                        "post"
+                            | "page"
+                            | "attachment"
+                            | "revision"
+                            | "wp_template"
+                            | "wp_template_part"
+                    ) || self
+                        .site
+                        .types
+                        .post_type(&post_type)
+                        .is_some_and(|t| t.supports("author"));
                     if delete_with_user {
-                        self.delete_post(post_id, !matches!(post_type.as_str(), "post" | "page")).await?;
+                        self.delete_post(post_id, !matches!(post_type.as_str(), "post" | "page"))
+                            .await?;
                     }
                 }
-                self.writer.execute(format!("DELETE FROM {} WHERE link_owner = {id}", self.writer.table("links"))).await.ok();
+                self.writer
+                    .execute(format!(
+                        "DELETE FROM {} WHERE link_owner = {id}",
+                        self.writer.table("links")
+                    ))
+                    .await
+                    .ok();
             }
         }
         self.writer.delete_rows("usermeta", "user_id", id).await?;

@@ -6,8 +6,23 @@ use rustpress_core::Site;
 /// date picker in the site's language and date format.
 pub fn jquery_ui_datepicker(site: &Site) -> String {
     // `str_replace()` with arrays replaces one pair after the other, each over the result of the one before.
-    let pairs = [("d", "dd"), ("j", "d"), ("l", "DD"), ("z", "o"), ("F", "MM"), ("M", "M"), ("n", "m"), ("m", "mm"), ("Y", "yy"), ("y", "y")];
-    let mut format = site.options.get("date_format").unwrap_or_default().to_owned();
+    let pairs = [
+        ("d", "dd"),
+        ("j", "d"),
+        ("l", "DD"),
+        ("z", "o"),
+        ("F", "MM"),
+        ("M", "M"),
+        ("n", "m"),
+        ("m", "mm"),
+        ("Y", "yy"),
+        ("y", "y"),
+    ];
+    let mut format = site
+        .options
+        .get("date_format")
+        .unwrap_or_default()
+        .to_owned();
     for (search, replace) in pairs {
         format = format.replace(search, replace);
     }
@@ -27,7 +42,13 @@ pub fn jquery_ui_datepicker(site: &Site) -> String {
         "firstDay": first_day,
         "isRTL": locale.rtl,
     });
-    let json = rustpress_blocks::php_json::encode_with(&defaults, rustpress_blocks::php_json::Flags { unescaped_slashes: true, unescaped_unicode: false });
+    let json = rustpress_blocks::php_json::encode_with(
+        &defaults,
+        rustpress_blocks::php_json::Flags {
+            unescaped_slashes: true,
+            unescaped_unicode: false,
+        },
+    );
     // `JSON_HEX_TAG`.
     let json = json.replace('<', "\\u003C").replace('>', "\\u003E");
     format!("jQuery(function(jQuery){{jQuery.datepicker.setDefaults({json});}});")

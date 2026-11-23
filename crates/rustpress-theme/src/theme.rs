@@ -55,12 +55,18 @@ async fn has_custom_logo(site: &Site) -> Result<bool> {
     if id == 0 {
         return Ok(false);
     }
-    Ok(site.db.post(id).await?.is_some_and(|post| post.post_type == "attachment" && rustpress_blocks::images::is_image(&post)))
+    Ok(site.db.post(id).await?.is_some_and(|post| {
+        post.post_type == "attachment" && rustpress_blocks::images::is_image(&post)
+    }))
 }
 
 /// `home_url( $path )`/`site_url( $path )`: a non-empty path is appended after a slash (`home_url( '/' )` ends in one).
 fn join_url(base: &str, path: &str) -> String {
-    if path.is_empty() { base.to_owned() } else { format!("{base}/{}", path.trim_start_matches('/')) }
+    if path.is_empty() {
+        base.to_owned()
+    } else {
+        format!("{base}/{}", path.trim_start_matches('/'))
+    }
 }
 
 pub struct Theme {
@@ -112,8 +118,18 @@ impl Theme {
         let user = load_user_styles(site, &stylesheet).await?;
         let core = read_file(&wp_root.join("wp-includes").join("theme.json")).unwrap_or_default();
         // A classic theme without `theme.json` gives its theme supports (`WP_Theme_JSON_Resolver::get_theme_data()`).
-        let parent = read_file(&template_dir.join("theme.json")).or_else(|| crate::classic::theme_supports_json(&template, &site.i18n(), &crate::classic::menu::theme_mod(site, &stylesheet)));
-        let child = if stylesheet != template { read_file(&stylesheet_dir.join("theme.json")) } else { None };
+        let parent = read_file(&template_dir.join("theme.json")).or_else(|| {
+            crate::classic::theme_supports_json(
+                &template,
+                &site.i18n(),
+                &crate::classic::menu::theme_mod(site, &stylesheet),
+            )
+        });
+        let child = if stylesheet != template {
+            read_file(&stylesheet_dir.join("theme.json"))
+        } else {
+            None
+        };
         // Block style variations: every `styles/**.json` that names `blockTypes` (a child theme's file wins by name).
         let partials = read_partials(&[stylesheet_dir.join("styles"), template_dir.join("styles")]);
         let blocks_data = Registry::new(wp_root.join("wp-includes").join("blocks")).block_data();
@@ -121,7 +137,10 @@ impl Theme {
 
         let mut part_areas = HashMap::new();
         for part in json.template_parts() {
-            if let (Some(name), Some(area)) = (part.get("name").and_then(Value::as_str), part.get("area").and_then(Value::as_str)) {
+            if let (Some(name), Some(area)) = (
+                part.get("name").and_then(Value::as_str),
+                part.get("area").and_then(Value::as_str),
+            ) {
                 part_areas.insert(name.to_owned(), area.to_owned());
             }
         }
@@ -148,10 +167,13 @@ impl Theme {
             if let Some(php) = rustpress_core::files::read(&dir.join("functions.php")) {
                 block_style_inline.extend(crate::functions_php::block_style_inline_styles(&php));
                 block_stylesheets.extend(crate::functions_php::block_stylesheets(&php));
-                wp_block_styles |= crate::functions_php::adds_theme_support(&php, "wp-block-styles");
-                theme_style_handle = theme_style_handle.or_else(|| crate::functions_php::theme_stylesheet_handle(&php));
+                wp_block_styles |=
+                    crate::functions_php::adds_theme_support(&php, "wp-block-styles");
+                theme_style_handle = theme_style_handle
+                    .or_else(|| crate::functions_php::theme_stylesheet_handle(&php));
                 if let Some(handle) = &theme_style_handle {
-                    theme_style_path |= crate::functions_php::theme_stylesheet_has_path(&php, handle);
+                    theme_style_path |=
+                        crate::functions_php::theme_stylesheet_has_path(&php, handle);
                 }
             }
         }
@@ -210,8 +232,15 @@ impl Theme {
         if parent != child {
             let mut inherited = Vec::new();
             json_files(&parent, &mut inherited);
-            let own: Vec<std::ffi::OsString> = files.iter().filter_map(|c| c.file_name().map(|n| n.to_owned())).collect();
-            files.extend(inherited.into_iter().filter(|p| !p.file_name().is_some_and(|n| own.iter().any(|o| o == n))));
+            let own: Vec<std::ffi::OsString> = files
+                .iter()
+                .filter_map(|c| c.file_name().map(|n| n.to_owned()))
+                .collect();
+            files.extend(
+                inherited
+                    .into_iter()
+                    .filter(|p| !p.file_name().is_some_and(|n| own.iter().any(|o| o == n))),
+            );
         }
         files.sort();
         files
@@ -221,12 +250,30 @@ impl Theme {
     pub fn block_style_variations(&self, text_domain: &str) -> Vec<(String, String, String)> {
         let mut out = Vec::new();
         for path in self.variation_files() {
-            let Some(raw) = read_file(&path) else { continue };
+            let Some(raw) = read_file(&path) else {
+                continue;
+            };
             let Some(map) = raw.as_object() else { continue };
-            let Some(block_types) = map.get("blockTypes").and_then(Value::as_array) else { continue };
-            let title = map.get("title").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-            let title = self.host_ref().translate(&title, Some("Style variation name"), text_domain);
-            let name = map.get("slug").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| kebab_case(&title));
+            let Some(block_types) = map.get("blockTypes").and_then(Value::as_array) else {
+                continue;
+            };
+            let title = map
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                });
+            let title =
+                self.host_ref()
+                    .translate(&title, Some("Style variation name"), text_domain);
+            let name = map
+                .get("slug")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| kebab_case(&title));
             for block in block_types.iter().filter_map(Value::as_str) {
                 out.push((block.to_owned(), name.clone(), title.clone()));
             }
@@ -238,19 +285,35 @@ impl Theme {
     /// by path, a child theme's file replacing the parent's of the same name.
     pub fn style_variations(&self) -> Vec<Value> {
         let files = self.variation_files();
-        let partials = read_partials(&[self.stylesheet_dir.join("styles"), self.template_dir.join("styles")]);
+        let partials = read_partials(&[
+            self.stylesheet_dir.join("styles"),
+            self.template_dir.join("styles"),
+        ]);
         let block_order = self.registry.registration_order();
         let mut out = Vec::new();
         for path in files {
-            let Some(raw) = read_file(&path) else { continue };
+            let Some(raw) = read_file(&path) else {
+                continue;
+            };
             let Some(map) = raw.as_object() else { continue };
             // Variations of single blocks have a scope of their own.
             if map.contains_key("blockTypes") {
                 continue;
             }
             let mut variation = serde_json::Map::new();
-            variation.insert("version".into(), map.get("version").cloned().unwrap_or(Value::from(3)));
-            let title = map.get("title").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+            variation.insert(
+                "version".into(),
+                map.get("version").cloned().unwrap_or(Value::from(3)),
+            );
+            let title = map
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                });
             variation.insert("title".into(), Value::String(title));
             if let Some(slug) = map.get("slug") {
                 variation.insert("slug".into(), slug.clone());
@@ -281,7 +344,10 @@ impl Theme {
 
     /// The first existing template of a candidate list.
     pub fn pick_template(&self, candidates: &[String]) -> Option<(String, String)> {
-        candidates.iter().find_map(|slug| self.template_markup(slug).map(|markup| (slug.clone(), markup)))
+        candidates.iter().find_map(|slug| {
+            self.template_markup(slug)
+                .map(|markup| (slug.clone(), markup))
+        })
     }
 
     /// The child theme's file wins over the parent's.
@@ -332,24 +398,49 @@ impl Theme {
         if relative.contains("..") {
             return None;
         }
-        [&self.stylesheet_dir, &self.template_dir].into_iter().map(|d| d.join(relative)).find(|p| rustpress_core::files::is_file(p))
+        [&self.stylesheet_dir, &self.template_dir]
+            .into_iter()
+            .map(|d| d.join(relative))
+            .find(|p| rustpress_core::files::is_file(p))
     }
 
     /// `Version:` of the theme's `style.css` header.
     pub fn version(&self) -> String {
-        let text = rustpress_core::files::read(&self.template_dir.join("style.css")).unwrap_or_default();
-        text.lines().find_map(|l| l.trim().strip_prefix("Version:").map(|v| v.trim().to_owned())).unwrap_or_default()
+        let text =
+            rustpress_core::files::read(&self.template_dir.join("style.css")).unwrap_or_default();
+        text.lines()
+            .find_map(|l| {
+                l.trim()
+                    .strip_prefix("Version:")
+                    .map(|v| v.trim().to_owned())
+            })
+            .unwrap_or_default()
     }
 
     /// `wp_get_global_stylesheet()` in chunks for the block style handles of a page; the sheet is computed once.
-    pub fn global_style_chunks(&self, registry: &Registry, site: &Site, handles: Option<&[String]>) -> Vec<String> {
+    pub fn global_style_chunks(
+        &self,
+        registry: &Registry,
+        site: &Site,
+        handles: Option<&[String]>,
+    ) -> Vec<String> {
         self.global_style_chunks_with(registry, site, handles, None)
     }
 
     /// [`Theme::global_style_chunks`] with the Additional CSS of the Customizer in its place.
-    pub fn global_style_chunks_with(&self, registry: &Registry, site: &Site, handles: Option<&[String]>, customizer: Option<&str>) -> Vec<String> {
+    pub fn global_style_chunks_with(
+        &self,
+        registry: &Registry,
+        site: &Site,
+        handles: Option<&[String]>,
+        customizer: Option<&str>,
+    ) -> Vec<String> {
         self.global_styles
-            .get_or_init(|| crate::global_styles::GlobalStyles::new(&self.json, registry).with_other_blocks(site.plugins.block_names()).prepare())
+            .get_or_init(|| {
+                crate::global_styles::GlobalStyles::new(&self.json, registry)
+                    .with_other_blocks(site.plugins.block_names())
+                    .prepare()
+            })
             .chunks_with(handles, customizer)
     }
 
@@ -395,11 +486,17 @@ impl ThemeAccess for Theme {
     }
 
     fn filter_calendar(&self, calendar: String, rtl: bool) -> String {
-        if self.is_twentyone() { crate::classic::twentyone::calendar_nav_arrows(calendar, rtl) } else { calendar }
+        if self.is_twentyone() {
+            crate::classic::twentyone::calendar_nav_arrows(calendar, rtl)
+        } else {
+            calendar
+        }
     }
 
     fn has_theme_json(&self) -> bool {
-        self.is_block_theme() || rustpress_core::files::is_file(&self.stylesheet_dir.join("theme.json")) || rustpress_core::files::is_file(&self.template_dir.join("theme.json"))
+        self.is_block_theme()
+            || rustpress_core::files::is_file(&self.stylesheet_dir.join("theme.json"))
+            || rustpress_core::files::is_file(&self.template_dir.join("theme.json"))
     }
 
     fn image_size(&self, name: &str) -> Option<(u64, u64)> {
@@ -410,41 +507,77 @@ impl ThemeAccess for Theme {
         crate::classic::content_width(&self.template).unwrap_or(0)
     }
 
-    fn filter_calculated_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, sizes: Option<String>, width: u64) -> Option<String> {
-        if self.is_seventeen() { crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width) } else { sizes }
+    fn filter_calculated_sizes(
+        &self,
+        site: &Site,
+        query: &rustpress_core::QueryResult,
+        sizes: Option<String>,
+        width: u64,
+    ) -> Option<String> {
+        if self.is_seventeen() {
+            crate::classic::seventeen::calculated_sizes(site, query, &self.stylesheet, sizes, width)
+        } else {
+            sizes
+        }
     }
 
     fn excerpt_more(&self) -> Option<String> {
         if self.is_twentyone() {
-            return Some(crate::classic::twentyone::excerpt_more_template(&self.host.i18n));
+            return Some(crate::classic::twentyone::excerpt_more_template(
+                &self.host.i18n,
+            ));
         }
-        self.is_seventeen().then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
+        self.is_seventeen()
+            .then(|| crate::classic::seventeen::excerpt_more_template(&self.host.i18n))
     }
 
-    fn content_more_link(&self, permalink: &str, post_id: u64, title: &str, text: &str) -> Option<String> {
+    fn content_more_link(
+        &self,
+        permalink: &str,
+        post_id: u64,
+        title: &str,
+        text: &str,
+    ) -> Option<String> {
         if self.is_twentytwenty() {
-            return Some(crate::classic::twenty::read_more_tag(permalink, post_id, title, text));
+            return Some(crate::classic::twenty::read_more_tag(
+                permalink, post_id, title, text,
+            ));
         }
-        self.is_twentyone().then(|| crate::classic::twentyone::content_more_link(&self.host.i18n, permalink, post_id, title))
+        self.is_twentyone().then(|| {
+            crate::classic::twentyone::content_more_link(&self.host.i18n, permalink, post_id, title)
+        })
     }
 
     fn more_link_text(&self) -> Option<String> {
         // `the_content( __( 'Continue reading', 'twentytwenty' ) )` in `template-parts/content.php`.
-        self.is_twentytwenty().then(|| self.host.i18n.gettext("twentytwenty", "Continue reading"))
+        self.is_twentytwenty()
+            .then(|| self.host.i18n.gettext("twentytwenty", "Continue reading"))
     }
 
     fn password_form(&self, site: &Site, post: &rustpress_db::Post) -> Option<String> {
-        self.is_twentyone().then(|| crate::classic::twentyone::password_form(site, post))
+        self.is_twentyone()
+            .then(|| crate::classic::twentyone::password_form(site, post))
     }
 
-    fn filter_attachment_attributes(&self, attrs: &mut Vec<(String, rustpress_blocks::images::AttrValue)>, full: Option<(u64, u64)>, requested: Option<(u64, u64)>) {
+    fn filter_attachment_attributes(
+        &self,
+        attrs: &mut Vec<(String, rustpress_blocks::images::AttrValue)>,
+        full: Option<(u64, u64)>,
+        requested: Option<(u64, u64)>,
+    ) {
         if self.is_twentyone() {
             crate::classic::twentyone::attachment_image_attributes(attrs, full, requested);
         }
     }
 
-    fn filter_attachment_sizes(&self, site: &Site, query: &rustpress_core::QueryResult, _current: Option<&str>) -> Option<String> {
-        self.is_seventeen().then(|| crate::classic::seventeen::attachment_sizes_attr(site, query))
+    fn filter_attachment_sizes(
+        &self,
+        site: &Site,
+        query: &rustpress_core::QueryResult,
+        _current: Option<&str>,
+    ) -> Option<String> {
+        self.is_seventeen()
+            .then(|| crate::classic::seventeen::attachment_sizes_attr(site, query))
     }
 
     fn global_settings(&self) -> &Value {
@@ -463,8 +596,16 @@ impl ThemeAccess for Theme {
             Some(markup) => markup.clone(),
             None => self.read_theme_file(&format!("parts/{slug}.html"))?,
         };
-        let area = self.part_areas.get(slug).cloned().unwrap_or_else(|| "uncategorized".to_owned());
-        Some(TemplatePart { slug: slug.to_owned(), content, area })
+        let area = self
+            .part_areas
+            .get(slug)
+            .cloned()
+            .unwrap_or_else(|| "uncategorized".to_owned());
+        Some(TemplatePart {
+            slug: slug.to_owned(),
+            content,
+            area,
+        })
     }
 
     fn pattern(&self, slug: &str) -> Option<String> {
@@ -473,7 +614,11 @@ impl ThemeAccess for Theme {
         }
         let result = self.patterns.get(slug).and_then(|path| {
             let source = rustpress_core::files::read(path)?;
-            let rendered = if source.contains("return array(") && source.contains("'content'") { phpt::pattern_array_content(&source, &self.host) } else { phpt::render(&source, &self.host) };
+            let rendered = if source.contains("return array(") && source.contains("'content'") {
+                phpt::pattern_array_content(&source, &self.host)
+            } else {
+                phpt::render(&source, &self.host)
+            };
             match rendered {
                 Ok(markup) => Some(markup),
                 Err(e) => {
@@ -482,7 +627,10 @@ impl ThemeAccess for Theme {
                 }
             }
         });
-        self.pattern_cache.lock().ok()?.insert(slug.to_owned(), result.clone());
+        self.pattern_cache
+            .lock()
+            .ok()?
+            .insert(slug.to_owned(), result.clone());
         result
     }
 
@@ -493,7 +641,8 @@ impl ThemeAccess for Theme {
     fn variation_css(&self, block_name: &str, variation: &Value, scope: &str) -> String {
         let mut resolved = variation.clone();
         crate::theme_json::resolve_custom_vars(&mut resolved);
-        GlobalStyles::new(&self.json, &self.registry).variation_stylesheet(block_name, &resolved, scope)
+        GlobalStyles::new(&self.json, &self.registry)
+            .variation_stylesheet(block_name, &resolved, scope)
     }
 
     fn render_block_filter(&self, name: &str, content: String) -> String {
@@ -504,7 +653,11 @@ impl ThemeAccess for Theme {
     }
 
     fn template_part_area_tag(&self, area: &str) -> Option<&'static str> {
-        self.block_theme_port()?.template_part_areas().iter().find(|(a, _)| *a == area).map(|(_, tag)| *tag)
+        self.block_theme_port()?
+            .template_part_areas()
+            .iter()
+            .find(|(a, _)| *a == area)
+            .map(|(_, tag)| *tag)
     }
 
     fn template_directory_uri(&self) -> String {
@@ -519,26 +672,57 @@ impl ThemeAccess for Theme {
 /// `WP_Theme_JSON::unwrap_shared_block_style_variations()`: `styles.variations.<name>` is copied to every block
 /// that the style partial of that name is registered for.
 fn unwrap_shared_variations(styles: &mut Value, partials: &[Value], block_order: &[String]) {
-    let Some(shared) = styles.as_object_mut().and_then(|m| m.shift_remove("variations")).and_then(|v| v.as_object().cloned()) else { return };
+    let Some(shared) = styles
+        .as_object_mut()
+        .and_then(|m| m.shift_remove("variations"))
+        .and_then(|v| v.as_object().cloned())
+    else {
+        return;
+    };
     // The blocks in the order they are registered (`get_blocks_metadata()`), the variations of each in the order of
     // the partials.
     let mut targets: Vec<(String, String)> = Vec::new();
     for partial in partials {
-        let Some(name) = partial.get("slug").and_then(Value::as_str) else { continue };
-        for block in partial.get("blockTypes").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        let Some(name) = partial.get("slug").and_then(Value::as_str) else {
+            continue;
+        };
+        for block in partial
+            .get("blockTypes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
             targets.push((block.to_owned(), name.to_owned()));
         }
     }
-    let rank = |block: &str| block_order.iter().position(|b| b == block).unwrap_or(usize::MAX);
+    let rank = |block: &str| {
+        block_order
+            .iter()
+            .position(|b| b == block)
+            .unwrap_or(usize::MAX)
+    };
     targets.sort_by_key(|(block, _)| rank(block));
     for (block, name) in targets {
-        let Some(top) = shared.get(&name) else { continue };
+        let Some(top) = shared.get(&name) else {
+            continue;
+        };
         let mut merged = top.clone();
-        if let Some(existing) = styles.get("blocks").and_then(|b| b.get(&block)).and_then(|b| b.get("variations")).and_then(|v| v.get(&name)) {
+        if let Some(existing) = styles
+            .get("blocks")
+            .and_then(|b| b.get(&block))
+            .and_then(|b| b.get("variations"))
+            .and_then(|v| v.get(&name))
+        {
             crate::theme_json::deep_merge(&mut merged, existing);
         }
         // The variation replaces what was there (`_wp_array_set()`, in its place) instead of being merged into it.
-        if let Some(slot) = styles.get_mut("blocks").and_then(|b| b.get_mut(&block)).and_then(|b| b.get_mut("variations")).and_then(Value::as_object_mut) {
+        if let Some(slot) = styles
+            .get_mut("blocks")
+            .and_then(|b| b.get_mut(&block))
+            .and_then(|b| b.get_mut("variations"))
+            .and_then(Value::as_object_mut)
+        {
             slot.insert(name, merged);
             continue;
         }
@@ -550,7 +734,9 @@ fn unwrap_shared_variations(styles: &mut Value, partials: &[Value], block_order:
 
 /// All `.json` files below a directory, recursively.
 fn json_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -580,24 +766,51 @@ fn read_partials(style_dirs: &[PathBuf]) -> Vec<Value> {
         }
     }
     files.sort();
-    files.iter().filter_map(|p| read_file(p)).filter(|v| v.get("blockTypes").is_some()).collect()
+    files
+        .iter()
+        .filter_map(|p| read_file(p))
+        .filter(|v| v.get("blockTypes").is_some())
+        .collect()
 }
 
 /// Patterns a classic block theme registers from `inc/block-patterns.php`:
 /// `$block_patterns = array( 'name', ... )` and `register_block_pattern( 'theme/' . $block_pattern, require ... )`.
 fn scan_registered_patterns(theme_dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
-    let Some(php) = rustpress_core::files::read(&theme_dir.join("inc").join("block-patterns.php")) else { return };
-    let Some(prefix) = php.find("register_block_pattern(").map(|i| &php[i..]).and_then(|rest| {
-        let rest = rest["register_block_pattern(".len()..].trim_start();
-        let rest = rest.strip_prefix('\'')?;
-        let end = rest.find('\'')?;
-        rest[end + 1..].trim_start().starts_with('.').then(|| rest[..end].to_owned())
-    }) else { return };
-    let Some(list_start) = php.find("$block_patterns = array(") else { return };
+    let Some(php) = rustpress_core::files::read(&theme_dir.join("inc").join("block-patterns.php"))
+    else {
+        return;
+    };
+    let Some(prefix) = php
+        .find("register_block_pattern(")
+        .map(|i| &php[i..])
+        .and_then(|rest| {
+            let rest = rest["register_block_pattern(".len()..].trim_start();
+            let rest = rest.strip_prefix('\'')?;
+            let end = rest.find('\'')?;
+            rest[end + 1..]
+                .trim_start()
+                .starts_with('.')
+                .then(|| rest[..end].to_owned())
+        })
+    else {
+        return;
+    };
+    let Some(list_start) = php.find("$block_patterns = array(") else {
+        return;
+    };
     let list = &php[list_start + "$block_patterns = array(".len()..];
-    let Some(list_end) = list.find(");") else { return };
-    for name in list[..list_end].split(',').filter_map(|item| item.trim().strip_prefix('\'').and_then(|i| i.strip_suffix('\''))) {
-        let path = theme_dir.join("inc").join("patterns").join(format!("{name}.php"));
+    let Some(list_end) = list.find(");") else {
+        return;
+    };
+    for name in list[..list_end].split(',').filter_map(|item| {
+        item.trim()
+            .strip_prefix('\'')
+            .and_then(|i| i.strip_suffix('\''))
+    }) {
+        let path = theme_dir
+            .join("inc")
+            .join("patterns")
+            .join(format!("{name}.php"));
         if path.is_file() {
             patterns.entry(format!("{prefix}{name}")).or_insert(path);
         }
@@ -606,15 +819,24 @@ fn scan_registered_patterns(theme_dir: &Path, patterns: &mut HashMap<String, Pat
 
 /// Records `Slug:` from the docblock of every pattern file.
 fn scan_patterns(dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("php") {
             continue;
         }
-        let Some(text) = rustpress_core::files::read(&path) else { continue };
+        let Some(text) = rustpress_core::files::read(&path) else {
+            continue;
+        };
         let header: String = text.chars().take(4096).collect();
-        if let Some(slug) = header.lines().find_map(|l| l.trim().trim_start_matches('*').trim().strip_prefix("Slug:")) {
+        if let Some(slug) = header.lines().find_map(|l| {
+            l.trim()
+                .trim_start_matches('*')
+                .trim()
+                .strip_prefix("Slug:")
+        }) {
             patterns.insert(slug.trim().to_owned(), path);
         }
     }
@@ -624,29 +846,49 @@ fn scan_patterns(dir: &Path, patterns: &mut HashMap<String, PathBuf>) {
 async fn load_user_styles(site: &Site, stylesheet: &str) -> Result<Option<Value>> {
     let posts = site
         .db
-        .posts(&PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into()], ..PostQuery::default() })
+        .posts(&PostQuery {
+            post_types: vec!["wp_global_styles".into()],
+            statuses: vec!["publish".into()],
+            ..PostQuery::default()
+        })
         .await?;
     for post in posts {
-        let belongs = site.db.terms_for_post(post.id, Some("wp_theme")).await?.iter().any(|t| t.name == stylesheet);
-        if belongs
-            && let Ok(value) = serde_json::from_str::<Value>(&post.post_content) {
-                // Stored as {"version":.., "settings":.., "styles":..}.
-                return Ok(Some(value));
-            }
+        let belongs = site
+            .db
+            .terms_for_post(post.id, Some("wp_theme"))
+            .await?
+            .iter()
+            .any(|t| t.name == stylesheet);
+        if belongs && let Ok(value) = serde_json::from_str::<Value>(&post.post_content) {
+            // Stored as {"version":.., "settings":.., "styles":..}.
+            return Ok(Some(value));
+        }
     }
     Ok(None)
 }
 
 /// User-edited templates and template parts (`wp_template`, `wp_template_part`).
-async fn load_db_templates(site: &Site, stylesheet: &str) -> Result<(HashMap<String, String>, HashMap<String, String>)> {
+async fn load_db_templates(
+    site: &Site,
+    stylesheet: &str,
+) -> Result<(HashMap<String, String>, HashMap<String, String>)> {
     let mut templates = HashMap::new();
     let mut parts = HashMap::new();
     let posts = site
         .db
-        .posts(&PostQuery { post_types: vec!["wp_template".into(), "wp_template_part".into()], statuses: vec!["publish".into()], ..PostQuery::default() })
+        .posts(&PostQuery {
+            post_types: vec!["wp_template".into(), "wp_template_part".into()],
+            statuses: vec!["publish".into()],
+            ..PostQuery::default()
+        })
         .await?;
     for post in posts {
-        let belongs = site.db.terms_for_post(post.id, Some("wp_theme")).await?.iter().any(|t| t.name == stylesheet);
+        let belongs = site
+            .db
+            .terms_for_post(post.id, Some("wp_theme"))
+            .await?
+            .iter()
+            .any(|t| t.name == stylesheet);
         if !belongs {
             continue;
         }

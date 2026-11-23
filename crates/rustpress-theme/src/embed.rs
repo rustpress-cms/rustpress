@@ -14,44 +14,71 @@ use rustpress_core::{QueryResult, Site};
 use rustpress_db::Post;
 
 use crate::Result;
-use crate::document::{Document, body_classes, document_title, emoji_detection_script, emoji_style, read, wp_version};
+use crate::document::{
+    Document, body_classes, document_title, emoji_detection_script, emoji_style, read, wp_version,
+};
 use crate::theme::Theme;
 
 /// A pseudo-random number below 2^32 (`wp_rand()`), from the clock and a counter.
 fn wp_rand() -> u64 {
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
-    hasher.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    hasher.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos()),
+    );
     hasher.finish() % 4_294_967_296
 }
 
 /// `wp_generate_password( $length, false )`.
 fn generate_password(length: usize) -> String {
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    (0..length).map(|_| CHARS[(wp_rand() % CHARS.len() as u64) as usize] as char).collect()
+    (0..length)
+        .map(|_| CHARS[(wp_rand() % CHARS.len() as u64) as usize] as char)
+        .collect()
 }
 
 /// `esc_textarea()`.
 fn esc_textarea(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#039;")
 }
 
 /// `get_post_embed_url()`.
 pub async fn post_embed_url(site: &Site, post: &Post) -> Result<String> {
     let permalink = site.permalink(post).await?;
-    let embed = format!("{}{}", rustpress_core::urls::trailingslashit(&permalink), site.user_trailingslashit("embed"));
+    let embed = format!(
+        "{}{}",
+        rustpress_core::urls::trailingslashit(&permalink),
+        site.user_trailingslashit("embed")
+    );
     let home = site.home_url("");
     let path = embed.replacen(&home, "", 1);
-    let conflict = site.post_by_path(path.trim_matches('/'), "page").await?.is_some();
+    let conflict = site
+        .post_by_path(path.trim_matches('/'), "page")
+        .await?
+        .is_some();
     if !site.uses_pretty_permalinks() || conflict {
-        return Ok(esc_url(&rustpress_core::urls::add_query_arg(&permalink, "embed", "true")));
+        return Ok(esc_url(&rustpress_core::urls::add_query_arg(
+            &permalink, "embed", "true",
+        )));
     }
     Ok(esc_url(&embed))
 }
 
 /// `get_post_embed_html( $width, $height, $post )`: the quote with the iframe and the script
 /// that resizes it.
-pub async fn post_embed_html(site: &Site, wp_root: &std::path::Path, post: &Post, width: u64, height: u64) -> Result<String> {
+pub async fn post_embed_html(
+    site: &Site,
+    wp_root: &std::path::Path,
+    post: &Post,
+    width: u64,
+    height: u64,
+) -> Result<String> {
     let secret = generate_password(10);
     let embed_url = format!("{}#?secret={secret}", post_embed_url(site, post).await?);
     let title = the_title_for(site, post);
@@ -61,7 +88,10 @@ pub async fn post_embed_html(site: &Site, wp_root: &std::path::Path, post: &Post
         esc_url(&site.permalink(post).await?),
         title
     );
-    let iframe_title = sprintf(&site.tr("&#8220;%1$s&#8221; &#8212; %2$s"), &[&title, &site.settings.blogname]);
+    let iframe_title = sprintf(
+        &site.tr("&#8220;%1$s&#8221; &#8212; %2$s"),
+        &[&title, &site.settings.blogname],
+    );
     out.push_str(&format!(
         "<iframe sandbox=\"allow-scripts\" security=\"restricted\" src=\"{}\" width=\"{width}\" height=\"{height}\" title=\"{}\" data-secret=\"{}\" frameborder=\"0\" marginwidth=\"0\" marginheight=\"0\" scrolling=\"no\" class=\"wp-embedded-content\"></iframe>",
         esc_url(&embed_url),
@@ -70,14 +100,21 @@ pub async fn post_embed_html(site: &Site, wp_root: &std::path::Path, post: &Post
     ));
     let path = "js/wp-embed.min.js";
     if let Some(js) = read(&wp_root.join("wp-includes").join(path)) {
-        out.push_str(&inline_script_tag(&js, &site.site_url(&format!("wp-includes/{path}"))));
+        out.push_str(&inline_script_tag(
+            &js,
+            &site.site_url(&format!("wp-includes/{path}")),
+        ));
     }
     Ok(out)
 }
 
 /// `wp_get_inline_script_tag()` with the `sourceURL` comment WordPress adds to its own scripts.
 fn inline_script_tag(js: &str, source_url: &str) -> String {
-    format!("<script>\n{}\n//# sourceURL={}\n</script>\n", js.trim(), esc_url(source_url))
+    format!(
+        "<script>\n{}\n//# sourceURL={}\n</script>\n",
+        js.trim(),
+        esc_url(source_url)
+    )
 }
 
 /// `get_site_icon_url( $size, $fallback )`.
@@ -85,8 +122,15 @@ pub async fn site_icon_url(env: &Env<'_>, size: u64, fallback: &str) -> Result<S
     let id = env.site.options.u64("site_icon", 0);
     if id != 0 {
         let rows = env.site.db.post_meta(id).await?;
-        let value = |key: &str| rows.iter().find(|m| m.meta_key.as_deref() == Some(key)).and_then(|m| m.meta_value.clone());
-        if let (Some(file), Some(meta)) = (value("_wp_attached_file"), value("_wp_attachment_metadata").and_then(|raw| images::Metadata::parse(&raw))) {
+        let value = |key: &str| {
+            rows.iter()
+                .find(|m| m.meta_key.as_deref() == Some(key))
+                .and_then(|m| m.meta_value.clone())
+        };
+        if let (Some(file), Some(meta)) = (
+            value("_wp_attached_file"),
+            value("_wp_attachment_metadata").and_then(|raw| images::Metadata::parse(&raw)),
+        ) {
             let full = images::attachment_url(env.site, &file);
             if let Some(url) = images::intermediate_url(&full, &meta, size, size) {
                 return Ok(url);
@@ -105,10 +149,21 @@ async fn embed_site_title(env: &Env<'_>) -> Result<String> {
     let mut icon_img = String::new();
     if !icon.is_empty() {
         let icon2 = site_icon_url(env, 64, &fallback).await?;
-        let srcset = if !icon2.is_empty() && icon != icon2 { format!(" srcset=\"{} 2x\"", esc_url(&icon2)) } else { String::new() };
-        icon_img = format!("<img src=\"{}\"{srcset} width=\"32\" height=\"32\" alt=\"\" class=\"wp-embed-site-icon\" />", esc_url(&icon));
+        let srcset = if !icon2.is_empty() && icon != icon2 {
+            format!(" srcset=\"{} 2x\"", esc_url(&icon2))
+        } else {
+            String::new()
+        };
+        icon_img = format!(
+            "<img src=\"{}\"{srcset} width=\"32\" height=\"32\" alt=\"\" class=\"wp-embed-site-icon\" />",
+            esc_url(&icon)
+        );
     }
-    Ok(format!("<div class=\"wp-embed-site-title\"><a href=\"{}\" target=\"_top\">{icon_img}<span>{}</span></a></div>", esc_url(&site.home_url("")), esc_html(&site.settings.blogname)))
+    Ok(format!(
+        "<div class=\"wp-embed-site-title\"><a href=\"{}\" target=\"_top\">{icon_img}<span>{}</span></a></div>",
+        esc_url(&site.home_url("")),
+        esc_html(&site.settings.blogname)
+    ))
 }
 
 /// `the_excerpt_embed()`.
@@ -120,7 +175,12 @@ async fn excerpt_embed(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
     let more = format!(
         " &hellip; <a href=\"{}\" class=\"wp-embed-more\" target=\"_top\">{}</a>",
         esc_url(&permalink),
-        sprintf(&site.tr("Continue reading %s"), &[&format!("<span class=\"screen-reader-text\">{title}</span>")])
+        sprintf(
+            &site.tr("Continue reading %s"),
+            &[&format!(
+                "<span class=\"screen-reader-text\">{title}</span>"
+            )]
+        )
     );
     let excerpt = get_the_excerpt_with(env, post, site.excerpt_length(), &more).await?;
     let mut out = convert_chars(&site.texturize(&excerpt));
@@ -130,7 +190,9 @@ async fn excerpt_embed(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
         let (meta, file) = images::load_metadata(site, post).await?;
         if let Some(file) = file {
             let alt = String::new();
-            let link = env.in_content_filter(|| images::attachment_link(env, post, meta.as_ref(), &file, "medium", &alt));
+            let link = env.in_content_filter(|| {
+                images::attachment_link(env, post, meta.as_ref(), &file, "medium", &alt)
+            });
             out = format!("<p class=\"attachment\">{link}</p>\n");
         }
     }
@@ -151,7 +213,10 @@ async fn thumbnail(env: &Env<'_>, post: &Post) -> Result<Option<(u64, String, &'
     let mut size = "full".to_owned();
     if let Some(meta) = images::attachment_metadata(env, id).await? {
         for (name, data) in meta.sizes().into_iter().flatten() {
-            let (w, h) = (data.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0), data.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0));
+            let (w, h) = (
+                data.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                data.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            );
             if h > 0.0 && w / h > aspect {
                 aspect = w / h;
                 measurements = (w, h);
@@ -159,7 +224,11 @@ async fn thumbnail(env: &Env<'_>, post: &Post) -> Result<Option<(u64, String, &'
             }
         }
     }
-    let shape = if measurements.0 / measurements.1 >= 1.75 { "rectangular" } else { "square" };
+    let shape = if measurements.0 / measurements.1 >= 1.75 {
+        "rectangular"
+    } else {
+        "square"
+    };
     Ok(Some((id, size, shape)))
 }
 
@@ -169,13 +238,25 @@ async fn thumbnail_image(env: &Env<'_>, id: u64, size: &str) -> Result<String> {
 }
 
 /// `print_embed_comments_button()`.
-fn comments_button(site: &Site, viewer: Option<&rustpress_core::Viewer>, post: &Post, permalink: &str) -> String {
+fn comments_button(
+    site: &Site,
+    viewer: Option<&rustpress_core::Viewer>,
+    post: &Post,
+    permalink: &str,
+) -> String {
     let number = site.comments_number(post, viewer);
     if !(number > 0 || site.comments_open(post, viewer)) {
         return String::new();
     }
     let hash = if number > 0 { "#comments" } else { "#respond" };
-    let counted = sprintf(&site.trn("%s <span class=\"screen-reader-text\">Comment</span>", "%s <span class=\"screen-reader-text\">Comments</span>", number), &[&site.number_i18n(number.max(0) as u64)]);
+    let counted = sprintf(
+        &site.trn(
+            "%s <span class=\"screen-reader-text\">Comment</span>",
+            "%s <span class=\"screen-reader-text\">Comments</span>",
+            number,
+        ),
+        &[&site.number_i18n(number.max(0) as u64)],
+    );
     format!(
         "\t<div class=\"wp-embed-comments\">\n\t\t<a href=\"{}\" target=\"_top\">\n\t\t\t<span class=\"dashicons dashicons-admin-comments\"></span>\n\t\t\t{counted}\t\t</a>\n\t</div>\n\t",
         esc_url(&format!("{permalink}{hash}"))
@@ -193,8 +274,14 @@ fn sharing_button(site: &Site) -> String {
 /// `print_embed_sharing_dialog()` for the first post of the query.
 async fn sharing_dialog(site: &Site, wp_root: &std::path::Path, post: &Post) -> Result<String> {
     let suffix = format!("{}-{}", post.id, wp_rand());
-    let (tab_wp, tab_html) = (format!("wp-embed-share-tab-wordpress-{suffix}"), format!("wp-embed-share-tab-html-{suffix}"));
-    let (desc_wp, desc_html) = (format!("wp-embed-share-description-wordpress-{suffix}"), format!("wp-embed-share-description-html-{suffix}"));
+    let (tab_wp, tab_html) = (
+        format!("wp-embed-share-tab-wordpress-{suffix}"),
+        format!("wp-embed-share-tab-html-{suffix}"),
+    );
+    let (desc_wp, desc_html) = (
+        format!("wp-embed-share-description-wordpress-{suffix}"),
+        format!("wp-embed-share-description-html-{suffix}"),
+    );
     let permalink = esc_url(&site.permalink(post).await?);
     let html = esc_textarea(&post_embed_html(site, wp_root, post, 600, 400).await?);
     Ok(format!(
@@ -244,7 +331,14 @@ async fn sharing_dialog(site: &Site, wp_root: &std::path::Path, post: &Post) -> 
 async fn content(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
     let site = env.site;
     let permalink = site.permalink(post).await?;
-    let classes = post_class(env, post, &["wp-embed"], false, env.query.flags.is_singular()).await?;
+    let classes = post_class(
+        env,
+        post,
+        &["wp-embed"],
+        false,
+        env.query.flags.is_singular(),
+    )
+    .await?;
     let thumb = thumbnail(env, post).await?;
 
     let mut out = format!("\t<div class=\"{}\">\n\t\t", esc_attr(&classes.join(" ")));
@@ -255,7 +349,10 @@ async fn content(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
     if let Some((id, size, "square")) = &thumb {
         out.push_str(&format!("\t\t\t<div class=\"wp-embed-featured-image square\">\n\t\t\t\t<a href=\"{}\" target=\"_top\">\n\t\t\t\t\t{}\t\t\t\t</a>\n\t\t\t</div>\n\t\t", esc_url(&permalink), thumbnail_image(env, *id, size).await?));
     }
-    out.push_str(&format!("\n\t\t<div class=\"wp-embed-excerpt\">{}</div>\n\n\t\t", excerpt_embed(env, post).await?));
+    out.push_str(&format!(
+        "\n\t\t<div class=\"wp-embed-excerpt\">{}</div>\n\n\t\t",
+        excerpt_embed(env, post).await?
+    ));
     out.push_str(&format!(
         "\n\t\t<div class=\"wp-embed-footer\">\n\t\t\t{}\n\t\t\t<div class=\"wp-embed-meta\">\n\t\t\t\t{}{}\t\t\t</div>\n\t\t</div>\n\t</div>\n",
         embed_site_title(env).await?,
@@ -268,7 +365,11 @@ async fn content(env: &Env<'_>, post: &Arc<Post>) -> Result<String> {
 /// `embed-404.php`.
 async fn not_found(env: &Env<'_>) -> Result<String> {
     let site = env.site;
-    let link = format!("<strong><a href=\"{}\">{}</a></strong>", esc_url(&site.home_url("")), esc_html(&site.settings.blogname));
+    let link = format!(
+        "<strong><a href=\"{}\">{}</a></strong>",
+        esc_url(&site.home_url("")),
+        esc_html(&site.settings.blogname)
+    );
     Ok(format!(
         "<div class=\"wp-embed\">
 \t<p class=\"wp-embed-heading\">{}</p>
@@ -284,33 +385,61 @@ async fn not_found(env: &Env<'_>) -> Result<String> {
 </div>
 ",
         site.tr("Oops! That embed cannot be found."),
-        sprintf(&site.tr("It looks like nothing was found at this location. Maybe try visiting %s directly?"), &[&link]),
+        sprintf(
+            &site.tr(
+                "It looks like nothing was found at this location. Maybe try visiting %s directly?"
+            ),
+            &[&link]
+        ),
         embed_site_title(env).await?
     ))
 }
 
 /// Renders the embed template for a request.
-pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Registry) -> Result<Document> {
+pub async fn render(
+    theme: &Theme,
+    site: &Site,
+    q: &QueryResult,
+    registry: &Registry,
+) -> Result<Document> {
     let wp_root = &theme.wp_root;
     let version = wp_version(wp_root);
     let includes_url = site.site_url("wp-includes");
     let env = Env::new(site, q, theme, registry);
 
     // Plugins filter the title and the robots directives here too (`embed_head` prints `wp_robots()`).
-    let plugin_head = crate::head::plugin_head(theme, site, q, registry, false, None).await?.head;
+    let plugin_head = crate::head::plugin_head(theme, site, q, registry, false, None)
+        .await?
+        .head;
     let title = match plugin_head.title {
         Some(title) => title,
         None => document_title(site, q).await?,
     };
     let rtl = site.is_rtl();
     let mut head = String::new();
-    head.push_str(&format!("\t<title>{}</title>\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n\t", esc_html(&title)));
-    head.push_str(&rustpress_core::native::robots_tag(plugin_head.robots.as_deref().unwrap_or_default()));
-    if let Some(canonical) = crate::document::canonical_url(site, q, 0).await?.filter(|_| q.flags.is_singular()) {
-        head.push_str(&format!("<link rel=\"canonical\" href=\"{}\" />\n", esc_url(&canonical)));
+    head.push_str(&format!(
+        "\t<title>{}</title>\n\t<meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n\t",
+        esc_html(&title)
+    ));
+    head.push_str(&rustpress_core::native::robots_tag(
+        plugin_head.robots.as_deref().unwrap_or_default(),
+    ));
+    if let Some(canonical) = crate::document::canonical_url(site, q, 0)
+        .await?
+        .filter(|_| q.flags.is_singular())
+    {
+        head.push_str(&format!(
+            "<link rel=\"canonical\" href=\"{}\" />\n",
+            esc_url(&canonical)
+        ));
     }
     head.push_str(&emoji_style());
-    if let Some(css) = read(&wp_root.join("wp-includes").join("css").join("wp-embed-template.min.css")) {
+    if let Some(css) = read(
+        &wp_root
+            .join("wp-includes")
+            .join("css")
+            .join("wp-embed-template.min.css"),
+    ) {
         head.push_str(&format!("<style id=\"wp-embed-template-inline-css\">\n{}\n/*# sourceURL=wp-embed-template-inline-css */\n</style>\n", css.trim_end()));
     }
 
@@ -329,8 +458,16 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
     if let Some(first) = posts.first() {
         body.push_str(&sharing_dialog(site, wp_root, first).await?);
     }
-    if let Some(js) = read(&wp_root.join("wp-includes").join("js").join("wp-embed-template.min.js")) {
-        body.push_str(&inline_script_tag(&js, &format!("{includes_url}/js/wp-embed-template.min.js")));
+    if let Some(js) = read(
+        &wp_root
+            .join("wp-includes")
+            .join("js")
+            .join("wp-embed-template.min.js"),
+    ) {
+        body.push_str(&inline_script_tag(
+            &js,
+            &format!("{includes_url}/js/wp-embed-template.min.js"),
+        ));
     }
     let state = env.take_state();
     let mut handles: Vec<String> = Vec::new();
@@ -344,7 +481,9 @@ pub async fn render(theme: &Theme, site: &Site, q: &QueryResult, registry: &Regi
         }
     }
     for handle in &handles {
-        let Some(slug) = handle.strip_prefix("wp-block-") else { continue };
+        let Some(slug) = handle.strip_prefix("wp-block-") else {
+            continue;
+        };
         if rustpress_core::files::is_file(&registry.blocks_dir().join(slug).join("style.min.css")) {
             body.push_str(&format!("<link rel='stylesheet' id='{handle}-css' href='{includes_url}/blocks/{slug}/style.min.css?ver={version}' media='all' />\n"));
         }

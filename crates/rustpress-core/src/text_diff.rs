@@ -26,7 +26,12 @@ fn loose_eq(a: &str, b: &str) -> bool {
 
 fn numeric(s: &str) -> Option<f64> {
     let t = s.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{b}' | '\u{c}'));
-    if t.is_empty() || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-')) || !t.chars().any(|c| c.is_ascii_digit()) {
+    if t.is_empty()
+        || !t
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'))
+        || !t.chars().any(|c| c.is_ascii_digit())
+    {
         return None;
     }
     t.parse::<f64>().ok()
@@ -53,7 +58,11 @@ impl Native {
         let to_lines: Vec<String> = to.iter().map(trim).collect();
         let n_from = from_lines.len();
         let n_to = to_lines.len();
-        let mut e = Native { xchanged: vec![false; n_from], ychanged: vec![false; n_to], ..Default::default() };
+        let mut e = Native {
+            xchanged: vec![false; n_from],
+            ychanged: vec![false; n_to],
+            ..Default::default()
+        };
 
         let mut skip = 0;
         while skip < n_from && skip < n_to {
@@ -76,7 +85,9 @@ impl Native {
             endskip += 1;
         }
 
-        let xhash: HashSet<&str> = (skip..n_from - endskip).map(|i| from_lines[i].as_str()).collect();
+        let xhash: HashSet<&str> = (skip..n_from - endskip)
+            .map(|i| from_lines[i].as_str())
+            .collect();
         let mut yhash: HashSet<&str> = HashSet::new();
         for yi in skip..n_to - endskip {
             let line = to_lines[yi].as_str();
@@ -172,7 +183,14 @@ impl Native {
     }
 
     /// `_diag()`: `(lcs, seps)`.
-    fn diag(&mut self, mut xoff: usize, mut xlim: usize, mut yoff: usize, mut ylim: usize, nchunks: usize) -> (usize, Vec<(usize, usize)>) {
+    fn diag(
+        &mut self,
+        mut xoff: usize,
+        mut xlim: usize,
+        mut yoff: usize,
+        mut ylim: usize,
+        nchunks: usize,
+    ) -> (usize, Vec<(usize, usize)>) {
         let mut flip = false;
         if xlim - xoff > ylim - yoff {
             // Things seems faster (I'm not sure I understand why) when the shortest sequence is in X.
@@ -182,7 +200,11 @@ impl Native {
         }
         let mut ymatches: HashMap<String, Vec<i64>> = HashMap::new();
         for i in (yoff..ylim).rev() {
-            let key = if flip { self.xv[i].clone() } else { self.yv[i].clone() };
+            let key = if flip {
+                self.xv[i].clone()
+            } else {
+                self.yv[i].clone()
+            };
             ymatches.entry(key).or_default().push(i as i64);
         }
         self.lcs = 0;
@@ -205,9 +227,15 @@ impl Native {
             }
             let x1 = xoff + (numer + (xlim - xoff) * chunk) / nchunks;
             while x < x1 {
-                let line = if flip { self.yv[x].clone() } else { self.xv[x].clone() };
+                let line = if flip {
+                    self.yv[x].clone()
+                } else {
+                    self.xv[x].clone()
+                };
                 x += 1;
-                let Some(matches) = ymatches.get(&line).cloned() else { continue };
+                let Some(matches) = ymatches.get(&line).cloned() else {
+                    continue;
+                };
                 if matches.is_empty() {
                     continue;
                 }
@@ -422,7 +450,11 @@ fn blocks(diffs: &[Op], nlead: usize, ntrail: usize) -> Vec<Vec<Op>> {
             // Do we have any diff blocks yet?
             if let Some(b) = block.as_mut() {
                 // How many lines to keep as context from the copy block.
-                let keep = if i == diffs.len() - 1 { ntrail } else { nlead + ntrail };
+                let keep = if i == diffs.len() - 1 {
+                    ntrail
+                } else {
+                    nlead + ntrail
+                };
                 if orig.len() <= keep {
                     // We have less lines in the block than we want for context => keep the whole copy block.
                     b.push(edit.clone());
@@ -480,11 +512,18 @@ fn split_on_words(text: &str, newline_escape: &str) -> Vec<String> {
         }
     }
     words.push(current);
-    words.into_iter().map(|w| w.replace('\n', newline_escape)).collect()
+    words
+        .into_iter()
+        .map(|w| w.replace('\n', newline_escape))
+        .collect()
 }
 
 fn inline_lines(lines: &[String], level: Split) -> String {
-    if level == Split::Lines { format!("{}\n", lines.join("\n")) } else { lines.concat() }
+    if level == Split::Lines {
+        format!("{}\n", lines.join("\n"))
+    } else {
+        lines.concat()
+    }
 }
 
 fn inline_added(lines: &[String], level: Split) -> String {
@@ -518,7 +557,11 @@ fn inline_changed(orig: &[String], fin: &[String], level: Split) -> String {
             orig[0] = orig[0][1..].to_owned();
             fin[0] = fin[0][1..].to_owned();
         }
-        return format!("{prefix}{}{}", inline_deleted(&orig, level), inline_added(&fin, level));
+        return format!(
+            "{prefix}{}{}",
+            inline_deleted(&orig, level),
+            inline_added(&fin, level)
+        );
     }
     let text1 = orig.join("\n");
     let text2 = fin.join("\n");
@@ -556,7 +599,11 @@ pub struct TableLabels {
 
 impl Default for TableLabels {
     fn default() -> Self {
-        Self { added: "Added:".into(), deleted: "Deleted:".into(), unchanged: "Unchanged:".into() }
+        Self {
+            added: "Added:".into(),
+            deleted: "Deleted:".into(),
+            unchanged: "Unchanged:".into(),
+        }
     }
 }
 
@@ -567,23 +614,39 @@ struct Table<'a> {
 
 impl Table<'_> {
     fn added_line(&self, line: &str) -> String {
-        format!("<td class='diff-addedline'><span aria-hidden='true' class='dashicons dashicons-plus'></span><span class='screen-reader-text'>{} </span>{line}</td>", self.labels.added)
+        format!(
+            "<td class='diff-addedline'><span aria-hidden='true' class='dashicons dashicons-plus'></span><span class='screen-reader-text'>{} </span>{line}</td>",
+            self.labels.added
+        )
     }
 
     fn deleted_line(&self, line: &str) -> String {
-        format!("<td class='diff-deletedline'><span aria-hidden='true' class='dashicons dashicons-minus'></span><span class='screen-reader-text'>{} </span>{line}</td>", self.labels.deleted)
+        format!(
+            "<td class='diff-deletedline'><span aria-hidden='true' class='dashicons dashicons-minus'></span><span class='screen-reader-text'>{} </span>{line}</td>",
+            self.labels.deleted
+        )
     }
 
     fn context_line(&self, line: &str) -> String {
-        format!("<td class='diff-context'><span class='screen-reader-text'>{} </span>{line}</td>", self.labels.unchanged)
+        format!(
+            "<td class='diff-context'><span class='screen-reader-text'>{} </span>{line}</td>",
+            self.labels.unchanged
+        )
     }
 
     fn added(&self, lines: &[String], encode: bool) -> String {
         let mut r = String::new();
         for line in lines {
-            let line = if encode { htmlspecialchars(line) } else { line.clone() };
+            let line = if encode {
+                htmlspecialchars(line)
+            } else {
+                line.clone()
+            };
             if self.split_view {
-                r.push_str(&format!("<tr><td>&nbsp;</td>{}</tr>\n", self.added_line(&line)));
+                r.push_str(&format!(
+                    "<tr><td>&nbsp;</td>{}</tr>\n",
+                    self.added_line(&line)
+                ));
             } else {
                 r.push_str(&format!("<tr>{}</tr>\n", self.added_line(&line)));
             }
@@ -594,9 +657,16 @@ impl Table<'_> {
     fn deleted(&self, lines: &[String], encode: bool) -> String {
         let mut r = String::new();
         for line in lines {
-            let line = if encode { htmlspecialchars(line) } else { line.clone() };
+            let line = if encode {
+                htmlspecialchars(line)
+            } else {
+                line.clone()
+            };
             if self.split_view {
-                r.push_str(&format!("<tr>{}<td>&nbsp;</td></tr>\n", self.deleted_line(&line)));
+                r.push_str(&format!(
+                    "<tr>{}<td>&nbsp;</td></tr>\n",
+                    self.deleted_line(&line)
+                ));
             } else {
                 r.push_str(&format!("<tr>{}</tr>\n", self.deleted_line(&line)));
             }
@@ -609,7 +679,11 @@ impl Table<'_> {
         for line in lines {
             let line = htmlspecialchars(line);
             if self.split_view {
-                r.push_str(&format!("<tr>{}{}</tr>\n", self.context_line(&line), self.context_line(&line)));
+                r.push_str(&format!(
+                    "<tr>{}{}</tr>\n",
+                    self.context_line(&line),
+                    self.context_line(&line)
+                ));
             } else {
                 r.push_str(&format!("<tr>{}</tr>\n", self.context_line(&line)));
             }
@@ -618,7 +692,8 @@ impl Table<'_> {
     }
 
     fn changed(&self, orig: &[String], fin: &[String]) -> String {
-        let (orig_matches, _final_matches, orig_rows, final_rows) = interleave_changed_lines(orig, fin);
+        let (orig_matches, _final_matches, orig_rows, final_rows) =
+            interleave_changed_lines(orig, fin);
         let mut orig_diffs: HashMap<usize, String> = HashMap::new();
         let mut final_diffs: HashMap<usize, String> = HashMap::new();
         for (o, f) in &orig_matches {
@@ -662,9 +737,17 @@ impl Table<'_> {
             } else if frow < 0 {
                 r.push_str(&self.deleted(&[orig_line], false));
             } else if self.split_view {
-                r.push_str(&format!("<tr>{}{}</tr>\n", self.deleted_line(&orig_line), self.added_line(&final_line)));
+                r.push_str(&format!(
+                    "<tr>{}{}</tr>\n",
+                    self.deleted_line(&orig_line),
+                    self.added_line(&final_line)
+                ));
             } else {
-                r.push_str(&format!("<tr>{}</tr><tr>{}</tr>\n", self.deleted_line(&orig_line), self.added_line(&final_line)));
+                r.push_str(&format!(
+                    "<tr>{}</tr><tr>{}</tr>\n",
+                    self.deleted_line(&orig_line),
+                    self.added_line(&final_line)
+                ));
             }
         }
         r
@@ -697,7 +780,10 @@ fn ins_del_pieces(diff: &str) -> Vec<String> {
 }
 
 fn strip_ins_del(text: &str) -> String {
-    text.replace("<ins>", "").replace("</ins>", "").replace("<del>", "").replace("</del>", "")
+    text.replace("<ins>", "")
+        .replace("</ins>", "")
+        .replace("<del>", "")
+        .replace("</del>", "")
 }
 
 /// `preg_replace( '|<ins>.*?</ins>|', '', $diff )`.
@@ -741,11 +827,18 @@ fn string_distance(a: &str, b: &str) -> f64 {
         cb[byte as usize] += 1;
     }
     let difference: i64 = ca.iter().zip(cb.iter()).map(|(x, y)| (x - y).abs()).sum();
-    if a.is_empty() || a == "0" { difference as f64 } else { difference as f64 / a.len() as f64 }
+    if a.is_empty() || a == "0" {
+        difference as f64
+    } else {
+        difference as f64 / a.len() as f64
+    }
 }
 
 /// `interleave_changed_lines()`: `(orig_matches, final_matches, orig_rows, final_rows)`.
-fn interleave_changed_lines(orig: &[String], fin: &[String]) -> (Vec<(usize, Match)>, Vec<(usize, Match)>, Vec<i64>, Vec<i64>) {
+fn interleave_changed_lines(
+    orig: &[String],
+    fin: &[String],
+) -> (Vec<(usize, Match)>, Vec<(usize, Match)>, Vec<i64>, Vec<i64>) {
     let mut matches: Vec<((usize, usize), f64)> = Vec::new();
     for o in 0..orig.len() {
         for f in 0..fin.len() {
@@ -757,7 +850,10 @@ fn interleave_changed_lines(orig: &[String], fin: &[String]) -> (Vec<(usize, Mat
     let mut orig_matches: BTreeMap<usize, Match> = BTreeMap::new();
     let mut final_matches: BTreeMap<usize, Match> = BTreeMap::new();
     for ((o, f), _) in matches {
-        let (has_o, has_f) = (orig_matches.contains_key(&o), final_matches.contains_key(&f));
+        let (has_o, has_f) = (
+            orig_matches.contains_key(&o),
+            final_matches.contains_key(&f),
+        );
         if has_o && has_f {
             continue;
         }
@@ -811,7 +907,12 @@ fn interleave_changed_lines(orig: &[String], fin: &[String]) -> (Vec<(usize, Mat
             diff_count += 1;
         }
     }
-    (orig_matches.into_iter().collect(), final_matches.into_iter().collect(), orig_rows, final_rows)
+    (
+        orig_matches.into_iter().collect(),
+        final_matches.into_iter().collect(),
+        orig_rows,
+        final_rows,
+    )
 }
 
 /// What `wp_text_diff()` is asked for.
@@ -826,13 +927,21 @@ pub struct DiffArgs {
 
 impl Default for DiffArgs {
     fn default() -> Self {
-        Self { title: String::new(), title_left: String::new(), title_right: String::new(), show_split_view: true, labels: TableLabels::default() }
+        Self {
+            title: String::new(),
+            title_left: String::new(),
+            title_right: String::new(),
+            show_split_view: true,
+            labels: TableLabels::default(),
+        }
     }
 }
 
 /// `normalize_whitespace()`: trimmed, runs of newlines and of blanks collapsed.
 pub fn normalize_whitespace(text: &str) -> String {
-    let trimmed = text.trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{b}')).replace('\r', "\n");
+    let trimmed = text
+        .trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{b}'))
+        .replace('\r', "\n");
     let mut out = String::with_capacity(trimmed.len());
     let mut last_newline = false;
     let mut last_blank = false;
@@ -867,7 +976,10 @@ pub fn wp_text_diff(left: &str, right: &str, args: &DiffArgs) -> String {
     let left_lines: Vec<String> = left.split('\n').map(str::to_owned).collect();
     let right_lines: Vec<String> = right.split('\n').map(str::to_owned).collect();
     let edits = Native::diff(&left_lines, &right_lines);
-    let table = Table { split_view: args.show_split_view, labels: &args.labels };
+    let table = Table {
+        split_view: args.show_split_view,
+        labels: &args.labels,
+    };
     let mut diff = String::new();
     for block in blocks(&edits, 10000, 10000) {
         for edit in &block {
@@ -882,20 +994,38 @@ pub fn wp_text_diff(left: &str, right: &str, args: &DiffArgs) -> String {
     if diff.is_empty() {
         return String::new();
     }
-    let split_class = if args.show_split_view { " is-split-view" } else { "" };
+    let split_class = if args.show_split_view {
+        " is-split-view"
+    } else {
+        ""
+    };
     let mut r = format!("<table class='diff{split_class}'>\n");
     if !args.title.is_empty() {
-        r.push_str(&format!("<caption class='diff-title'>{}</caption>\n", args.title));
+        r.push_str(&format!(
+            "<caption class='diff-title'>{}</caption>\n",
+            args.title
+        ));
     }
     let titled = !args.title_left.is_empty() || !args.title_right.is_empty();
     if titled {
         r.push_str("<thead>");
-        let left_tag = if args.title_left.is_empty() { "td" } else { "th" };
-        let right_tag = if args.title_right.is_empty() { "td" } else { "th" };
+        let left_tag = if args.title_left.is_empty() {
+            "td"
+        } else {
+            "th"
+        };
+        let right_tag = if args.title_right.is_empty() {
+            "td"
+        } else {
+            "th"
+        };
         r.push_str("<tr class='diff-sub-title'>\n");
         r.push_str(&format!("\t<{left_tag}>{}</{left_tag}>\n", args.title_left));
         if args.show_split_view {
-            r.push_str(&format!("\t<{right_tag}>{}</{right_tag}>\n", args.title_right));
+            r.push_str(&format!(
+                "\t<{right_tag}>{}</{right_tag}>\n",
+                args.title_right
+            ));
         }
         r.push_str("</tr>\n");
         r.push_str("</thead>\n");
@@ -921,15 +1051,35 @@ mod tests {
     #[test]
     fn engine_finds_changes() {
         let edits = text_diff(&lines("a\nb\nc"), &lines("a\nx\nc"));
-        assert_eq!(edits, vec![Op::Copy(vec!["a".into()]), Op::Change(vec!["b".into()], vec!["x".into()]), Op::Copy(vec!["c".into()])]);
+        assert_eq!(
+            edits,
+            vec![
+                Op::Copy(vec!["a".into()]),
+                Op::Change(vec!["b".into()], vec!["x".into()]),
+                Op::Copy(vec!["c".into()])
+            ]
+        );
     }
 
     #[test]
     fn added_and_deleted_lines() {
         let edits = text_diff(&lines("a\nb"), &lines("a\nb\nc"));
-        assert_eq!(edits, vec![Op::Copy(vec!["a".into(), "b".into()]), Op::Add(vec!["c".into()])]);
+        assert_eq!(
+            edits,
+            vec![
+                Op::Copy(vec!["a".into(), "b".into()]),
+                Op::Add(vec!["c".into()])
+            ]
+        );
         let edits = text_diff(&lines("a\nb\nc"), &lines("a\nc"));
-        assert_eq!(edits, vec![Op::Copy(vec!["a".into()]), Op::Delete(vec!["b".into()]), Op::Copy(vec!["c".into()])]);
+        assert_eq!(
+            edits,
+            vec![
+                Op::Copy(vec!["a".into()]),
+                Op::Delete(vec!["b".into()]),
+                Op::Copy(vec!["c".into()])
+            ]
+        );
     }
 
     #[test]

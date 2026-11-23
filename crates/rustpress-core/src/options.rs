@@ -28,7 +28,8 @@ pub struct Options {
 
 impl Options {
     pub async fn load(db: &Db) -> Result<Self> {
-        let mut autoloaded: HashMap<String, String> = db.autoload_options().await?.into_iter().collect();
+        let mut autoloaded: HashMap<String, String> =
+            db.autoload_options().await?.into_iter().collect();
         // Like the `WP_HOME` and `WP_SITEURL` constants: the address the site is served at wins over
         // the options (a scratch database shared with another server).
         if let Ok(url) = std::env::var("RUSTPRESS_SITE_URL") {
@@ -41,7 +42,12 @@ impl Options {
 
     /// Builds an option set from known values (tests, defaults).
     pub fn from_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
-        Self { autoloaded: pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect() }
+        Self {
+            autoloaded: pairs
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                .collect(),
+        }
     }
 
     /// Sets an autoloaded option for this copy of the options (`pre_option_{$option}` of a preview).
@@ -59,7 +65,9 @@ impl Options {
     }
 
     pub fn u64(&self, name: &str, default: u64) -> u64 {
-        self.get(name).and_then(|v| v.trim().parse().ok()).unwrap_or(default)
+        self.get(name)
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(default)
     }
 
     /// Unserialized value of an autoloaded option.
@@ -93,7 +101,10 @@ pub fn php_to_json(value: &rustpress_phpser::Value) -> Value2 {
         Php::Float(f) => serde_json::Number::from_f64(*f).map_or(Value2::Null, Value2::Number),
         Php::Str(s) => Value2::String(String::from_utf8_lossy(s).into_owned()),
         Php::Array(items) | Php::Object { props: items, .. } => {
-            let is_list = items.iter().enumerate().all(|(i, (k, _))| matches!(k, Key::Int(n) if *n == i as i64));
+            let is_list = items
+                .iter()
+                .enumerate()
+                .all(|(i, (k, _))| matches!(k, Key::Int(n) if *n == i as i64));
             if is_list {
                 Value2::Array(items.iter().map(|(_, v)| php_to_json(v)).collect())
             } else {
@@ -121,9 +132,15 @@ mod tests {
     #[test]
     fn plain_strings_stay_strings() {
         assert_eq!(maybe_unserialize("hello"), Value::Str(b"hello".to_vec()));
-        assert_eq!(maybe_unserialize("/%postname%/"), Value::Str(b"/%postname%/".to_vec()));
+        assert_eq!(
+            maybe_unserialize("/%postname%/"),
+            Value::Str(b"/%postname%/".to_vec())
+        );
         // Looks like the start of a serialized value but is not valid.
-        assert_eq!(maybe_unserialize("a:oops;"), Value::Str(b"a:oops;".to_vec()));
+        assert_eq!(
+            maybe_unserialize("a:oops;"),
+            Value::Str(b"a:oops;".to_vec())
+        );
         assert_eq!(maybe_unserialize(""), Value::Str(Vec::new()));
     }
 

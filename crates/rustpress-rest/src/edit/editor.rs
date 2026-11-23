@@ -22,7 +22,9 @@ fn style_header(css: &str, key: &str) -> Option<String> {
     head.lines().find_map(|line| {
         let line = line.trim().trim_start_matches('*').trim();
         let (k, v) = line.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(key).then(|| v.trim().to_owned())
+        k.trim()
+            .eq_ignore_ascii_case(key)
+            .then(|| v.trim().to_owned())
     })
 }
 
@@ -39,10 +41,34 @@ fn is_empty_config(value: &Value) -> bool {
 /// The widgets WordPress registers.
 /// `get_allowed_block_template_part_areas()`: `(area, label, description, icon, tag)`.
 pub(crate) const PART_AREAS: [(&str, &str, &str, &str, &str); 4] = [
-    ("uncategorized", "General", "General templates often perform a specific role like displaying post content, and are not tied to any particular area.", "layout", "div"),
-    ("header", "Header", "The Header template defines a page area that typically contains a title, logo, and main navigation.", "header", "header"),
-    ("footer", "Footer", "The Footer template defines a page area that typically contains site credits, social links, or any other combination of blocks.", "footer", "footer"),
-    ("navigation-overlay", "Navigation Overlay", "The Navigation Overlay template defines an overlay area that typically contains navigation links and can be toggled open and closed.", "navigation-overlay", "div"),
+    (
+        "uncategorized",
+        "General",
+        "General templates often perform a specific role like displaying post content, and are not tied to any particular area.",
+        "layout",
+        "div",
+    ),
+    (
+        "header",
+        "Header",
+        "The Header template defines a page area that typically contains a title, logo, and main navigation.",
+        "header",
+        "header",
+    ),
+    (
+        "footer",
+        "Footer",
+        "The Footer template defines a page area that typically contains site credits, social links, or any other combination of blocks.",
+        "footer",
+        "footer",
+    ),
+    (
+        "navigation-overlay",
+        "Navigation Overlay",
+        "The Navigation Overlay template defines an overlay area that typically contains navigation links and can be toggled open and closed.",
+        "navigation-overlay",
+        "div",
+    ),
 ];
 
 impl Rest<'_> {
@@ -66,21 +92,51 @@ impl Rest<'_> {
 
     async fn theme_object_for(&self, stylesheet: &str) -> Value {
         let active = stylesheet == self.theme.stylesheet;
-        let dir = if active { self.theme.stylesheet_dir().to_path_buf() } else { self.theme.wp_root.join("wp-content").join("themes").join(stylesheet) };
+        let dir = if active {
+            self.theme.stylesheet_dir().to_path_buf()
+        } else {
+            self.theme
+                .wp_root
+                .join("wp-content")
+                .join("themes")
+                .join(stylesheet)
+        };
         let css = std::fs::read_to_string(dir.join("style.css")).unwrap_or_default();
         let header = |key: &str| style_header(&css, key).unwrap_or_default();
         let rendered_author = {
             let name = header("Author");
             let uri = header("Author URI");
-            if uri.is_empty() { name } else { format!("<a href=\"{uri}\">{name}</a>") }
+            if uri.is_empty() {
+                name
+            } else {
+                format!("<a href=\"{uri}\">{name}</a>")
+            }
         };
-        let content_url = format!("{}/wp-content/themes/{}", self.site.settings.siteurl.trim_end_matches('/'), stylesheet);
-        let mut tags: Vec<String> = header("Tags").split(',').map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).collect();
+        let content_url = format!(
+            "{}/wp-content/themes/{}",
+            self.site.settings.siteurl.trim_end_matches('/'),
+            stylesheet
+        );
+        let mut tags: Vec<String> = header("Tags")
+            .split(',')
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect();
         // In the administration `get_theme_feature_list()` exists and names the features (`translate_header()`).
         if self.admin {
-            tags = tags.into_iter().map(|t| rustpress_theme::theme_headers::feature_label(&t).map_or(t, |label| self.site.tr(label))).collect();
+            tags = tags
+                .into_iter()
+                .map(|t| {
+                    rustpress_theme::theme_headers::feature_label(&t)
+                        .map_or(t, |label| self.site.tr(label))
+                })
+                .collect();
         }
-        let screenshot = ["png", "jpg", "jpeg", "gif", "webp"].iter().find(|e| dir.join(format!("screenshot.{e}")).is_file()).map(|e| format!("{content_url}/screenshot.{e}")).unwrap_or_default();
+        let screenshot = ["png", "jpg", "jpeg", "gif", "webp"]
+            .iter()
+            .find(|e| dir.join(format!("screenshot.{e}")).is_file())
+            .map(|e| format!("{content_url}/screenshot.{e}"))
+            .unwrap_or_default();
         let supports = json!({
             "align-wide": false, "automatic-feed-links": true, "block-templates": true, "block-template-parts": false, "custom-background": false, "custom-header": false, "custom-logo": false,
             "customize-selective-refresh-widgets": false, "dark-editor-style": false, "disable-custom-colors": false, "disable-custom-font-sizes": false, "disable-custom-gradients": false,
@@ -92,9 +148,30 @@ impl Rest<'_> {
         let mut links = Links::new();
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/themes/{stylesheet}")), "targetHints": {"allow": ["GET"]}}));
         links.add("collection", vec![], self.rest_url("wp/v2/themes"));
-        let query = rustpress_db::PostQuery { post_types: vec!["wp_global_styles".into()], statuses: vec!["publish".into(), "draft".into()], names: vec![format!("wp-global-styles-{}", rustpress_core::slug::sanitize_title(stylesheet))], limit: Some(1), ..Default::default() };
-        if active && let Some(post) = self.site.db.posts(&query).await.ok().and_then(|posts| posts.into_iter().next()) {
-            links.add("wp:user-global-styles", vec![], self.rest_url(&format!("wp/v2/global-styles/{}", post.id)));
+        let query = rustpress_db::PostQuery {
+            post_types: vec!["wp_global_styles".into()],
+            statuses: vec!["publish".into(), "draft".into()],
+            names: vec![format!(
+                "wp-global-styles-{}",
+                rustpress_core::slug::sanitize_title(stylesheet)
+            )],
+            limit: Some(1),
+            ..Default::default()
+        };
+        if active
+            && let Some(post) = self
+                .site
+                .db
+                .posts(&query)
+                .await
+                .ok()
+                .and_then(|posts| posts.into_iter().next())
+        {
+            links.add(
+                "wp:user-global-styles",
+                vec![],
+                self.rest_url(&format!("wp/v2/global-styles/{}", post.id)),
+            );
         }
         if active && self.can("edit_theme_options") {
             links.push_raw("wp:export-theme", json!({"targetHints": {"allow": ["GET"]}, "href": self.rest_url("wp-block-editor/v1/export")}));
@@ -104,8 +181,15 @@ impl Rest<'_> {
             .iter()
             .map(|(area, label, description, icon, tag)| json!({"area": area, "label": self.site.tr(label), "description": self.site.tr(description), "icon": icon, "area_tag": tag}))
             .collect();
-        let template = style_header(&css, "Template").filter(|t| !t.is_empty()).unwrap_or_else(|| stylesheet.to_owned());
-        let is_block_theme = [dir.join("templates").join("index.html"), dir.join("block-templates").join("index.html")].iter().any(|p| p.is_file());
+        let template = style_header(&css, "Template")
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| stylesheet.to_owned());
+        let is_block_theme = [
+            dir.join("templates").join("index.html"),
+            dir.join("block-templates").join("index.html"),
+        ]
+        .iter()
+        .any(|p| p.is_file());
         let mut theme = json!({
             "stylesheet": stylesheet,
             "template": if active { self.theme.template.clone() } else { template },
@@ -135,8 +219,14 @@ impl Rest<'_> {
                     }
                     full.insert(key, value);
                 }
-                full.insert("default_template_types".into(), Value::Array(template_types.clone()));
-                full.insert("default_template_part_areas".into(), Value::Array(part_areas.clone()));
+                full.insert(
+                    "default_template_types".into(),
+                    Value::Array(template_types.clone()),
+                );
+                full.insert(
+                    "default_template_part_areas".into(),
+                    Value::Array(part_areas.clone()),
+                );
                 *map = full;
             }
             map.insert("_links".into(), links.finish());
@@ -149,35 +239,90 @@ impl Rest<'_> {
     /// the block editor reads for everybody who writes (`current_user_can( 'edit_posts' )`, then every
     /// `$post_type->cap->edit_posts`; `edit_theme_options` is the capability of the types of the site editor).
     pub(crate) fn edits_something(&self) -> bool {
-        self.can("edit_posts") || self.can("edit_pages") || self.can("edit_theme_options") || self.site.types.post_types.iter().any(|t| t.show_in_rest && self.can(&rustpress_auth::meta_caps::TypeCaps::of(&t.name).edit_posts))
+        self.can("edit_posts")
+            || self.can("edit_pages")
+            || self.can("edit_theme_options")
+            || self.site.types.post_types.iter().any(|t| {
+                t.show_in_rest
+                    && self.can(&rustpress_auth::meta_caps::TypeCaps::of(&t.name).edit_posts)
+            })
     }
 
-    pub(crate) async fn editor_route(&self, segments: &[&str], method: &str, args: &Args, params: &Params) -> Result<Option<Outcome>> {
+    pub(crate) async fn editor_route(
+        &self,
+        segments: &[&str],
+        method: &str,
+        args: &Args,
+        params: &Params,
+    ) -> Result<Option<Outcome>> {
         let get = method == "GET";
         // The revisions and autosaves of an item that is not there (or of another type) have no parent.
-        if get && segments.len() >= 5 && segments[0] == "wp" && segments[1] == "v2" && matches!(segments[4], "revisions" | "autosaves") {
+        if get
+            && segments.len() >= 5
+            && segments[0] == "wp"
+            && segments[1] == "v2"
+            && matches!(segments[4], "revisions" | "autosaves")
+        {
             let expected = match segments[2] {
                 "blocks" => Some("wp_block".to_owned()),
                 "navigation" => Some("wp_navigation".to_owned()),
                 "global-styles" => Some("wp_global_styles".to_owned()),
                 "menu-items" => Some("nav_menu_item".to_owned()),
-                other => self.site.types.post_types.iter().find(|t| t.show_in_rest && t.rest_base() == other).map(|t| t.name.clone()),
+                other => self
+                    .site
+                    .types
+                    .post_types
+                    .iter()
+                    .find(|t| t.show_in_rest && t.rest_base() == other)
+                    .map(|t| t.name.clone()),
             };
             if let Some(expected) = expected {
                 let found = match segments[3].parse::<u64>() {
-                    Ok(id) => self.site.db.post(id).await?.is_some_and(|p| p.post_type == expected),
+                    Ok(id) => self
+                        .site
+                        .db
+                        .post(id)
+                        .await?
+                        .is_some_and(|p| p.post_type == expected),
                     Err(_) => false,
                 };
                 if !found && (self.can("edit_theme_options") || self.can("edit_posts")) {
-                    return Ok(Some(Err(RestError::new("rest_post_invalid_parent", "Invalid post parent ID.", 404))));
+                    return Ok(Some(Err(RestError::new(
+                        "rest_post_invalid_parent",
+                        "Invalid post parent ID.",
+                        404,
+                    ))));
                 }
             }
         }
         let outcome = match segments {
-            ["wp", "v2", "menu-items", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_post_invalid_id", "Invalid post ID.", 404)),
-            ["wp", "v2", "menus", id] if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() => Err(RestError::new("rest_term_invalid", "Term does not exist.", 404)),
-            ["wp", "v2", "menu-locations", _] if get && self.can("edit_theme_options") => Err(RestError::new("rest_menu_location_invalid", "Invalid menu location.", 404)),
-            ["wp", "v2", "themes"] if get && (self.can("switch_themes") || (self.can("edit_posts") && args.str("status").as_deref() == Some("active"))) => {
+            ["wp", "v2", "menu-items", id]
+                if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() =>
+            {
+                Err(RestError::new(
+                    "rest_post_invalid_id",
+                    "Invalid post ID.",
+                    404,
+                ))
+            }
+            ["wp", "v2", "menus", id]
+                if get && self.can("edit_theme_options") && id.parse::<u64>().is_ok() =>
+            {
+                Err(RestError::new(
+                    "rest_term_invalid",
+                    "Term does not exist.",
+                    404,
+                ))
+            }
+            ["wp", "v2", "menu-locations", _] if get && self.can("edit_theme_options") => Err(
+                RestError::new("rest_menu_location_invalid", "Invalid menu location.", 404),
+            ),
+            ["wp", "v2", "themes"]
+                if get
+                    && (self.can("switch_themes")
+                        || (self.can("edit_posts")
+                            && args.str("status").as_deref() == Some("active"))) =>
+            {
                 let wanted = args.str("status");
                 let mut list = Vec::new();
                 for slug in self.installed_themes() {
@@ -199,57 +344,157 @@ impl Rest<'_> {
                 resp.total_pages = Some(1);
                 Ok(resp)
             }
-            ["wp", "v2", "themes", name] if get && (self.can("switch_themes") || (self.can("edit_posts") && *name == self.theme.stylesheet)) && self.installed_themes().iter().any(|t| t == name) => Ok(Resp::item(self.theme_object_for(name).await)),
+            ["wp", "v2", "themes", name]
+                if get
+                    && (self.can("switch_themes")
+                        || (self.can("edit_posts") && *name == self.theme.stylesheet))
+                    && self.installed_themes().iter().any(|t| t == name) =>
+            {
+                Ok(Resp::item(self.theme_object_for(name).await))
+            }
             ["wp-block-editor", "v1", "url-details"] if get => {
                 if args.str("url").is_none() {
                     Err(RestError::missing_params(&["url"]))
                 } else if !self.can("edit_posts") {
-                    Err(self.forbidden("rest_cannot_view_url_details", "Sorry, you are not allowed to process remote URLs."))
+                    Err(self.forbidden(
+                        "rest_cannot_view_url_details",
+                        "Sorry, you are not allowed to process remote URLs.",
+                    ))
                 } else {
                     // RustPress makes no requests to other servers.
-                    Err(RestError::new("no_response", "URL not found. Response returned a non-200 status code for this URL.", 404).after_permission_check())
+                    Err(RestError::new(
+                        "no_response",
+                        "URL not found. Response returned a non-200 status code for this URL.",
+                        404,
+                    )
+                    .after_permission_check())
                 }
             }
-            ["wp", "v2", "block-directory", "search"] if get && args.str("term").is_none() => Err(RestError::missing_params(&["term"])),
+            ["wp", "v2", "block-directory", "search"] if get && args.str("term").is_none() => {
+                Err(RestError::missing_params(&["term"]))
+            }
             // `WP_REST_Block_Directory_Controller::get_items_permissions_check()`.
-            ["wp", "v2", "block-directory", "search"] if get && !(self.can("install_plugins") && self.can("activate_plugins")) => Err(self.forbidden("rest_block_directory_cannot_view", "Sorry, you are not allowed to browse the block directory.")),
+            ["wp", "v2", "block-directory", "search"]
+                if get && !(self.can("install_plugins") && self.can("activate_plugins")) =>
+            {
+                Err(self.forbidden(
+                    "rest_block_directory_cannot_view",
+                    "Sorry, you are not allowed to browse the block directory.",
+                ))
+            }
             // `check_has_read_only_access()` of the menu controllers: menus and their items for everybody who edits
             // something, the locations for `edit_theme_options`.
-            ["wp", "v2", "menus"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menus.")),
-            ["wp", "v2", "menu-items"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menu items.")),
-            ["wp", "v2", "menu-locations"] if get && !self.can("edit_theme_options") => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view menu locations.")),
+            ["wp", "v2", "menus"] if get && !self.edits_something() => Err(self.forbidden(
+                "rest_cannot_view",
+                "Sorry, you are not allowed to view menus.",
+            )),
+            ["wp", "v2", "menu-items"] if get && !self.edits_something() => Err(self.forbidden(
+                "rest_cannot_view",
+                "Sorry, you are not allowed to view menu items.",
+            )),
+            ["wp", "v2", "menu-locations"] if get && !self.can("edit_theme_options") => Err(self
+                .forbidden(
+                    "rest_cannot_view",
+                    "Sorry, you are not allowed to view menu locations.",
+                )),
             // `WP_REST_Block_Patterns_Controller::get_items_permissions_check()` and that of the categories.
-            ["wp", "v2", "block-patterns", "patterns"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view the registered block patterns.")),
-            ["wp", "v2", "block-patterns", "categories"] if get && !self.edits_something() => Err(self.forbidden("rest_cannot_view", "Sorry, you are not allowed to view the registered block pattern categories.")),
+            ["wp", "v2", "block-patterns", "patterns"] if get && !self.edits_something() => {
+                Err(self.forbidden(
+                    "rest_cannot_view",
+                    "Sorry, you are not allowed to view the registered block patterns.",
+                ))
+            }
+            ["wp", "v2", "block-patterns", "categories"] if get && !self.edits_something() => {
+                Err(self.forbidden(
+                    "rest_cannot_view",
+                    "Sorry, you are not allowed to view the registered block pattern categories.",
+                ))
+            }
             ["wp-block-editor", "v1", "export"] if get => self.export_theme().await?,
-            ["wp", "v2", "pattern-directory", "patterns"] if get && self.can("edit_posts") => Ok(Resp::item(Value::Array(self.directory_items(params).await))),
-            ["wp", "v2", "plugins"] | ["wp", "v2", "menus"] | ["wp", "v2", "menu-items"] | ["wp", "v2", "menu-locations"] | ["wp", "v2", "block-directory", "search"] if get => empty_list(),
-            ["wp", "v2", "block-patterns", "patterns"] if get => Ok(Resp::item(self.patterns_json())),
-            ["wp", "v2", "block-patterns", "categories"] if get => Ok(Resp::item(self.pattern_categories())),
-            ["wp", "v2", "global-styles", "themes", stylesheet] if get && self.edits_something() => Ok(Resp::item(self.global_styles_theme(stylesheet))),
-            ["wp", "v2", "global-styles", "themes", stylesheet, "variations"] if get && self.edits_something() => {
+            ["wp", "v2", "pattern-directory", "patterns"] if get && self.can("edit_posts") => {
+                Ok(Resp::item(Value::Array(self.directory_items(params).await)))
+            }
+            ["wp", "v2", "plugins"]
+            | ["wp", "v2", "menus"]
+            | ["wp", "v2", "menu-items"]
+            | ["wp", "v2", "menu-locations"]
+            | ["wp", "v2", "block-directory", "search"]
+                if get =>
+            {
+                empty_list()
+            }
+            ["wp", "v2", "block-patterns", "patterns"] if get => {
+                Ok(Resp::item(self.patterns_json()))
+            }
+            ["wp", "v2", "block-patterns", "categories"] if get => {
+                Ok(Resp::item(self.pattern_categories()))
+            }
+            ["wp", "v2", "global-styles", "themes", stylesheet]
+                if get && self.edits_something() =>
+            {
+                Ok(Resp::item(self.global_styles_theme(stylesheet)))
+            }
+            [
+                "wp",
+                "v2",
+                "global-styles",
+                "themes",
+                stylesheet,
+                "variations",
+            ] if get && self.edits_something() => {
                 if *stylesheet != self.theme.stylesheet {
-                    Err(RestError::new("rest_theme_not_found", "Theme not found.", 404))
+                    Err(RestError::new(
+                        "rest_theme_not_found",
+                        "Theme not found.",
+                        404,
+                    ))
                 } else {
                     Ok(Resp::item(Value::Array(self.theme.style_variations())))
                 }
             }
-            ["wp", "v2", "global-styles", id] if self.can("edit_theme_options") && id.parse::<u64>().is_ok() => return self.global_styles_user(id, method, args).await.map(Some),
-            ["wp", "v2", base @ ("blocks" | "navigation")] | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
+            ["wp", "v2", "global-styles", id]
+                if self.can("edit_theme_options") && id.parse::<u64>().is_ok() =>
+            {
+                return self.global_styles_user(id, method, args).await.map(Some);
+            }
+            ["wp", "v2", base @ ("blocks" | "navigation")]
+            | ["wp", "v2", base @ ("blocks" | "navigation"), _] => {
                 let info = crate::meta::core_post_type(base);
                 let kind = crate::posts::Kind::Custom(&info);
-                return self.posts_route(kind, segments.get(3).copied(), method, args, params).await.map(Some);
+                return self
+                    .posts_route(kind, segments.get(3).copied(), method, args, params)
+                    .await
+                    .map(Some);
             }
-            ["wp", "v2", "statuses"] if get && self.can("edit_posts") => Ok(Resp::item(self.statuses_edit(params.get("context").unwrap_or("view")))),
+            ["wp", "v2", "statuses"] if get && self.can("edit_posts") => Ok(Resp::item(
+                self.statuses_edit(params.get("context").unwrap_or("view")),
+            )),
             ["wp", "v2", "statuses", slug] if get && self.access.is_some() => {
                 let all = self.statuses_edit("view");
-                let internal = ["auto-draft", "inherit", "request-pending", "request-confirmed", "request-failed", "request-completed"];
+                let internal = [
+                    "auto-draft",
+                    "inherit",
+                    "request-pending",
+                    "request-confirmed",
+                    "request-failed",
+                    "request-completed",
+                ];
                 if !self.can("edit_posts") && *slug != "publish" || internal.contains(slug) {
-                    Err(RestError::new("rest_cannot_read_status", "Cannot view status.", 403))
+                    Err(RestError::new(
+                        "rest_cannot_read_status",
+                        "Cannot view status.",
+                        403,
+                    ))
                 } else if all.get(*slug).is_some() {
-                    Ok(Resp::item(self.statuses_edit(params.get("context").unwrap_or("view"))[*slug].clone()))
+                    Ok(Resp::item(
+                        self.statuses_edit(params.get("context").unwrap_or("view"))[*slug].clone(),
+                    ))
                 } else {
-                    Err(RestError::new("rest_status_invalid", "Invalid status.", 404))
+                    Err(RestError::new(
+                        "rest_status_invalid",
+                        "Invalid status.",
+                        404,
+                    ))
                 }
             }
             _ => return Ok(None),
@@ -258,7 +503,13 @@ impl Rest<'_> {
     }
 
     fn pattern_categories(&self) -> Value {
-        Value::Array(self.theme.pattern_categories().into_iter().map(|c| json!({"name": c.name, "label": c.label, "description": c.description})).collect())
+        Value::Array(
+            self.theme
+                .pattern_categories()
+                .into_iter()
+                .map(|c| json!({"name": c.name, "label": c.label, "description": c.description}))
+                .collect(),
+        )
     }
 
     fn global_styles_theme(&self, stylesheet: &str) -> Value {
@@ -275,15 +526,26 @@ impl Rest<'_> {
 
     async fn global_styles_user(&self, id: &str, method: &str, args: &Args) -> Result<Outcome> {
         let id: u64 = id.parse().unwrap_or(0);
-        let Some(post) = self.site.db.post(id).await?.filter(|p| p.post_type == "wp_global_styles") else {
-            return Ok(Err(RestError::new("rest_global_styles_not_found", "No global styles config exists with that ID.", 404)));
+        let Some(post) = self
+            .site
+            .db
+            .post(id)
+            .await?
+            .filter(|p| p.post_type == "wp_global_styles")
+        else {
+            return Ok(Err(RestError::new(
+                "rest_global_styles_not_found",
+                "No global styles config exists with that ID.",
+                404,
+            )));
         };
         if matches!(method, "POST" | "PUT" | "PATCH") {
             let content = match self.content() {
                 Ok(c) => c,
                 Err(e) => return Ok(Err(e)),
             };
-            let mut stored: Value = serde_json::from_str(&post.post_content).unwrap_or_else(|_| json!({}));
+            let mut stored: Value =
+                serde_json::from_str(&post.post_content).unwrap_or_else(|_| json!({}));
             if let Value::Object(map) = &mut stored {
                 for key in ["styles", "settings"] {
                     if let Some(value) = args.get(key) {
@@ -293,7 +555,12 @@ impl Rest<'_> {
                 map.insert("isGlobalStylesUserThemeJSON".into(), Value::Bool(true));
                 map.insert("version".into(), json!(3));
             }
-            let data = rustpress_content::content::PostData { id: Some(id), post_content: Some(stored.to_string()), post_title: args.raw_text("title"), ..Default::default() };
+            let data = rustpress_content::content::PostData {
+                id: Some(id),
+                post_content: Some(stored.to_string()),
+                post_title: args.raw_text("title"),
+                ..Default::default()
+            };
             if let Err(e) = content.insert_post(&data).await {
                 return Ok(Err(RestError::new("rest_cannot_edit", &e.to_string(), 500)));
             }
@@ -302,22 +569,61 @@ impl Rest<'_> {
         let stored: Value = serde_json::from_str(&post.post_content).unwrap_or_else(|_| json!({}));
         let mut links = Links::new();
         let mut self_link = Map::new();
-        self_link.insert("href".into(), json!(self.rest_url(&format!("wp/v2/global-styles/{id}"))));
-        self_link.insert("targetHints".into(), json!({"allow": ["GET", "POST", "PUT", "PATCH"]}));
+        self_link.insert(
+            "href".into(),
+            json!(self.rest_url(&format!("wp/v2/global-styles/{id}"))),
+        );
+        self_link.insert(
+            "targetHints".into(),
+            json!({"allow": ["GET", "POST", "PUT", "PATCH"]}),
+        );
         links.push_raw("self", Value::Object(self_link));
-        links.add("about", vec![], self.rest_url("wp/v2/types/wp_global_styles"));
+        links.add(
+            "about",
+            vec![],
+            self.rest_url("wp/v2/types/wp_global_styles"),
+        );
         let revisions = self.site.db.revision_ids(id).await?.len();
-        links.add("version-history", vec![("count", json!(revisions))], self.rest_url(&format!("wp/v2/global-styles/{id}/revisions")));
-        links.add("wp:action-publish", vec![], self.rest_url(&format!("wp/v2/global-styles/{id}")));
+        links.add(
+            "version-history",
+            vec![("count", json!(revisions))],
+            self.rest_url(&format!("wp/v2/global-styles/{id}/revisions")),
+        );
+        links.add(
+            "wp:action-publish",
+            vec![],
+            self.rest_url(&format!("wp/v2/global-styles/{id}")),
+        );
         if self.can("edit_css") || self.can("edit_theme_options") {
-            links.add("wp:action-edit-css", vec![], self.rest_url(&format!("wp/v2/global-styles/{id}")));
+            links.add(
+                "wp:action-edit-css",
+                vec![],
+                self.rest_url(&format!("wp/v2/global-styles/{id}")),
+            );
         }
         let mut body = Map::new();
         body.insert("id".into(), json!(id));
         body.insert("title".into(), json!({"raw": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }, "rendered": if post.post_title.is_empty() { "Custom Styles".to_owned() } else { post.post_title.clone() }}));
-        body.insert("settings".into(), stored.get("settings").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object));
-        body.insert("styles".into(), stored.get("styles").cloned().filter(|v| !is_empty_config(v)).unwrap_or_else(rustpress_blocks::php_json::empty_object));
-        body.extend(self.plugin_fields(rustpress_core::native::RestObject::Post(&post)).await?);
+        body.insert(
+            "settings".into(),
+            stored
+                .get("settings")
+                .cloned()
+                .filter(|v| !is_empty_config(v))
+                .unwrap_or_else(rustpress_blocks::php_json::empty_object),
+        );
+        body.insert(
+            "styles".into(),
+            stored
+                .get("styles")
+                .cloned()
+                .filter(|v| !is_empty_config(v))
+                .unwrap_or_else(rustpress_blocks::php_json::empty_object),
+        );
+        body.extend(
+            self.plugin_fields(rustpress_core::native::RestObject::Post(&post))
+                .await?,
+        );
         body.insert("_links".into(), links.finish());
         let body = Value::Object(body);
         let mut resp = Resp::item(body);
@@ -338,7 +644,10 @@ impl Rest<'_> {
             let mut item = Map::new();
             item.insert("name".into(), json!(pattern.name));
             item.insert("title".into(), json!(pattern.title));
-            item.insert("content".into(), json!(self.resolved_content(&self.with_theme_attribute(&pattern.content))));
+            item.insert(
+                "content".into(),
+                json!(self.resolved_content(&self.with_theme_attribute(&pattern.content))),
+            );
             if !pattern.description.is_empty() || pattern.all_fields || pattern.source.is_none() {
                 item.insert("description".into(), json!(pattern.description));
             }
@@ -349,10 +658,26 @@ impl Rest<'_> {
                 item.insert("inserter".into(), json!(inserter));
             }
             if !pattern.categories.is_empty() || pattern.all_fields {
-                item.insert("categories".into(), json!(pattern.categories.iter().map(|c| migrate(c)).collect::<Vec<_>>()));
+                item.insert(
+                    "categories".into(),
+                    json!(
+                        pattern
+                            .categories
+                            .iter()
+                            .map(|c| migrate(c))
+                            .collect::<Vec<_>>()
+                    ),
+                );
             }
-            for (key, list) in [("keywords", &pattern.keywords), ("block_types", &pattern.block_types), ("post_types", &pattern.post_types), ("template_types", &pattern.template_types)] {
-                if !list.is_empty() || (pattern.all_fields && matches!(key, "keywords" | "block_types")) {
+            for (key, list) in [
+                ("keywords", &pattern.keywords),
+                ("block_types", &pattern.block_types),
+                ("post_types", &pattern.post_types),
+                ("template_types", &pattern.template_types),
+            ] {
+                if !list.is_empty()
+                    || (pattern.all_fields && matches!(key, "keywords" | "block_types"))
+                {
                     item.insert(key.into(), json!(list));
                 }
             }
@@ -367,7 +692,14 @@ impl Rest<'_> {
     /// `WP_REST_Post_Statuses_Controller`: the statuses of a signed-in editor, with the fields of the context.
     fn statuses_edit(&self, context: &str) -> Value {
         let s = |t: &str| self.site.tr(t);
-        let entry = |slug: &str, name: String, private: bool, protected: bool, public: bool, queryable: bool, show_in_list: bool, floating: bool| {
+        let entry = |slug: &str,
+                     name: String,
+                     private: bool,
+                     protected: bool,
+                     public: bool,
+                     queryable: bool,
+                     show_in_list: bool,
+                     floating: bool| {
             let mut data = Map::new();
             data.insert("name".into(), json!(name));
             if context == "edit" {
@@ -386,7 +718,15 @@ impl Rest<'_> {
                 data.insert("date_floating".into(), json!(floating));
             }
             let mut links = Links::new();
-            links.add("archives", vec![], self.rest_url(&if slug == "publish" { "wp/v2/posts".to_owned() } else { format!("wp/v2/posts?status={slug}") }));
+            links.add(
+                "archives",
+                vec![],
+                self.rest_url(&if slug == "publish" {
+                    "wp/v2/posts".to_owned()
+                } else {
+                    format!("wp/v2/posts?status={slug}")
+                }),
+            );
             data.insert("_links".into(), links.finish());
             Value::Object(data)
         };

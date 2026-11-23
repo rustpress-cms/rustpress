@@ -5,7 +5,12 @@ const LOGO: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 
 
 /// The logo as a `url()` for CSS.
 pub fn logo_url() -> String {
-    let svg = LOGO.trim().replace('"', "'").replace('#', "%23").replace('<', "%3C").replace('>', "%3E");
+    let svg = LOGO
+        .trim()
+        .replace('"', "'")
+        .replace('#', "%23")
+        .replace('<', "%3C")
+        .replace('>', "%3E");
     format!("url(\"data:image/svg+xml,{svg}\")")
 }
 
@@ -13,7 +18,11 @@ pub fn logo_url() -> String {
 fn names_software(before: &str, rest: &str) -> bool {
     let after = &rest["WordPress".len()..];
     let next = after.chars().next();
-    if before.ends_with(['/', '.', '-', '_']) || next.is_some_and(|c| c.is_alphanumeric() || c == '.' && after[1..].starts_with(|c: char| c.is_alphanumeric())) {
+    if before.ends_with(['/', '.', '-', '_'])
+        || next.is_some_and(|c| {
+            c.is_alphanumeric() || c == '.' && after[1..].starts_with(|c: char| c.is_alphanumeric())
+        })
+    {
         return false;
     }
     let lower = after.to_lowercase();
@@ -26,7 +35,11 @@ fn replace_names(text: &str) -> String {
     while let Some(at) = rest.find("WordPress") {
         out.push_str(&rest[..at]);
         let before = &text[..text.len() - rest.len() + at];
-        out.push_str(if names_software(before, &rest[at..]) { "RustPress" } else { "WordPress" });
+        out.push_str(if names_software(before, &rest[at..]) {
+            "RustPress"
+        } else {
+            "WordPress"
+        });
         rest = &rest[at + "WordPress".len()..];
     }
     out.push_str(rest);
@@ -46,7 +59,9 @@ pub fn rebrand(html: &str) -> String {
         let tag = &rest[open..open + close + 1];
         // Text inside scripts stays as it is; in tags only the labels of buttons change.
         if tag.starts_with("<script") {
-            let end = rest[open..].find("</script>").map_or(rest.len(), |e| open + e);
+            let end = rest[open..]
+                .find("</script>")
+                .map_or(rest.len(), |e| open + e);
             out.push_str(&rest[open..end]);
             rest = &rest[end..];
             continue;
@@ -59,7 +74,10 @@ pub fn rebrand(html: &str) -> String {
         rest = &rest[open + close + 1..];
     }
     out.push_str(&replace_names(rest));
-    let style = format!("<style>#logo,#logo a{{background-image:{}!important}}</style>\n", logo_url());
+    let style = format!(
+        "<style>#logo,#logo a{{background-image:{}!important}}</style>\n",
+        logo_url()
+    );
     if let Some(at) = out.find("</head>") {
         out.insert_str(at, &style);
     }

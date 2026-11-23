@@ -25,7 +25,13 @@ pub struct Rule {
 
 impl Rule {
     fn new(rule: &'static str, field: &str, error: String) -> Self {
-        Self { rule, field: field.to_owned(), error, threshold: None, accept: None }
+        Self {
+            rule,
+            field: field.to_owned(),
+            error,
+            threshold: None,
+            accept: None,
+        }
     }
 
     fn threshold(mut self, threshold: impl Into<String>) -> Self {
@@ -69,14 +75,21 @@ pub struct Messages<'a> {
 
 /// `wpcf7_is_number()`.
 pub fn is_number(text: &str) -> bool {
-    static INT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-]?[0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
-    static FRACTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-]?(?:[0-9]+)?[.][0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
+    static INT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[-]?[0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
+    static FRACTION: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[-]?(?:[0-9]+)?[.][0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
     INT.is_match(text) || FRACTION.is_match(text)
 }
 
 /// `absint()` of an option.
 fn absint(text: &str) -> String {
-    let digits: String = text.trim_start().trim_start_matches(['-', '+']).chars().take_while(char::is_ascii_digit).collect();
+    let digits: String = text
+        .trim_start()
+        .trim_start_matches(['-', '+'])
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
     digits.parse::<u64>().unwrap_or(0).to_string()
 }
 
@@ -84,7 +97,11 @@ fn absint(text: &str) -> String {
 /// (checkbox, date, file, number, select, text, textarea), then the enumerations at priority 20.
 pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> Vec<Rule> {
     let msg = |status: &str| (m.message)(status);
-    let of = |basetypes: &[&str]| tags.iter().filter(move |t| basetypes.contains(&t.basetype.as_str())).collect::<Vec<_>>();
+    let of = |basetypes: &[&str]| {
+        tags.iter()
+            .filter(move |t| basetypes.contains(&t.basetype.as_str()))
+            .collect::<Vec<_>>()
+    };
     let mut rules = Vec::new();
     // checkbox.php
     for tag in of(&["checkbox", "radio"]) {
@@ -101,7 +118,11 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
             rules.push(Rule::new("required", &tag.name, msg("invalid_required")));
         }
         rules.push(Rule::new("date", &tag.name, msg("invalid_date")));
-        let date_option = |name: &str| tag.get_option(name, "").filter(|v| !v.is_empty() && v != "0").and_then(|v| super::controls::parse_date(&v.replace('_', " "), today));
+        let date_option = |name: &str| {
+            tag.get_option(name, "")
+                .filter(|v| !v.is_empty() && v != "0")
+                .and_then(|v| super::controls::parse_date(&v.replace('_', " "), today))
+        };
         if let Some(min) = date_option("min") {
             rules.push(Rule::new("mindate", &tag.name, msg("date_too_early")).threshold(min));
         }
@@ -112,11 +133,21 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
     // file.php
     for tag in of(&["file"]) {
         if tag.is_required() {
-            rules.push(Rule::new("requiredfile", &tag.name, msg("invalid_required")));
+            rules.push(Rule::new(
+                "requiredfile",
+                &tag.name,
+                msg("invalid_required"),
+            ));
         }
-        let accept = acceptable_filetypes_attr(&tag.get_options("filetypes", "")).split(',').map(str::to_owned).collect();
+        let accept = acceptable_filetypes_attr(&tag.get_options("filetypes", ""))
+            .split(',')
+            .map(str::to_owned)
+            .collect();
         rules.push(Rule::new("file", &tag.name, msg("upload_file_type_invalid")).accept(accept));
-        rules.push(Rule::new("maxfilesize", &tag.name, msg("upload_file_too_large")).threshold(tag.get_limit_option().to_string()));
+        rules.push(
+            Rule::new("maxfilesize", &tag.name, msg("upload_file_too_large"))
+                .threshold(tag.get_limit_option().to_string()),
+        );
     }
     // number.php
     for tag in of(&["number", "range"]) {
@@ -146,7 +177,10 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
         rules.push(Rule::new("required", &tag.name, msg("invalid_required")));
     }
     // text.php and textarea.php
-    for (basetypes, default_max) in [(&["text", "email", "url", "tel"][..], "400"), (&["textarea"][..], "2000")] {
+    for (basetypes, default_max) in [
+        (&["text", "email", "url", "tel"][..], "400"),
+        (&["textarea"][..], "2000"),
+    ] {
         for tag in of(basetypes) {
             if tag.is_required() {
                 rules.push(Rule::new("required", &tag.name, msg("invalid_required")));
@@ -158,11 +192,19 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
                 _ => {}
             }
             if let Some(min) = tag.get_minlength_option() {
-                rules.push(Rule::new("minlength", &tag.name, msg("invalid_too_short")).threshold(absint(&min)));
+                rules.push(
+                    Rule::new("minlength", &tag.name, msg("invalid_too_short"))
+                        .threshold(absint(&min)),
+                );
             }
-            let max = tag.get_maxlength_option().unwrap_or_else(|| default_max.to_owned());
+            let max = tag
+                .get_maxlength_option()
+                .unwrap_or_else(|| default_max.to_owned());
             if super::form_tag::truthy(&max) {
-                rules.push(Rule::new("maxlength", &tag.name, msg("invalid_too_long")).threshold(absint(&max)));
+                rules.push(
+                    Rule::new("maxlength", &tag.name, msg("invalid_too_long"))
+                        .threshold(absint(&max)),
+                );
             }
         }
     }
@@ -185,7 +227,9 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
     }
     for (field, values) in checkbox {
         if let Some(values) = values {
-            rules.push(Rule::new("enum", &field, m.undefined_value.clone()).accept(enum_values(values)));
+            rules.push(
+                Rule::new("enum", &field, m.undefined_value.clone()).accept(enum_values(values)),
+            );
         }
     }
     let mut select: Vec<(String, Vec<String>)> = Vec::new();
@@ -200,7 +244,8 @@ pub fn schema(tags: &[FormTag], m: &Messages<'_>, today: chrono::NaiveDate) -> V
         }
     }
     for (field, values) in select {
-        rules.push(Rule::new("enum", &field, m.undefined_value.clone()).accept(enum_values(values)));
+        rules
+            .push(Rule::new("enum", &field, m.undefined_value.clone()).accept(enum_values(values)));
     }
     rules
 }
@@ -238,7 +283,9 @@ pub fn acceptable_filetypes_attr(options: &[String]) -> String {
             if !t.contains('/') {
                 Some(format!(".{}", t.trim_matches('.')))
             } else if let Some(c) = WILDCARD.captures(t) {
-                ["audio", "video", "image"].contains(&&c[1]).then(|| t.clone())
+                ["audio", "video", "image"]
+                    .contains(&&c[1])
+                    .then(|| t.clone())
             } else {
                 (!mime_extensions(t).is_empty()).then(|| t.clone())
             }
@@ -254,7 +301,10 @@ const MIME_TYPES: &[(&str, &[&str])] = &[
     ("application/javascript", &["js"]),
     ("application/msword", &["doc"]),
     ("application/octet-stream", &["psd", "xcf"]),
-    ("application/onenote", &["onetoc", "onetoc2", "onetmp", "onepkg"]),
+    (
+        "application/onenote",
+        &["onetoc", "onetoc2", "onetmp", "onepkg"],
+    ),
     ("application/oxps", &["oxps"]),
     ("application/pdf", &["pdf"]),
     ("application/rar", &["rar"]),
@@ -266,18 +316,45 @@ const MIME_TYPES: &[(&str, &[&str])] = &[
     ("application/vnd.ms-access", &["mdb"]),
     ("application/vnd.ms-excel", &["xla", "xls", "xlt", "xlw"]),
     ("application/vnd.ms-excel.addin.macroEnabled.12", &["xlam"]),
-    ("application/vnd.ms-excel.sheet.binary.macroEnabled.12", &["xlsb"]),
+    (
+        "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+        &["xlsb"],
+    ),
     ("application/vnd.ms-excel.sheet.macroEnabled.12", &["xlsm"]),
-    ("application/vnd.ms-excel.template.macroEnabled.12", &["xltm"]),
+    (
+        "application/vnd.ms-excel.template.macroEnabled.12",
+        &["xltm"],
+    ),
     ("application/vnd.ms-powerpoint", &["pot", "pps", "ppt"]),
-    ("application/vnd.ms-powerpoint.addin.macroEnabled.12", &["ppam"]),
-    ("application/vnd.ms-powerpoint.presentation.macroEnabled.12", &["pptm"]),
-    ("application/vnd.ms-powerpoint.slide.macroEnabled.12", &["sldm"]),
-    ("application/vnd.ms-powerpoint.slideshow.macroEnabled.12", &["ppsm"]),
-    ("application/vnd.ms-powerpoint.template.macroEnabled.12", &["potm"]),
+    (
+        "application/vnd.ms-powerpoint.addin.macroEnabled.12",
+        &["ppam"],
+    ),
+    (
+        "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+        &["pptm"],
+    ),
+    (
+        "application/vnd.ms-powerpoint.slide.macroEnabled.12",
+        &["sldm"],
+    ),
+    (
+        "application/vnd.ms-powerpoint.slideshow.macroEnabled.12",
+        &["ppsm"],
+    ),
+    (
+        "application/vnd.ms-powerpoint.template.macroEnabled.12",
+        &["potm"],
+    ),
     ("application/vnd.ms-project", &["mpp"]),
-    ("application/vnd.ms-word.document.macroEnabled.12", &["docm"]),
-    ("application/vnd.ms-word.template.macroEnabled.12", &["dotm"]),
+    (
+        "application/vnd.ms-word.document.macroEnabled.12",
+        &["docm"],
+    ),
+    (
+        "application/vnd.ms-word.template.macroEnabled.12",
+        &["dotm"],
+    ),
     ("application/vnd.ms-write", &["wri"]),
     ("application/vnd.ms-xpsdocument", &["xps"]),
     ("application/vnd.oasis.opendocument.chart", &["odc"]),
@@ -287,14 +364,38 @@ const MIME_TYPES: &[(&str, &[&str])] = &[
     ("application/vnd.oasis.opendocument.presentation", &["odp"]),
     ("application/vnd.oasis.opendocument.spreadsheet", &["ods"]),
     ("application/vnd.oasis.opendocument.text", &["odt"]),
-    ("application/vnd.openxmlformats-officedocument.presentationml.presentation", &["pptx"]),
-    ("application/vnd.openxmlformats-officedocument.presentationml.slide", &["sldx"]),
-    ("application/vnd.openxmlformats-officedocument.presentationml.slideshow", &["ppsx"]),
-    ("application/vnd.openxmlformats-officedocument.presentationml.template", &["potx"]),
-    ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", &["xlsx"]),
-    ("application/vnd.openxmlformats-officedocument.spreadsheetml.template", &["xltx"]),
-    ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", &["docx"]),
-    ("application/vnd.openxmlformats-officedocument.wordprocessingml.template", &["dotx"]),
+    (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        &["pptx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.presentationml.slide",
+        &["sldx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        &["ppsx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.presentationml.template",
+        &["potx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        &["xlsx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+        &["xltx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        &["docx"],
+    ),
+    (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        &["dotx"],
+    ),
     ("application/wordperfect", &["wp", "wpd"]),
     ("application/x-7z-compressed", &["7z"]),
     ("application/x-gzip", &["gz", "gzip"]),
@@ -353,11 +454,18 @@ const MIME_TYPES: &[(&str, &[&str])] = &[
 
 /// `FileRule::convertMimeToExt()`.
 pub fn mime_extensions(mime: &str) -> Vec<&'static str> {
-    static MIME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^([a-z]+)/([*]|[a-z0-9.+-]+)$").unwrap());
-    let Some(c) = MIME.captures(mime) else { return Vec::new() };
+    static MIME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^([a-z]+)/([*]|[a-z0-9.+-]+)$").unwrap());
+    let Some(c) = MIME.captures(mime) else {
+        return Vec::new();
+    };
     let mut out: Vec<&'static str> = Vec::new();
     for (key, extensions) in MIME_TYPES {
-        let hit = if &c[2] == "*" { key.starts_with(&format!("{}/", &c[1])) } else { *key == mime };
+        let hit = if &c[2] == "*" {
+            key.starts_with(&format!("{}/", &c[1]))
+        } else {
+            *key == mime
+        };
         if hit {
             for ext in *extensions {
                 if !out.contains(ext) {
@@ -387,11 +495,16 @@ fn strip(text: &str) -> &str {
 fn dissolve_name(name: &str) -> Vec<String> {
     static NAME: LazyLock<Regex> = LazyLock::new(|| {
         let s = r"[\x09-\x0D\x20\xA0\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]*";
-        Regex::new(&format!(r"(?i)^([a-z][0-9a-z:_-]*)((?:\[{s}(?:[a-z][0-9a-z:_-]*|[0-9]*){s}\])*)$")).unwrap()
+        Regex::new(&format!(
+            r"(?i)^([a-z][0-9a-z:_-]*)((?:\[{s}(?:[a-z][0-9a-z:_-]*|[0-9]*){s}\])*)$"
+        ))
+        .unwrap()
     });
     static LAYER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(.*?)\]").unwrap());
     let name = strip(name);
-    let Some(c) = NAME.captures(name) else { return Vec::new() };
+    let Some(c) = NAME.captures(name) else {
+        return Vec::new();
+    };
     let mut parts = vec![c[1].to_owned()];
     parts.extend(LAYER.captures_iter(&c[2]).map(|l| strip(&l[1]).to_owned()));
     parts
@@ -407,8 +520,12 @@ impl FormData<'_> {
     /// `getAll( $name )`, flattened: the values without blanks, trimmed.
     pub fn values(&self, name: &str) -> Vec<String> {
         let parts = dissolve_name(name);
-        let Some((first, layers)) = parts.split_first() else { return Vec::new() };
-        let Some(mut value) = self.post.get(first) else { return Vec::new() };
+        let Some((first, layers)) = parts.split_first() else {
+            return Vec::new();
+        };
+        let Some(mut value) = self.post.get(first) else {
+            return Vec::new();
+        };
         // The walk ends at the first empty or "0" layer; a numeric layer finds nothing.
         for layer in layers {
             if layer.is_empty() || layer == "0" {
@@ -433,8 +550,13 @@ impl FormData<'_> {
     /// `getAllFiles( $name )`, flattened.
     pub fn files(&self, name: &str) -> Vec<&SubmittedFile> {
         let parts = dissolve_name(name);
-        let Some(first) = parts.first() else { return Vec::new() };
-        self.files.iter().filter(|f| f.field == *first && f.size != 0).collect()
+        let Some(first) = parts.first() else {
+            return Vec::new();
+        };
+        self.files
+            .iter()
+            .filter(|f| f.field == *first && f.size != 0)
+            .collect()
     }
 }
 
@@ -452,7 +574,10 @@ fn collect(value: &Posted, out: &mut Vec<String>) {
 
 /// `count_code_units()`: the length in UTF-16 code units, with the line breaks as one character.
 fn code_units(text: &str) -> usize {
-    text.replace("\r\n", "\n").replace('\r', "\n").encode_utf16().count()
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .encode_utf16()
+        .count()
 }
 
 /// `is_numeric()` for the thresholds the modules write.
@@ -467,12 +592,15 @@ fn float(text: &str) -> f64 {
 
 /// `EmailRule::isEmail()`.
 pub fn is_email(value: &str) -> bool {
-    static LOCAL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$").unwrap());
+    static LOCAL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$").unwrap());
     static SUB: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^[a-z0-9-]+$").unwrap());
     if value.len() < 6 || !value[1..].contains('@') {
         return false;
     }
-    let Some((local, domain)) = value.split_once('@') else { return false };
+    let Some((local, domain)) = value.split_once('@') else {
+        return false;
+    };
     if !LOCAL.is_match(local) || domain.contains("..") {
         return false;
     }
@@ -480,13 +608,20 @@ pub fn is_email(value: &str) -> bool {
         return false;
     }
     let subs: Vec<&str> = domain.split('.').collect();
-    subs.len() >= 2 && subs.iter().all(|sub| sub.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0B', '-']) == *sub && SUB.is_match(sub))
+    subs.len() >= 2
+        && subs.iter().all(|sub| {
+            sub.trim_matches([' ', '\t', '\n', '\r', '\0', '\x0B', '-']) == *sub
+                && SUB.is_match(sub)
+        })
 }
 
 /// `UrlRule::isUrl()`: `parse_url()` finds the scheme `http` or `https`.
 fn is_url(value: &str) -> bool {
-    static SCHEME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([a-zA-Z][a-zA-Z0-9+.-]*):").unwrap());
-    let Some(c) = SCHEME.captures(value) else { return false };
+    static SCHEME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^([a-zA-Z][a-zA-Z0-9+.-]*):").unwrap());
+    let Some(c) = SCHEME.captures(value) else {
+        return false;
+    };
     let rest = &value[c[0].len()..];
     // `host:port` has no scheme for parse_url().
     let port = rest.split('/').next().unwrap_or_default();
@@ -512,8 +647,16 @@ fn is_tel(value: &str) -> bool {
 
 /// `DateRule::isDate()`.
 fn is_date(value: &str) -> bool {
-    static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]{4})-([0-9]{2})-([0-9]{2})$").unwrap());
-    DATE.captures(value).is_some_and(|c| chrono::NaiveDate::from_ymd_opt(c[1].parse().unwrap_or(0), c[2].parse().unwrap_or(0), c[3].parse().unwrap_or(0)).is_some())
+    static DATE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^([0-9]{4})-([0-9]{2})-([0-9]{2})$").unwrap());
+    DATE.captures(value).is_some_and(|c| {
+        chrono::NaiveDate::from_ymd_opt(
+            c[1].parse().unwrap_or(0),
+            c[2].parse().unwrap_or(0),
+            c[3].parse().unwrap_or(0),
+        )
+        .is_some()
+    })
 }
 
 /// The extensions a `file` rule accepts.
@@ -521,7 +664,14 @@ fn acceptable_suffixes(accept: &[String]) -> Vec<String> {
     static EXT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\.[a-z0-9]+$").unwrap());
     let mut out: Vec<String> = Vec::new();
     for item in accept {
-        let found: Vec<String> = if EXT.is_match(item) { vec![item.to_lowercase()] } else { mime_extensions(item).iter().map(|e| format!(".{}", e.trim_matches([' ', '.'])).to_lowercase()).collect() };
+        let found: Vec<String> = if EXT.is_match(item) {
+            vec![item.to_lowercase()]
+        } else {
+            mime_extensions(item)
+                .iter()
+                .map(|e| format!(".{}", e.trim_matches([' ', '.'])).to_lowercase())
+                .collect()
+        };
         for suffix in found {
             if !out.contains(&suffix) {
                 out.push(suffix);
@@ -540,7 +690,11 @@ impl Rule {
             "file" => {
                 let files = data.files(&self.field);
                 let suffixes = acceptable_suffixes(self.accept.as_deref().unwrap_or_default());
-                files.iter().all(|f| f.name.rfind('.').is_some_and(|at| suffixes.contains(&f.name[at..].to_lowercase())))
+                files.iter().all(|f| {
+                    f.name
+                        .rfind('.')
+                        .is_some_and(|at| suffixes.contains(&f.name[at..].to_lowercase()))
+                })
             }
             "maxfilesize" | "minfilesize" => {
                 let files = data.files(&self.field);
@@ -549,7 +703,11 @@ impl Rule {
                 }
                 let size: u64 = files.iter().map(|f| f.size).sum();
                 let limit = threshold.trim().parse::<i64>().unwrap_or(0);
-                if self.rule == "maxfilesize" { size as i64 <= limit } else { size as i64 >= limit }
+                if self.rule == "maxfilesize" {
+                    size as i64 <= limit
+                } else {
+                    size as i64 >= limit
+                }
             }
             _ => {
                 let values = data.values(&self.field);
@@ -569,30 +727,58 @@ impl Rule {
                         Some(limit) => {
                             let total = values.iter().map(|v| code_units(v)).sum::<usize>() as f64;
                             let limit = limit.trunc();
-                            if self.rule == "maxlength" { total <= limit } else { total >= limit }
+                            if self.rule == "maxlength" {
+                                total <= limit
+                            } else {
+                                total >= limit
+                            }
                         }
                         None => true,
                     },
                     "minnumber" | "maxnumber" => match numeric(threshold) {
-                        Some(limit) => values.iter().filter(|v| is_number(v)).all(|v| if self.rule == "maxnumber" { float(v) <= limit } else { float(v) >= limit }),
+                        Some(limit) => values.iter().filter(|v| is_number(v)).all(|v| {
+                            if self.rule == "maxnumber" {
+                                float(v) <= limit
+                            } else {
+                                float(v) >= limit
+                            }
+                        }),
                         None => true,
                     },
                     "mindate" | "maxdate" => {
                         if !is_date(threshold) {
                             return true;
                         }
-                        values.iter().filter(|v| is_date(v)).all(|v| if self.rule == "maxdate" { v.as_str() <= threshold } else { v.as_str() >= threshold })
+                        values.iter().filter(|v| is_date(v)).all(|v| {
+                            if self.rule == "maxdate" {
+                                v.as_str() <= threshold
+                            } else {
+                                v.as_str() >= threshold
+                            }
+                        })
                     }
                     "minitems" | "maxitems" => match numeric(threshold) {
                         Some(limit) => {
                             let count = values.len() as f64;
-                            if self.rule == "maxitems" { count <= limit.trunc() } else { count >= limit.trunc() }
+                            if self.rule == "maxitems" {
+                                count <= limit.trunc()
+                            } else {
+                                count >= limit.trunc()
+                            }
                         }
                         None => true,
                     },
                     "enum" => {
-                        let accept: Vec<String> = self.accept.as_deref().unwrap_or_default().iter().map(|a| a.replace("\r\n", "\n").replace('\r', "\n")).collect();
-                        values.iter().all(|v| accept.contains(&v.replace("\r\n", "\n").replace('\r', "\n")))
+                        let accept: Vec<String> = self
+                            .accept
+                            .as_deref()
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|a| a.replace("\r\n", "\n").replace('\r', "\n"))
+                            .collect();
+                        values
+                            .iter()
+                            .all(|v| accept.contains(&v.replace("\r\n", "\n").replace('\r', "\n")))
                     }
                     _ => true,
                 }
@@ -604,7 +790,11 @@ impl Rule {
 /// `WPCF7_SWV_Schema::validate()`: the field and error of every rule the submission breaks, in the order of the
 /// schema.
 pub fn validate(rules: &[Rule], data: &FormData<'_>) -> Vec<(String, String)> {
-    rules.iter().filter(|rule| !rule.passes(data)).map(|rule| (rule.field.clone(), rule.error.clone())).collect()
+    rules
+        .iter()
+        .filter(|rule| !rule.passes(data))
+        .map(|rule| (rule.field.clone(), rule.error.clone()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -630,9 +820,15 @@ mod tests {
 
     #[test]
     fn filetypes() {
-        assert_eq!(acceptable_filetypes_attr(&["pdf|txt".to_owned()]), ".pdf,.txt");
+        assert_eq!(
+            acceptable_filetypes_attr(&["pdf|txt".to_owned()]),
+            ".pdf,.txt"
+        );
         assert_eq!(acceptable_filetypes_attr(&[]), "audio/*,video/*,image/*");
-        assert_eq!(acceptable_filetypes_attr(&["application/pdf".to_owned(), "text/*".to_owned()]), "application/pdf");
+        assert_eq!(
+            acceptable_filetypes_attr(&["application/pdf".to_owned(), "text/*".to_owned()]),
+            "application/pdf"
+        );
         assert!(acceptable_suffixes(&["image/*".to_owned()]).contains(&".jpeg".to_owned()));
     }
 }

@@ -10,7 +10,14 @@ use rustpress_phpser::{Key, Value};
 use super::DOMAIN;
 
 /// The option names in the order `WPSEO_Options::get_all()` merges them (`wpseo_ms` only exists on multisite).
-const GROUPS: &[&str] = &["wpseo", "wpseo_titles", "wpseo_social", "wpseo_taxonomy_meta", "wpseo_llmstxt", "wpseo_tracking_only"];
+const GROUPS: &[&str] = &[
+    "wpseo",
+    "wpseo_titles",
+    "wpseo_social",
+    "wpseo_taxonomy_meta",
+    "wpseo_llmstxt",
+    "wpseo_tracking_only",
+];
 
 /// All options of the plugin by key.
 #[derive(Debug, Default)]
@@ -41,9 +48,15 @@ impl Options {
         let mut values = HashMap::new();
         for group in GROUPS {
             let defaults: Vec<(String, Value)> = match *group {
-                "wpseo" => WPSEO.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect(),
+                "wpseo" => WPSEO
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), v.clone()))
+                    .collect(),
                 "wpseo_titles" => titles.clone(),
-                "wpseo_social" => SOCIAL.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect(),
+                "wpseo_social" => SOCIAL
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), v.clone()))
+                    .collect(),
                 _ => Vec::new(),
             };
             values.extend(defaults);
@@ -53,7 +66,10 @@ impl Options {
                 }
             }
         }
-        Self { values, title_defaults: titles.into_iter().collect() }
+        Self {
+            values,
+            title_defaults: titles.into_iter().collect(),
+        }
     }
 
     /// `WPSEO_Options::get( $key )`: unset and `null` values are missing.
@@ -78,27 +94,46 @@ impl Options {
 
     /// `Options_Helper::get_title_default()`.
     pub fn title_default(&self, key: &str) -> String {
-        self.title_defaults.get(key).filter(|v| truthy(v)).map(php_string).unwrap_or_default()
+        self.title_defaults
+            .get(key)
+            .filter(|v| truthy(v))
+            .map(php_string)
+            .unwrap_or_default()
     }
 
     /// `Options_Helper::get_title_separator()`.
     pub fn title_separator(&self) -> String {
         let separator = self.string("separator");
-        SEPARATORS.iter().find(|(k, _)| *k == separator).or_else(|| SEPARATORS.iter().find(|(k, _)| *k == "sc-dash")).map(|(_, v)| (*v).to_owned()).unwrap_or_default()
+        SEPARATORS
+            .iter()
+            .find(|(k, _)| *k == separator)
+            .or_else(|| SEPARATORS.iter().find(|(k, _)| *k == "sc-dash"))
+            .map(|(_, v)| (*v).to_owned())
+            .unwrap_or_default()
     }
 
     /// `WPSEO_Taxonomy_Meta::get_term_meta( $term, $taxonomy )`: the plugin's fields of a term over their defaults.
     pub fn term_meta(&self, taxonomy: &str, term_id: u64) -> Vec<(String, String)> {
-        let mut meta: Vec<(String, String)> = TERM_DEFAULTS.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        let mut meta: Vec<(String, String)> = TERM_DEFAULTS
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
         // The terms are keyed by their ID: an integer key of the PHP array.
-        let stored = self.values.get(taxonomy).and_then(|tax| tax.as_array()).and_then(|terms| {
-            terms.iter().find_map(|(k, v)| match k {
-                Key::Int(n) if *n == term_id as i64 => Some(v),
-                Key::Str(b) if b == term_id.to_string().as_bytes() => Some(v),
-                _ => None,
-            })
-        });
-        for (key, value) in stored.map(|v| pairs(v).collect::<Vec<_>>()).unwrap_or_default() {
+        let stored = self
+            .values
+            .get(taxonomy)
+            .and_then(|tax| tax.as_array())
+            .and_then(|terms| {
+                terms.iter().find_map(|(k, v)| match k {
+                    Key::Int(n) if *n == term_id as i64 => Some(v),
+                    Key::Str(b) if b == term_id.to_string().as_bytes() => Some(v),
+                    _ => None,
+                })
+            });
+        for (key, value) in stored
+            .map(|v| pairs(v).collect::<Vec<_>>())
+            .unwrap_or_default()
+        {
             let value = php_string(value);
             match meta.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, v)) => *v = value,
@@ -225,22 +260,54 @@ fn title_defaults(site: &Site) -> Vec<(String, Value)> {
     let mut put = |key: &str, value: Value| d.push((key.to_owned(), value));
     put("forcerewritetitle", Value::Bool(false));
     put("separator", s("sc-dash"));
-    put("title-home-wpseo", s("%%sitename%% %%page%% %%sep%% %%sitedesc%%"));
-    put("title-author-wpseo", s(&(sprintf("%1$s, Author at %2$s", &["%%name%%", "%%sitename%%"]) + " %%page%% ")));
-    put("title-archive-wpseo", s("%%date%% %%page%% %%sep%% %%sitename%%"));
-    put("title-search-wpseo", s(&(sprintf("You searched for %s", &["%%searchphrase%%"]) + " %%page%% %%sep%% %%sitename%%")));
-    put("title-404-wpseo", s(&(tr("Page not found") + " %%sep%% %%sitename%%")));
+    put(
+        "title-home-wpseo",
+        s("%%sitename%% %%page%% %%sep%% %%sitedesc%%"),
+    );
+    put(
+        "title-author-wpseo",
+        s(&(sprintf("%1$s, Author at %2$s", &["%%name%%", "%%sitename%%"]) + " %%page%% ")),
+    );
+    put(
+        "title-archive-wpseo",
+        s("%%date%% %%page%% %%sep%% %%sitename%%"),
+    );
+    put(
+        "title-search-wpseo",
+        s(&(sprintf("You searched for %s", &["%%searchphrase%%"])
+            + " %%page%% %%sep%% %%sitename%%")),
+    );
+    put(
+        "title-404-wpseo",
+        s(&(tr("Page not found") + " %%sep%% %%sitename%%")),
+    );
     put("social-title-author-wpseo", s("%%name%%"));
     put("social-title-archive-wpseo", s("%%date%%"));
-    for key in ["social-description-author-wpseo", "social-description-archive-wpseo", "social-image-url-author-wpseo", "social-image-url-archive-wpseo"] {
+    for key in [
+        "social-description-author-wpseo",
+        "social-description-archive-wpseo",
+        "social-image-url-author-wpseo",
+        "social-image-url-archive-wpseo",
+    ] {
         put(key, s(""));
     }
     put("social-image-id-author-wpseo", Value::Int(0));
     put("social-image-id-archive-wpseo", Value::Int(0));
-    for key in ["metadesc-home-wpseo", "metadesc-author-wpseo", "metadesc-archive-wpseo", "rssbefore"] {
+    for key in [
+        "metadesc-home-wpseo",
+        "metadesc-author-wpseo",
+        "metadesc-archive-wpseo",
+        "rssbefore",
+    ] {
         put(key, s(""));
     }
-    put("rssafter", s(&sprintf("The post %1$s appeared first on %2$s.", &["%%POSTLINK%%", "%%BLOGLINK%%"])));
+    put(
+        "rssafter",
+        s(&sprintf(
+            "The post %1$s appeared first on %2$s.",
+            &["%%POSTLINK%%", "%%BLOGLINK%%"],
+        )),
+    );
     put("noindex-author-wpseo", Value::Bool(false));
     put("noindex-author-noposts-wpseo", Value::Bool(true));
     put("noindex-archive-wpseo", Value::Bool(true));
@@ -280,22 +347,34 @@ fn title_defaults(site: &Site) -> Vec<(String, Value)> {
     let types = &site.types;
     let archive = sprintf("%s Archive", &["%%pt_plural%%"]);
     for name in types.public_post_types() {
-        put(&format!("title-{name}"), s("%%title%% %%page%% %%sep%% %%sitename%%"));
+        put(
+            &format!("title-{name}"),
+            s("%%title%% %%page%% %%sep%% %%sitename%%"),
+        );
         put(&format!("metadesc-{name}"), s(""));
         put(&format!("noindex-{name}"), Value::Bool(false));
         put(&format!("display-metabox-pt-{name}"), Value::Bool(true));
         put(&format!("post_types-{name}-maintax"), Value::Int(0));
         put(&format!("schema-page-type-{name}"), s("WebPage"));
-        put(&format!("schema-article-type-{name}"), s(if name == "post" { "Article" } else { "None" }));
+        put(
+            &format!("schema-article-type-{name}"),
+            s(if name == "post" { "Article" } else { "None" }),
+        );
         if name != "attachment" {
             put(&format!("social-title-{name}"), s("%%title%%"));
             put(&format!("social-description-{name}"), s(""));
             put(&format!("social-image-url-{name}"), s(""));
             put(&format!("social-image-id-{name}"), Value::Int(0));
         }
-        let custom_with_archive = types.post_type(name).is_some_and(|t| t.archive_slug.is_some()) && !matches!(name, "post" | "page" | "attachment");
+        let custom_with_archive = types
+            .post_type(name)
+            .is_some_and(|t| t.archive_slug.is_some())
+            && !matches!(name, "post" | "page" | "attachment");
         if custom_with_archive {
-            put(&format!("title-ptarchive-{name}"), s(&format!("{archive} %%page%% %%sep%% %%sitename%%")));
+            put(
+                &format!("title-ptarchive-{name}"),
+                s(&format!("{archive} %%page%% %%sep%% %%sitename%%")),
+            );
             put(&format!("metadesc-ptarchive-{name}"), s(""));
             put(&format!("bctitle-ptarchive-{name}"), s(""));
             put(&format!("noindex-ptarchive-{name}"), Value::Bool(false));
@@ -307,10 +386,16 @@ fn title_defaults(site: &Site) -> Vec<(String, Value)> {
     }
     let archives = sprintf("%s Archives", &["%%term_title%%"]);
     for name in public_taxonomies(site) {
-        put(&format!("title-tax-{name}"), s(&format!("{archives} %%page%% %%sep%% %%sitename%%")));
+        put(
+            &format!("title-tax-{name}"),
+            s(&format!("{archives} %%page%% %%sep%% %%sitename%%")),
+        );
         put(&format!("metadesc-tax-{name}"), s(""));
         put(&format!("display-metabox-tax-{name}"), Value::Bool(true));
-        put(&format!("noindex-tax-{name}"), Value::Bool(name == "post_format"));
+        put(
+            &format!("noindex-tax-{name}"),
+            Value::Bool(name == "post_format"),
+        );
         put(&format!("social-title-tax-{name}"), s(&archives));
         put(&format!("social-description-tax-{name}"), s(""));
         put(&format!("social-image-url-tax-{name}"), s(""));
@@ -322,7 +407,9 @@ fn title_defaults(site: &Site) -> Vec<(String, Value)> {
 
 /// `get_taxonomies( [ 'public' => true ] )`.
 pub fn public_taxonomies(site: &Site) -> Vec<String> {
-    let mut all: Vec<String> = ["category", "post_tag", "post_format"].map(String::from).to_vec();
+    let mut all: Vec<String> = ["category", "post_tag", "post_format"]
+        .map(String::from)
+        .to_vec();
     for t in site.types.taxonomies.iter().filter(|t| t.public) {
         if !all.contains(&t.name) {
             all.push(t.name.clone());

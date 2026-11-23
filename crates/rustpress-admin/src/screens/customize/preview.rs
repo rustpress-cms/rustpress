@@ -20,7 +20,12 @@ fn hex_tag(value: &Value) -> String {
 }
 
 /// The three exports, each in the tag of `wp_print_inline_script_tag()`.
-pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult, preview: &Preview) -> String {
+pub async fn exports<'a>(
+    ctx: &'a Ctx<'a>,
+    stored: &'a Ctx<'a>,
+    q: &QueryResult,
+    preview: &Preview,
+) -> String {
     let mut state = super::state(ctx).await;
     state.preview = true;
     state.items_ctx = Some(stored);
@@ -31,11 +36,24 @@ pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult,
     let widgets_on = preview.widgets;
     let menus = nav_menus::menus(&state).await;
     let seventeen = ctx.env.theme.template == "twentyseventeen";
-    let locations = if seventeen { crate::screens::nav_menus::registered_locations(ctx) } else { Vec::new() };
+    let locations = if seventeen {
+        crate::screens::nav_menus::registered_locations(ctx)
+    } else {
+        Vec::new()
+    };
     let mut m = Manager::default();
     if widgets_on {
-        for id in preview.previewed.iter().filter(|id| widgets::is_widget_setting(id)) {
-            m.add_setting(super::manager::Setting::new(id, "option", "postMessage", Value::Null));
+        for id in preview
+            .previewed
+            .iter()
+            .filter(|id| widgets::is_widget_setting(id))
+        {
+            m.add_setting(super::manager::Setting::new(
+                id,
+                "option",
+                "postMessage",
+                Value::Null,
+            ));
         }
     }
     register::core(&state, &mut m).await;
@@ -56,14 +74,21 @@ pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult,
     m.prepare(&|capability| ctx.can(capability));
     // `prepare_controls()` keeps the sections of panels with their panel only.
     let prepared_sections = m.sections.len();
-    let widget_state = if widgets_on { Some(widgets::load(&state).await) } else { None };
+    let widget_state = if widgets_on {
+        Some(widgets::load(&state).await)
+    } else {
+        None
+    };
     if let Some(w) = &widget_state {
         widgets::register(&state, &mut m, w);
         restrict(&mut m);
     }
 
     let mut out = settings_script(&state, &m, prepared_sections, q, preview);
-    if let Some(w) = widget_state.as_ref().filter(|_| preview.widgets_previewed()) {
+    if let Some(w) = widget_state
+        .as_ref()
+        .filter(|_| preview.widgets_previewed())
+    {
         out.push_str(&widgets_script(&state, w, preview));
     }
     out.push_str(&partials_script(&state, &m, seventeen));
@@ -71,13 +96,24 @@ pub async fn exports<'a>(ctx: &'a Ctx<'a>, stored: &'a Ctx<'a>, q: &QueryResult,
 }
 
 /// The settings of the preview (`customize_preview_settings()`).
-fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: &QueryResult, preview: &Preview) -> String {
+fn settings_script(
+    state: &State<'_>,
+    m: &Manager,
+    prepared_sections: usize,
+    q: &QueryResult,
+    preview: &Preview,
+) -> String {
     let ctx = state.ctx;
     let site = ctx.site();
     let home = site.home_url("/");
     let rendered = preview.rendered();
     let sidebar_rendered = |id: &str| rendered.sidebars.iter().any(|s| s == id);
-    let section_active = |section: &super::manager::Section| match section.extra.iter().find(|(key, _)| *key == "sidebarId").and_then(|(_, v)| v.as_str()) {
+    let section_active = |section: &super::manager::Section| match section
+        .extra
+        .iter()
+        .find(|(key, _)| *key == "sidebarId")
+        .and_then(|(_, v)| v.as_str())
+    {
         // `WP_Customize_Sidebar_Section::active_callback()`.
         Some(sidebar) => sidebar_rendered(sidebar),
         None => section.active,
@@ -86,7 +122,10 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
     let mut sections = Map::new();
     for panel in m.panels.iter().filter(|p| p.allowed) {
         panels.insert(panel.id.clone(), json!(panel.active));
-        for section in m.sections[..prepared_sections].iter().filter(|s| s.panel == panel.id) {
+        for section in m.sections[..prepared_sections]
+            .iter()
+            .filter(|s| s.panel == panel.id)
+        {
             sections.insert(section.id.clone(), json!(section_active(section)));
         }
     }
@@ -116,7 +155,11 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
                     })
             }
             // `twentyseventeen_is_frontpage()`.
-            "panel_1" | "panel_2" | "panel_3" | "panel_4" if ctx.env.theme.template == "twentyseventeen" => flags.is_front_page && !flags.is_home,
+            "panel_1" | "panel_2" | "panel_3" | "panel_4"
+                if ctx.env.theme.template == "twentyseventeen" =>
+            {
+                flags.is_front_page && !flags.is_home
+            }
             _ => control.active,
         };
         controls.insert(control.id.clone(), json!(active));
@@ -127,14 +170,34 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
         self_url.push_str(&q.raw_query);
     }
     let mut self_url = rustpress_core::formatting::esc_url_raw(&self_url);
-    for key in ["customize_theme", "customize_changeset_uuid", "customize_messenger_channel"] {
+    for key in [
+        "customize_theme",
+        "customize_changeset_uuid",
+        "customize_messenger_channel",
+    ] {
         self_url = rustpress_core::urls::remove_query_arg(&self_url, key);
     }
-    let host = home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()).to_owned();
+    let host = home
+        .split_once("://")
+        .map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default())
+        .to_owned();
     // `validate_setting_values()` of the posted values: the settings that exist are valid.
-    let valid: Map<String, Value> = preview.dirty.iter().filter(|id| m.settings.iter().any(|s| s.id == **id)).map(|id| (id.clone(), preview.validity(id))).collect();
-    let validities = if valid.is_empty() { json!([]) } else { Value::Object(valid) };
-    let nonce = if ctx.can("customize") { Value::Object(super::nonces(state)) } else { json!([]) };
+    let valid: Map<String, Value> = preview
+        .dirty
+        .iter()
+        .filter(|id| m.settings.iter().any(|s| s.id == **id))
+        .map(|id| (id.clone(), preview.validity(id)))
+        .collect();
+    let validities = if valid.is_empty() {
+        json!([])
+    } else {
+        Value::Object(valid)
+    };
+    let nonce = if ctx.can("customize") {
+        Value::Object(super::nonces(state))
+    } else {
+        json!([])
+    };
     let settings = json!({
         "changeset": {"uuid": preview.uuid, "autosaved": preview.autosaved},
         "timeouts": {"selectiveRefresh": 250, "keepAliveSend": 1000},
@@ -160,7 +223,11 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
     });
     let mut values = String::new();
     for setting in m.settings.iter().filter(|s| s.allowed) {
-        values.push_str(&format!("v[{}] = {};\n", hex_tag(&json!(setting.id)), hex_tag(&setting.value)));
+        values.push_str(&format!(
+            "v[{}] = {};\n",
+            hex_tag(&json!(setting.id)),
+            hex_tag(&setting.value)
+        ));
     }
     format!(
         "<script>\n\t\t\tvar _wpCustomizeSettings = {};\n\t\t\t_wpCustomizeSettings.values = {{}};\n\t\t\t(function( v ) {{\n\t\t\t\t{values}\t\t\t}})( _wpCustomizeSettings.values );\n\t\t\n//# sourceURL=WP_Customize_Manager%3A%3Acustomize_preview_settings\n</script>\n",
@@ -172,7 +239,13 @@ fn settings_script(state: &State<'_>, m: &Manager, prepared_sections: usize, q: 
 fn widgets_script(state: &State<'_>, w: &widgets::Widgets, preview: &Preview) -> String {
     let ctx = state.ctx;
     let rendered = preview.rendered();
-    let fill = |ids: &[String]| if ids.is_empty() { json!([]) } else { Value::Object(ids.iter().map(|id| (id.clone(), json!(true))).collect()) };
+    let fill = |ids: &[String]| {
+        if ids.is_empty() {
+            json!([])
+        } else {
+            Value::Object(ids.iter().map(|id| (id.clone(), json!(true))).collect())
+        }
+    };
     let settings = json!({
         "renderedSidebars": fill(&rendered.sidebars),
         "renderedWidgets": fill(&rendered.widgets),
@@ -181,7 +254,10 @@ fn widgets_script(state: &State<'_>, w: &widgets::Widgets, preview: &Preview) ->
         "l10n": {"widgetTooltip": ctx.tr("Shift-click to edit this widget.")},
         "selectiveRefreshableWidgets": widgets::refreshable_json(),
     });
-    format!("<script>\nvar _wpWidgetCustomizerPreviewSettings = {};\n//# sourceURL=WP_Customize_Widgets%3A%3Aexport_preview_data\n</script>\n", hex_tag(&settings))
+    format!(
+        "<script>\nvar _wpWidgetCustomizerPreviewSettings = {};\n//# sourceURL=WP_Customize_Widgets%3A%3Aexport_preview_data\n</script>\n",
+        hex_tag(&settings)
+    )
 }
 
 /// `WP_Customize_Selective_Refresh::export_preview_data()`: the partials that `register_controls()` and the theme add.
@@ -201,13 +277,28 @@ fn partials_script(state: &State<'_>, m: &Manager, seventeen: bool) -> String {
         add("custom_logo", &["custom_logo"], ".custom-logo-link", true);
     }
     if state.support.is_some() {
-        add("custom_header", &["header_video", "external_header_video", "header_image"], "#wp-custom-header", true);
+        add(
+            "custom_header",
+            &["header_video", "external_header_video", "header_image"],
+            "#wp-custom-header",
+            true,
+        );
     }
     if seventeen {
         add("blogname", &["blogname"], ".site-title a", false);
-        add("blogdescription", &["blogdescription"], ".site-description", false);
+        add(
+            "blogdescription",
+            &["blogdescription"],
+            ".site-description",
+            false,
+        );
         for i in 1..=4 {
-            add(&format!("panel_{i}"), &[&format!("panel_{i}")], &format!("#panel{i}"), true);
+            add(
+                &format!("panel_{i}"),
+                &[&format!("panel_{i}")],
+                &format!("#panel{i}"),
+                true,
+            );
         }
     }
     let exports = json!({
@@ -222,5 +313,8 @@ fn partials_script(state: &State<'_>, m: &Manager, seventeen: bool) -> String {
             "badDocumentWrite": rustpress_core::i18n::sprintf(&ctx.tr("%s is forbidden"), &["document.write()"]),
         },
     });
-    format!("<script>\nvar _customizePartialRefreshExports = {};\n//# sourceURL=WP_Customize_Selective_Refresh%3A%3Aexport_preview_data\n</script>\n", hex_tag(&exports))
+    format!(
+        "<script>\nvar _customizePartialRefreshExports = {};\n//# sourceURL=WP_Customize_Selective_Refresh%3A%3Aexport_preview_data\n</script>\n",
+        hex_tag(&exports)
+    )
 }

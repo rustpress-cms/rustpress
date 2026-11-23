@@ -29,7 +29,12 @@ impl UserProps {
             "user_url" => self.url.clone(),
             "display_name" => self.display_name.clone(),
             "user_nicename" => self.nicename.clone(),
-            other => self.meta.iter().find(|(k, _)| k == other).map(|(_, v)| v.clone()).unwrap_or_default(),
+            other => self
+                .meta
+                .iter()
+                .find(|(k, _)| k == other)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default(),
         };
         (!value.is_empty() && value != "0").then_some(value)
     }
@@ -74,7 +79,10 @@ impl Render<'_> {
 
     /// `get_default_option( $default, array( 'multiple' => false ) )`.
     fn default_option(&self, tag: &FormTag, default: Option<String>) -> Option<String> {
-        self.default_values(tag, false).into_iter().next().or(default)
+        self.default_values(tag, false)
+            .into_iter()
+            .next()
+            .or(default)
     }
 
     /// The values `get_default_option()` collects; with `multiple` false only the first counts.
@@ -85,29 +93,48 @@ impl Render<'_> {
             let opt = sanitize_key(&opt);
             let mut found: Vec<String> = Vec::new();
             if opt.starts_with("user_") && self.user.is_some() {
-                let key = if ["user_login", "user_email", "user_url"].contains(&opt.as_str()) { opt.as_str() } else { &opt[5..] };
+                let key = if ["user_login", "user_email", "user_url"].contains(&opt.as_str()) {
+                    opt.as_str()
+                } else {
+                    &opt[5..]
+                };
                 found.extend(self.user.and_then(|u| u.get(key)));
             } else if opt == "post_meta" && self.post_meta.is_some() {
                 let rows = self.post_meta.unwrap_or_default();
-                let mut matching = rows.iter().filter(|(k, _)| *k == tag.name).map(|(_, v)| v.clone());
+                let mut matching = rows
+                    .iter()
+                    .filter(|(k, _)| *k == tag.name)
+                    .map(|(_, v)| v.clone());
                 if multiple {
                     found.extend(matching);
                 } else if let Some(v) = matching.next().filter(|v| !v.is_empty()) {
                     found.push(v);
                 }
             } else if opt == "get" {
-                let vals: Vec<String> = query_values(self.query, &tag.name).iter().map(|v| sanitize_query_var(v)).collect();
+                let vals: Vec<String> = query_values(self.query, &tag.name)
+                    .iter()
+                    .map(|v| sanitize_query_var(v))
+                    .collect();
                 if multiple {
                     found.extend(vals);
                 } else if let Some(v) = vals.into_iter().next().filter(|v| !v.is_empty()) {
                     found.push(v);
                 }
             } else if opt == "shortcode_attr" {
-                found.extend(self.shortcode_atts.iter().find(|(k, _)| *k == tag.name).map(|(_, v)| v.clone()).filter(|v| !v.is_empty()));
+                found.extend(
+                    self.shortcode_atts
+                        .iter()
+                        .find(|(k, _)| *k == tag.name)
+                        .map(|(_, v)| v.clone())
+                        .filter(|v| !v.is_empty()),
+                );
             } else if NUMS.is_match(&opt) {
                 for num in opt.split('_') {
                     let num: i64 = num.parse().unwrap_or(0);
-                    if let Some(v) = usize::try_from(num - 1).ok().and_then(|i| tag.values.get(i)) {
+                    if let Some(v) = usize::try_from(num - 1)
+                        .ok()
+                        .and_then(|i| tag.values.get(i))
+                    {
                         found.push(v.clone());
                     }
                 }
@@ -141,13 +168,23 @@ fn query_values(query: &[(String, String)], name: &str) -> Vec<String> {
     if let Some((_, v)) = query.iter().rev().find(|(k, _)| k == name) {
         return vec![v.clone()];
     }
-    let list: Vec<String> = query.iter().filter(|(k, _)| k.strip_prefix(name).is_some_and(|rest| rest.starts_with('['))).map(|(_, v)| v.clone()).collect();
+    let list: Vec<String> = query
+        .iter()
+        .filter(|(k, _)| {
+            k.strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with('['))
+        })
+        .map(|(_, v)| v.clone())
+        .collect();
     list
 }
 
 /// `sanitize_key()`.
 fn sanitize_key(key: &str) -> String {
-    key.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_' || *c == '-').collect()
+    key.to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_' || *c == '-')
+        .collect()
 }
 
 /// `wpcf7_sanitize_query_var()`.
@@ -156,7 +193,9 @@ pub fn sanitize_query_var(text: &str) -> String {
     static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" +").unwrap());
     let mut text = text.to_owned();
     if text.contains('<') {
-        text = rustpress_core::formatting::wp_strip_all_tags(&rustpress_core::kses::pre_kses_less_than(&text));
+        text = rustpress_core::formatting::wp_strip_all_tags(
+            &rustpress_core::kses::pre_kses_less_than(&text),
+        );
     }
     let text = PERCENT.replace_all(&text, "");
     let text = SPACES.replace_all(&text, " ");
@@ -167,11 +206,16 @@ pub fn sanitize_query_var(text: &str) -> String {
 /// (`2026-01-01`, `today`, `tomorrow`, `yesterday`, `now`, `+3 days`, `-1 week`, `next month`).
 pub fn parse_date(text: &str, today: chrono::NaiveDate) -> Option<String> {
     use chrono::{Datelike, Duration, Months, NaiveDate};
-    static YMD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$").unwrap());
-    static RELATIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:([+-]?[0-9]+)|(next|last))\s*(day|week|fortnight|month|year)s?$").unwrap());
+    static YMD: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$").unwrap());
+    static RELATIVE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^(?:([+-]?[0-9]+)|(next|last))\s*(day|week|fortnight|month|year)s?$")
+            .unwrap()
+    });
     let text = text.trim();
     if let Some(c) = YMD.captures(text) {
-        return NaiveDate::from_ymd_opt(c[1].parse().ok()?, c[2].parse().ok()?, c[3].parse().ok()?).map(|d| d.format("%Y-%m-%d").to_string());
+        return NaiveDate::from_ymd_opt(c[1].parse().ok()?, c[2].parse().ok()?, c[3].parse().ok()?)
+            .map(|d| d.format("%Y-%m-%d").to_string());
     }
     let mut date = today;
     let lower = text.to_lowercase();
@@ -195,7 +239,11 @@ pub fn parse_date(text: &str, today: chrono::NaiveDate) -> Option<String> {
             // PHP adds months by overflowing the day (Jan 31 + 1 month = Mar 3).
             let months = if unit == "year" { 12 * n } else { n };
             let first = date.with_day(1)?;
-            let moved = if months >= 0 { first.checked_add_months(Months::new(months as u32))? } else { first.checked_sub_months(Months::new((-months) as u32))? };
+            let moved = if months >= 0 {
+                first.checked_add_months(Months::new(months as u32))?
+            } else {
+                first.checked_sub_months(Months::new((-months) as u32))?
+            };
             moved + Duration::days(i64::from(date.day()) - 1)
         }
     };
@@ -205,7 +253,10 @@ pub fn parse_date(text: &str, today: chrono::NaiveDate) -> Option<String> {
 /// `wpcf7_form_controls_class( $type, $default_classes )`.
 pub fn form_controls_class(tag_type: &str, default_classes: &str) -> String {
     let tag_type = tag_type.trim();
-    let mut classes: Vec<String> = vec!["wpcf7-form-control".to_owned(), format!("wpcf7-{}", tag_type.trim_end_matches('*'))];
+    let mut classes: Vec<String> = vec![
+        "wpcf7-form-control".to_owned(),
+        format!("wpcf7-{}", tag_type.trim_end_matches('*')),
+    ];
     if tag_type.ends_with('*') {
         classes.push("wpcf7-validates-as-required".to_owned());
     }
@@ -223,8 +274,10 @@ pub fn form_controls_class(tag_type: &str, default_classes: &str) -> String {
 
 /// `wpcf7_is_number()`.
 fn is_number(text: &str) -> bool {
-    static INT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-]?[0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
-    static DEC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-]?(?:[0-9]+)?[.][0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
+    static INT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[-]?[0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
+    static DEC: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[-]?(?:[0-9]+)?[.][0-9]+(?:[eE][+-]?[0-9]+)?$").unwrap());
     INT.is_match(text) || DEC.is_match(text)
 }
 
@@ -249,7 +302,10 @@ fn as_f64(n: &Num) -> f64 {
 }
 
 fn wrap(name: &str, inner: &str) -> String {
-    format!("<span class=\"wpcf7-form-control-wrap\" data-name=\"{}\">{inner}</span>", esc_attr(name))
+    format!(
+        "<span class=\"wpcf7-form-control-wrap\" data-name=\"{}\">{inner}</span>",
+        esc_attr(name)
+    )
 }
 
 /// The attributes common to most controls: class, id, tabindex.
@@ -257,14 +313,19 @@ fn common(r: &mut Render<'_>, tag: &FormTag, class: &str) -> Atts {
     let mut atts = Atts::default();
     atts.set("class", Att::opt(tag.get_class_option(class)));
     atts.set("id", r.id_option(tag));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts
 }
 
 /// `$maxlength < $minlength` for two numeric strings.
 fn length_conflict(atts: &Atts) -> bool {
     match (atts.get("maxlength"), atts.get("minlength")) {
-        (Some(Att::Str(max)), Some(Att::Str(min))) if truthy(max) && truthy(min) => max.parse::<i64>().unwrap_or(0) < min.parse::<i64>().unwrap_or(0),
+        (Some(Att::Str(max)), Some(Att::Str(min))) if truthy(max) && truthy(min) => {
+            max.parse::<i64>().unwrap_or(0) < min.parse::<i64>().unwrap_or(0)
+        }
         _ => false,
     }
 }
@@ -293,8 +354,17 @@ fn text(r: &mut Render<'_>, tag: &FormTag) -> String {
         class.push_str(&format!(" wpcf7-validates-as-{}", tag.basetype));
     }
     let mut atts = Atts::default();
-    atts.set("size", Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())));
-    atts.set("maxlength", Att::Str(tag.get_maxlength_option().unwrap_or_else(|| "400".to_owned())));
+    atts.set(
+        "size",
+        Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())),
+    );
+    atts.set(
+        "maxlength",
+        Att::Str(
+            tag.get_maxlength_option()
+                .unwrap_or_else(|| "400".to_owned()),
+        ),
+    );
     atts.set("minlength", Att::opt(tag.get_minlength_option()));
     if length_conflict(&atts) {
         atts.unset("maxlength");
@@ -303,11 +373,19 @@ fn text(r: &mut Render<'_>, tag: &FormTag) -> String {
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
     atts.set("list", Att::opt(tag.get_option("list", "id")));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts.set("readonly", Att::Bool(tag.has_option("readonly")));
     atts.set("autocomplete", Att::opt(tag.get_autocomplete_option()));
     required_and_valid(&mut atts, tag);
-    let value = value_and_placeholder(r, tag, &mut atts, tag.values.first().cloned().unwrap_or_default());
+    let value = value_and_placeholder(
+        r,
+        tag,
+        &mut atts,
+        tag.values.first().cloned().unwrap_or_default(),
+    );
     atts.set("value", Att::Str(value));
     atts.set("type", Att::str(&tag.basetype));
     atts.set("name", Att::str(&tag.name));
@@ -316,16 +394,32 @@ fn text(r: &mut Render<'_>, tag: &FormTag) -> String {
 
 /// `esc_textarea()`: `htmlspecialchars()` with double encoding.
 fn esc_textarea(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#039;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#039;")
 }
 
 /// `wpcf7_textarea_form_tag_handler()`.
 fn textarea(r: &mut Render<'_>, tag: &FormTag) -> String {
     let class = form_controls_class(&tag.tag_type, "");
     let mut atts = Atts::default();
-    atts.set("cols", Att::Str(tag.get_cols_option().unwrap_or_else(|| "40".to_owned())));
-    atts.set("rows", Att::Str(tag.get_rows_option().unwrap_or_else(|| "10".to_owned())));
-    atts.set("maxlength", Att::Str(tag.get_maxlength_option().unwrap_or_else(|| "2000".to_owned())));
+    atts.set(
+        "cols",
+        Att::Str(tag.get_cols_option().unwrap_or_else(|| "40".to_owned())),
+    );
+    atts.set(
+        "rows",
+        Att::Str(tag.get_rows_option().unwrap_or_else(|| "10".to_owned())),
+    );
+    atts.set(
+        "maxlength",
+        Att::Str(
+            tag.get_maxlength_option()
+                .unwrap_or_else(|| "2000".to_owned()),
+        ),
+    );
     atts.set("minlength", Att::opt(tag.get_minlength_option()));
     if length_conflict(&atts) {
         atts.unset("maxlength");
@@ -333,14 +427,28 @@ fn textarea(r: &mut Render<'_>, tag: &FormTag) -> String {
     }
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts.set("readonly", Att::Bool(tag.has_option("readonly")));
     atts.set("autocomplete", Att::opt(tag.get_autocomplete_option()));
     required_and_valid(&mut atts, tag);
-    let start = if tag.content.is_empty() || tag.content == "0" { tag.values.first().cloned().unwrap_or_default() } else { tag.content.clone() };
+    let start = if tag.content.is_empty() || tag.content == "0" {
+        tag.values.first().cloned().unwrap_or_default()
+    } else {
+        tag.content.clone()
+    };
     let value = value_and_placeholder(r, tag, &mut atts, start);
     atts.set("name", Att::str(&tag.name));
-    wrap(&tag.name, &format!("<textarea {}>{}</textarea>", format_atts(&atts), esc_textarea(&value)))
+    wrap(
+        &tag.name,
+        &format!(
+            "<textarea {}>{}</textarea>",
+            format_atts(&atts),
+            esc_textarea(&value)
+        ),
+    )
 }
 
 /// `wpcf7_number_form_tag_handler()`.
@@ -353,7 +461,12 @@ fn number(r: &mut Render<'_>, tag: &FormTag) -> String {
     atts.set("readonly", Att::Bool(tag.has_option("readonly")));
     atts.set("autocomplete", Att::opt(tag.get_autocomplete_option()));
     required_and_valid(&mut atts, tag);
-    let value = value_and_placeholder(r, tag, &mut atts, tag.values.first().cloned().unwrap_or_default());
+    let value = value_and_placeholder(
+        r,
+        tag,
+        &mut atts,
+        tag.values.first().cloned().unwrap_or_default(),
+    );
     atts.set("value", Att::Str(value.clone()));
     if tag.basetype == "range" {
         let text_of = |a: Option<&Att>| match a {
@@ -398,7 +511,12 @@ fn date(r: &mut Render<'_>, tag: &FormTag) -> String {
     atts.set("readonly", Att::Bool(tag.has_option("readonly")));
     atts.set("autocomplete", Att::opt(tag.get_autocomplete_option()));
     required_and_valid(&mut atts, tag);
-    let mut value = value_and_placeholder(r, tag, &mut atts, tag.values.first().cloned().unwrap_or_default());
+    let mut value = value_and_placeholder(
+        r,
+        tag,
+        &mut atts,
+        tag.values.first().cloned().unwrap_or_default(),
+    );
     if truthy(&value)
         && let Some(date) = parse_date(&value.replace('_', " "), r.today)
     {
@@ -416,7 +534,10 @@ fn select(r: &mut Render<'_>, tag: &FormTag) -> String {
     let mut atts = Atts::default();
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts.set("autocomplete", Att::opt(tag.get_autocomplete_option()));
     required_and_valid(&mut atts, tag);
     let multiple = tag.has_option("multiple");
@@ -431,7 +552,11 @@ fn select(r: &mut Render<'_>, tag: &FormTag) -> String {
     let mut values = tag.values.clone();
     let mut labels = tag.labels.clone();
     let default_choice = r.default_values(tag, multiple);
-    let default_choice = if multiple { default_choice } else { default_choice.into_iter().take(1).collect() };
+    let default_choice = if multiple {
+        default_choice
+    } else {
+        default_choice.into_iter().take(1).collect()
+    };
     if include_blank || values.is_empty() {
         labels.insert(0, (r.tr)("&#8212;Please choose an option&#8212;"));
         values.insert(0, String::new());
@@ -444,11 +569,21 @@ fn select(r: &mut Render<'_>, tag: &FormTag) -> String {
         item.set("value", Att::Str(value.clone()));
         item.set("selected", Att::Bool(default_choice.contains(value)));
         let label = labels.get(i).unwrap_or(value);
-        options.push_str(&format!("<option {}>{}</option>", format_atts(&item), esc_html(label)));
+        options.push_str(&format!(
+            "<option {}>{}</option>",
+            format_atts(&item),
+            esc_html(label)
+        ));
     }
     atts.set("multiple", Att::Bool(multiple));
-    atts.set("name", Att::Str(format!("{}{}", tag.name, if multiple { "[]" } else { "" })));
-    wrap(&tag.name, &format!("<select {}>{options}</select>", format_atts(&atts)))
+    atts.set(
+        "name",
+        Att::Str(format!("{}{}", tag.name, if multiple { "[]" } else { "" })),
+    );
+    wrap(
+        &tag.name,
+        &format!("<select {}>{options}</select>", format_atts(&atts)),
+    )
 }
 
 /// `wpcf7_checkbox_form_tag_handler()` (checkboxes and radio buttons).
@@ -470,25 +605,40 @@ fn checkbox(r: &mut Render<'_>, tag: &FormTag) -> String {
     let mut atts = Atts::default();
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    let mut tabindex: Option<i64> = tag.get_option("tabindex", "signed_int").map(|t| t.parse().unwrap_or(0));
+    let mut tabindex: Option<i64> = tag
+        .get_option("tabindex", "signed_int")
+        .map(|t| t.parse().unwrap_or(0));
     let values = &tag.values;
     let labels = &tag.labels;
     let default_choice = r.default_values(tag, multiple);
-    let default_choice: Vec<String> = if multiple { default_choice } else { default_choice.into_iter().take(1).collect() };
+    let default_choice: Vec<String> = if multiple {
+        default_choice
+    } else {
+        default_choice.into_iter().take(1).collect()
+    };
     let mut html = String::new();
     for (i, value) in values.iter().enumerate() {
         let label = labels.get(i).unwrap_or(value);
         let mut item = Atts::default();
         item.set("type", Att::str(&tag.basetype));
-        item.set("name", Att::Str(format!("{}{}", tag.name, if multiple { "[]" } else { "" })));
+        item.set(
+            "name",
+            Att::Str(format!("{}{}", tag.name, if multiple { "[]" } else { "" })),
+        );
         item.set("value", Att::Str(value.clone()));
         item.set("checked", Att::Bool(default_choice.contains(value)));
         item.set("tabindex", tabindex.map_or(Att::Bool(false), Att::Int));
         let item_atts = format_atts(&item);
         let mut item_html = if label_first {
-            format!("<span class=\"wpcf7-list-item-label\">{}</span><input {item_atts} />", esc_html(label))
+            format!(
+                "<span class=\"wpcf7-list-item-label\">{}</span><input {item_atts} />",
+                esc_html(label)
+            )
         } else {
-            format!("<input {item_atts} /><span class=\"wpcf7-list-item-label\">{}</span>", esc_html(label))
+            format!(
+                "<input {item_atts} /><span class=\"wpcf7-list-item-label\">{}</span>",
+                esc_html(label)
+            )
         };
         if use_label_element {
             item_html = format!("<label>{item_html}</label>");
@@ -514,9 +664,15 @@ fn checkbox(r: &mut Render<'_>, tag: &FormTag) -> String {
                 item_class.push_str(" has-free-text");
             }
         }
-        html.push_str(&format!("<span class=\"{}\">{item_html}</span>", esc_attr(&item_class)));
+        html.push_str(&format!(
+            "<span class=\"{}\">{item_html}</span>",
+            esc_attr(&item_class)
+        ));
     }
-    wrap(&tag.name, &format!("<span {}>{html}</span>", format_atts(&atts)))
+    wrap(
+        &tag.name,
+        &format!("<span {}>{html}</span>", format_atts(&atts)),
+    )
 }
 
 /// `wpcf7_acceptance_form_tag_handler()`.
@@ -534,13 +690,23 @@ fn acceptance(r: &mut Render<'_>, tag: &FormTag) -> String {
     item.set("type", Att::str("checkbox"));
     item.set("name", Att::str(&tag.name));
     item.set("value", Att::str("1"));
-    item.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    item.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     item.set("checked", Att::Bool(tag.has_option("default:on")));
-    item.set("class", tag.get_class_option("").map_or(Att::Null, Att::Str));
+    item.set(
+        "class",
+        tag.get_class_option("").map_or(Att::Null, Att::Str),
+    );
     item.set("id", r.id_option(tag));
     item.set("aria-invalid", Att::str("false"));
     let item_atts = format_atts(&item);
-    let content = if tag.content.is_empty() || tag.content == "0" { tag.values.first().cloned().unwrap_or_default() } else { tag.content.clone() };
+    let content = if tag.content.is_empty() || tag.content == "0" {
+        tag.values.first().cloned().unwrap_or_default()
+    } else {
+        tag.content.clone()
+    };
     let content = content.trim();
     let html = if truthy(content) {
         let inner = if tag.has_option("label_first") {
@@ -552,7 +718,10 @@ fn acceptance(r: &mut Render<'_>, tag: &FormTag) -> String {
     } else {
         format!("<span class=\"wpcf7-list-item\"><input {item_atts} /></span>")
     };
-    wrap(&tag.name, &format!("<span {}>{html}</span>", format_atts(&atts)))
+    wrap(
+        &tag.name,
+        &format!("<span {}>{html}</span>", format_atts(&atts)),
+    )
 }
 
 /// `wpcf7_canonicalize( $text, array( 'strip_separators' => true ) )` (without `mb_convert_kana()`'s width folding).
@@ -560,14 +729,18 @@ pub fn canonicalize(text: &str, strip_separators: bool) -> String {
     static SEPARATORS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\r\n\t ]+").unwrap());
     let text = rustpress_core::formatting::html_entity_decode(text);
     let text = SEPARATORS.replace_all(&text, if strip_separators { "" } else { " " });
-    super::formatter::strip_whitespaces(&text.to_lowercase(), super::formatter::Side::Both).to_owned()
+    super::formatter::strip_whitespaces(&text.to_lowercase(), super::formatter::Side::Both)
+        .to_owned()
 }
 
 /// `wpcf7_quiz_form_tag_handler()`.
 fn quiz(r: &mut Render<'_>, tag: &FormTag) -> String {
     let class = form_controls_class(&tag.tag_type, "");
     let mut atts = Atts::default();
-    atts.set("size", Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())));
+    atts.set(
+        "size",
+        Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())),
+    );
     atts.set("maxlength", Att::opt(tag.get_maxlength_option()));
     atts.set("minlength", Att::opt(tag.get_minlength_option()));
     if length_conflict(&atts) {
@@ -576,7 +749,10 @@ fn quiz(r: &mut Render<'_>, tag: &FormTag) -> String {
     }
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts.set("autocomplete", Att::str("off"));
     atts.set("aria-required", Att::str("true"));
     atts.set("aria-invalid", Att::str("false"));
@@ -622,9 +798,14 @@ fn acceptable_filetypes_attr(types: &[String]) -> String {
             if !t.contains('/') {
                 Some(format!(".{}", t.trim_matches('.')))
             } else if let Some(c) = WILDCARD.captures(t) {
-                ["audio", "video", "image"].contains(&&c[1]).then(|| t.clone())
+                ["audio", "video", "image"]
+                    .contains(&&c[1])
+                    .then(|| t.clone())
             } else {
-                rustpress_content::media::MIME_TYPES.iter().any(|(_, m)| m == t).then(|| t.clone())
+                rustpress_content::media::MIME_TYPES
+                    .iter()
+                    .any(|(_, m)| m == t)
+                    .then(|| t.clone())
             }
         })
         .filter(|t| !t.is_empty())
@@ -636,12 +817,24 @@ fn acceptable_filetypes_attr(types: &[String]) -> String {
 fn file(r: &mut Render<'_>, tag: &FormTag) -> String {
     let class = form_controls_class(&tag.tag_type, "");
     let mut atts = Atts::default();
-    atts.set("size", Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())));
+    atts.set(
+        "size",
+        Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())),
+    );
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    atts.set("capture", Att::opt(tag.get_option("capture", "(user|environment)")));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
-    atts.set("accept", Att::Str(acceptable_filetypes_attr(&tag.get_options("filetypes", ""))));
+    atts.set(
+        "capture",
+        Att::opt(tag.get_option("capture", "(user|environment)")),
+    );
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
+    atts.set(
+        "accept",
+        Att::Str(acceptable_filetypes_attr(&tag.get_options("filetypes", ""))),
+    );
     required_and_valid(&mut atts, tag);
     atts.set("type", Att::str("file"));
     atts.set("name", Att::str(&tag.name));
@@ -654,7 +847,9 @@ fn hidden(r: &mut Render<'_>, tag: &FormTag) -> String {
     let mut atts = Atts::default();
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    let value = r.default_option(tag, tag.values.first().cloned()).unwrap_or_default();
+    let value = r
+        .default_option(tag, tag.values.first().cloned())
+        .unwrap_or_default();
     atts.set("value", Att::Str(value));
     atts.set("type", Att::str("hidden"));
     atts.set("name", Att::str(&tag.name));
@@ -663,8 +858,12 @@ fn hidden(r: &mut Render<'_>, tag: &FormTag) -> String {
 
 /// `wpcf7_count_form_tag_handler()`.
 fn count(r: &mut Render<'_>, tag: &FormTag) -> String {
-    let target = super::form_tag::scan(r.template).into_iter().find(|t| t.name == tag.name && t.tag_type != "count");
-    let (mut maxlength, mut minlength) = target.map_or((None, None), |t| (t.get_maxlength_option(), t.get_minlength_option()));
+    let target = super::form_tag::scan(r.template)
+        .into_iter()
+        .find(|t| t.name == tag.name && t.tag_type != "count");
+    let (mut maxlength, mut minlength) = target.map_or((None, None), |t| {
+        (t.get_maxlength_option(), t.get_minlength_option())
+    });
     if let (Some(max), Some(min)) = (&maxlength, &minlength)
         && max.parse::<i64>().unwrap_or(0) < min.parse::<i64>().unwrap_or(0)
     {
@@ -672,7 +871,14 @@ fn count(r: &mut Render<'_>, tag: &FormTag) -> String {
         minlength = None;
     }
     let (value, class) = if tag.has_option("down") {
-        (maxlength.as_deref().and_then(|m| m.parse::<i64>().ok()).unwrap_or(0).to_string(), "wpcf7-character-count down")
+        (
+            maxlength
+                .as_deref()
+                .and_then(|m| m.parse::<i64>().ok())
+                .unwrap_or(0)
+                .to_string(),
+            "wpcf7-character-count down",
+        )
     } else {
         ("0".to_owned(), "wpcf7-character-count up")
     };
@@ -691,7 +897,12 @@ fn count(r: &mut Render<'_>, tag: &FormTag) -> String {
 fn submit(r: &mut Render<'_>, tag: &FormTag) -> String {
     let class = form_controls_class(&tag.tag_type, "has-spinner");
     let mut atts = common(r, tag, &class);
-    let value = tag.values.first().cloned().filter(|v| truthy(v)).unwrap_or_else(|| (r.tr)("Send"));
+    let value = tag
+        .values
+        .first()
+        .cloned()
+        .filter(|v| truthy(v))
+        .unwrap_or_else(|| (r.tr)("Send"));
     atts.set("type", Att::str("submit"));
     atts.set("value", Att::Str(value));
     format!("<input {} />", format_atts(&atts))
@@ -699,17 +910,32 @@ fn submit(r: &mut Render<'_>, tag: &FormTag) -> String {
 
 /// `wpcf7_reflection_form_tag_handler()`.
 fn reflection(r: &mut Render<'_>, tag: &FormTag) -> String {
-    let values = if tag.values.is_empty() { vec![String::new()] } else { tag.values.clone() };
+    let values = if tag.values.is_empty() {
+        vec![String::new()]
+    } else {
+        tag.values.clone()
+    };
     let mut content = String::new();
     for item in &values {
         let mut atts = Atts::default();
         atts.set("name", Att::str(&tag.name));
         atts.set("data-default", Att::Str(item.clone()));
-        content.push_str(&format!("<output {}>{}</output>", format_atts(&atts), if item.is_empty() { "&nbsp;".to_owned() } else { esc_html(item) }));
+        content.push_str(&format!(
+            "<output {}>{}</output>",
+            format_atts(&atts),
+            if item.is_empty() {
+                "&nbsp;".to_owned()
+            } else {
+                esc_html(item)
+            }
+        ));
     }
     let mut atts = Atts::default();
     atts.set("data-reflection-of", Att::str(&tag.name));
-    atts.set("class", Att::opt(tag.get_class_option(&form_controls_class(&tag.tag_type, ""))));
+    atts.set(
+        "class",
+        Att::opt(tag.get_class_option(&form_controls_class(&tag.tag_type, ""))),
+    );
     atts.set("id", r.id_option(tag));
     format!("<fieldset {}>{content}</fieldset>", format_atts(&atts))
 }
@@ -721,15 +947,28 @@ fn output(r: &mut Render<'_>, tag: &FormTag) -> String {
     atts.set("data-reflection-of", Att::str(&tag.name));
     atts.set("data-default", Att::Str(value.clone()));
     atts.set("name", Att::str(&tag.name));
-    atts.set("class", Att::opt(tag.get_class_option(&form_controls_class(&tag.tag_type, ""))));
+    atts.set(
+        "class",
+        Att::opt(tag.get_class_option(&form_controls_class(&tag.tag_type, ""))),
+    );
     atts.set("id", r.id_option(tag));
-    format!("<output {}>{}</output>", format_atts(&atts), esc_html(&value))
+    format!(
+        "<output {}>{}</output>",
+        format_atts(&atts),
+        esc_html(&value)
+    )
 }
 
 /// `wpcf7_stripe_form_tag_handler()`.
 fn stripe(r: &Render<'_>, tag: &FormTag) -> String {
-    let first = tag.values.first().map_or_else(|| (r.tr)("Proceed to checkout"), |v| v.trim().to_owned());
-    let second = tag.values.get(1).map_or_else(|| (r.tr)("Complete payment"), |v| v.trim().to_owned());
+    let first = tag
+        .values
+        .first()
+        .map_or_else(|| (r.tr)("Proceed to checkout"), |v| v.trim().to_owned());
+    let second = tag
+        .values
+        .get(1)
+        .map_or_else(|| (r.tr)("Complete payment"), |v| v.trim().to_owned());
     format!(
         "<div class=\"wpcf7-stripe\"><div class=\"wpcf7-form-control-wrap hidden\"><div class=\"card-element wpcf7-form-control\" aria-invalid=\"false\"></div></div> <span class=\"buttons has-spinner\"><button type=\"submit\" class=\"first\">{}</button> <button type=\"button\" class=\"second hidden\">{}</button></span> <input type=\"hidden\" name=\"_wpcf7_stripe_payment_intent\" value=\"\" /></div>",
         esc_html(&first),
@@ -741,7 +980,10 @@ fn stripe(r: &Render<'_>, tag: &FormTag) -> String {
 fn captchar(r: &mut Render<'_>, tag: &FormTag) -> String {
     let class = form_controls_class(&tag.tag_type, "");
     let mut atts = Atts::default();
-    atts.set("size", Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())));
+    atts.set(
+        "size",
+        Att::Str(tag.get_size_option().unwrap_or_else(|| "40".to_owned())),
+    );
     atts.set("maxlength", Att::opt(tag.get_maxlength_option()));
     atts.set("minlength", Att::opt(tag.get_minlength_option()));
     if length_conflict(&atts) {
@@ -750,7 +992,10 @@ fn captchar(r: &mut Render<'_>, tag: &FormTag) -> String {
     }
     atts.set("class", Att::opt(tag.get_class_option(&class)));
     atts.set("id", r.id_option(tag));
-    atts.set("tabindex", Att::opt(tag.get_option("tabindex", "signed_int")));
+    atts.set(
+        "tabindex",
+        Att::opt(tag.get_option("tabindex", "signed_int")),
+    );
     atts.set("autocomplete", Att::str("off"));
     atts.set("aria-invalid", Att::str("false"));
     let mut value = tag.values.first().cloned().unwrap_or_default();
@@ -803,7 +1048,10 @@ mod tests {
     #[test]
     fn relative_dates() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
-        assert_eq!(parse_date("2026-12-31", today).as_deref(), Some("2026-12-31"));
+        assert_eq!(
+            parse_date("2026-12-31", today).as_deref(),
+            Some("2026-12-31")
+        );
         assert_eq!(parse_date("tomorrow", today).as_deref(), Some("2026-02-01"));
         assert_eq!(parse_date("+1 month", today).as_deref(), Some("2026-03-03"));
         assert_eq!(parse_date("-2 weeks", today).as_deref(), Some("2026-01-17"));
@@ -812,7 +1060,13 @@ mod tests {
 
     #[test]
     fn controls_class() {
-        assert_eq!(form_controls_class("text*", "wpcf7-text"), "wpcf7-form-control wpcf7-text wpcf7-validates-as-required");
-        assert_eq!(form_controls_class("submit", "has-spinner"), "wpcf7-form-control wpcf7-submit has-spinner");
+        assert_eq!(
+            form_controls_class("text*", "wpcf7-text"),
+            "wpcf7-form-control wpcf7-text wpcf7-validates-as-required"
+        );
+        assert_eq!(
+            form_controls_class("submit", "has-spinner"),
+            "wpcf7-form-control wpcf7-submit has-spinner"
+        );
     }
 }

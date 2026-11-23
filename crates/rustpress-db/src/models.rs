@@ -89,11 +89,15 @@ pub struct AuthUser {
 
 impl std::fmt::Debug for AuthUser {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuthUser").field("id", &self.id).field("user_login", &self.user_login).finish_non_exhaustive()
+        f.debug_struct("AuthUser")
+            .field("id", &self.id)
+            .field("user_login", &self.user_login)
+            .finish_non_exhaustive()
     }
 }
 
-pub(crate) const AUTH_USER_COLUMNS: &str = "ID, user_login, user_pass, user_nicename, user_email, display_name";
+pub(crate) const AUTH_USER_COLUMNS: &str =
+    "ID, user_login, user_pass, user_nicename, user_email, display_name";
 
 #[derive(Debug, Clone, FromRow)]
 pub struct Comment {

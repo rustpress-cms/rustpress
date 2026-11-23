@@ -42,26 +42,48 @@ impl From<rustpress_core::Error> for ContentError {
 /// The actions and filters of `wp_insert_post()` that plugins take part in.
 pub trait InsertHooks: Sync {
     /// `save_post`.
-    fn save_post(&self, post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
+    fn save_post(&self, post_id: u64)
+    -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
     /// `wp_save_post_revision_post_has_changed`.
-    fn revision_post_has_changed(&self, post_id: u64, latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>>;
+    fn revision_post_has_changed(
+        &self,
+        post_id: u64,
+        latest_revision: u64,
+        changed: bool,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>>;
     /// `_wp_put_post_revision`.
-    fn put_post_revision(&self, post_id: u64, revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
+    fn put_post_revision(
+        &self,
+        post_id: u64,
+        revision_id: u64,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>>;
 }
 
 /// No plugin takes part.
 struct NoHooks;
 
 impl InsertHooks for NoHooks {
-    fn save_post(&self, _post_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+    fn save_post(
+        &self,
+        _post_id: u64,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
         Box::pin(async { Ok(()) })
     }
 
-    fn revision_post_has_changed(&self, _post_id: u64, _latest_revision: u64, changed: bool) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
+    fn revision_post_has_changed(
+        &self,
+        _post_id: u64,
+        _latest_revision: u64,
+        changed: bool,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<bool>> {
         Box::pin(async move { Ok(changed) })
     }
 
-    fn put_post_revision(&self, _post_id: u64, _revision_id: u64) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
+    fn put_post_revision(
+        &self,
+        _post_id: u64,
+        _revision_id: u64,
+    ) -> futures::future::BoxFuture<'_, rustpress_core::Result<()>> {
         Box::pin(async { Ok(()) })
     }
 }
@@ -131,7 +153,15 @@ const DATE_FLOATING: [&str; 3] = ["draft", "pending", "auto-draft"];
 
 /// `normalize_whitespace()`.
 fn normalize_whitespace(text: &str) -> String {
-    text.trim().replace("\r\n", "\n").replace('\r', "\n").split(['\t', ' ']).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ").replace(" \n", "\n").replace("\n ", "\n")
+    text.trim()
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split(['\t', ' '])
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(" \n", "\n")
+        .replace("\n ", "\n")
 }
 
 /// `_truncate_post_slug()`.
@@ -177,7 +207,12 @@ impl Content<'_> {
     }
 
     pub fn is_hierarchical(&self, post_type: &str) -> bool {
-        post_type == "page" || self.site.types.post_type(post_type).is_some_and(|t| t.hierarchical)
+        post_type == "page"
+            || self
+                .site
+                .types
+                .post_type(post_type)
+                .is_some_and(|t| t.hierarchical)
     }
 
     /// Taxonomies of a post type (`get_object_taxonomies()`), `(name, hierarchical)`.
@@ -198,7 +233,9 @@ impl Content<'_> {
             _ => {}
         }
         for tax in &self.site.types.taxonomies {
-            if tax.object_types.iter().any(|t| t == post_type) && !out.iter().any(|(n, _)| *n == tax.name) {
+            if tax.object_types.iter().any(|t| t == post_type)
+                && !out.iter().any(|(n, _)| *n == tax.name)
+            {
                 out.push((tax.name.clone(), tax.hierarchical));
             }
         }
@@ -210,8 +247,18 @@ impl Content<'_> {
     }
 
     /// `wp_unique_post_slug()`.
-    pub async fn unique_post_slug(&self, slug: &str, post_id: u64, status: &str, post_type: &str, parent: u64) -> Result<String> {
-        if DATE_FLOATING.contains(&status) || (status == "inherit" && post_type == "revision") || post_type == "user_request" {
+    pub async fn unique_post_slug(
+        &self,
+        slug: &str,
+        post_id: u64,
+        status: &str,
+        post_type: &str,
+        parent: u64,
+    ) -> Result<String> {
+        if DATE_FLOATING.contains(&status)
+            || (status == "inherit" && post_type == "revision")
+            || post_type == "user_request"
+        {
             return Ok(slug.to_owned());
         }
         let feeds = ["feed", "rdf", "rss", "rss2", "atom"];
@@ -222,12 +269,22 @@ impl Content<'_> {
         } else {
             SlugScope::Flat
         };
-        let mut bad = self.db.post_name_taken(scope, slug, post_type, post_id, parent).await? || feeds.contains(&slug) || slug == "embed";
+        let mut bad = self
+            .db
+            .post_name_taken(scope, slug, post_type, post_id, parent)
+            .await?
+            || feeds.contains(&slug)
+            || slug == "embed";
         if scope == SlugScope::Hierarchical {
             let digits = slug.trim_start_matches("page");
             bad = bad || (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()));
         }
-        if scope == SlugScope::Flat && post_type == "post" && !bad && !slug.is_empty() && slug.chars().all(|c| c.is_ascii_digit()) {
+        if scope == SlugScope::Flat
+            && post_type == "post"
+            && !bad
+            && !slug.is_empty()
+            && slug.chars().all(|c| c.is_ascii_digit())
+        {
             let current = self.db.post(post_id).await?.map(|p| p.post_name);
             if current.as_deref() != Some(slug) {
                 let structure = self.site.options.string("permalink_structure", "");
@@ -236,7 +293,9 @@ impl Content<'_> {
                 if number > 0
                     && let Some(index) = parts.iter().position(|p| *p == "%postname%")
                 {
-                    bad = index == 0 || (parts.get(index.wrapping_sub(1)) == Some(&"%year%") && number < 13) || (parts.get(index.wrapping_sub(1)) == Some(&"%monthnum%") && number < 32);
+                    bad = index == 0
+                        || (parts.get(index.wrapping_sub(1)) == Some(&"%year%") && number < 13)
+                        || (parts.get(index.wrapping_sub(1)) == Some(&"%monthnum%") && number < 32);
                 }
             }
         }
@@ -245,8 +304,15 @@ impl Content<'_> {
         }
         let mut suffix = 2u32;
         loop {
-            let candidate = format!("{}-{suffix}", truncate_slug(slug, 200 - (suffix.to_string().len() + 1)));
-            if !self.db.post_name_taken(scope, &candidate, post_type, post_id, parent).await? {
+            let candidate = format!(
+                "{}-{suffix}",
+                truncate_slug(slug, 200 - (suffix.to_string().len() + 1))
+            );
+            if !self
+                .db
+                .post_name_taken(scope, &candidate, post_type, post_id, parent)
+                .await?
+            {
                 return Ok(candidate);
             }
             suffix += 1;
@@ -258,9 +324,18 @@ impl Content<'_> {
         if post.post_name.ends_with("__trashed") {
             return Ok(post.post_name.clone());
         }
-        self.writer.add_post_meta(post.id, "_wp_desired_post_slug", &post.post_name).await?;
+        self.writer
+            .add_post_meta(post.id, "_wp_desired_post_slug", &post.post_name)
+            .await?;
         let name = format!("{}__trashed", truncate_slug(&post.post_name, 191));
-        self.writer.update_rows("posts", "ID", post.id, &[("post_name", Val::Str(name.clone()))]).await?;
+        self.writer
+            .update_rows(
+                "posts",
+                "ID",
+                post.id,
+                &[("post_name", Val::Str(name.clone()))],
+            )
+            .await?;
         Ok(name)
     }
 
@@ -273,15 +348,29 @@ impl Content<'_> {
     /// `wp_after_insert_post`, after `save_post`).
     pub async fn insert_post_with(&self, data: &PostData, hooks: &dyn InsertHooks) -> Result<u64> {
         let before = match data.id.filter(|id| *id != 0) {
-            Some(id) => Some(self.db.post(id).await?.ok_or_else(|| ContentError::Message(self.site.tr("Invalid post ID.")))?),
+            Some(id) => Some(
+                self.db
+                    .post(id)
+                    .await?
+                    .ok_or_else(|| ContentError::Message(self.site.tr("Invalid post ID.")))?,
+            ),
             None => None,
         };
         let update = before.is_some();
-        let previous_status = before.as_ref().map_or_else(|| "new".to_owned(), |p| p.post_status.clone());
+        let previous_status = before
+            .as_ref()
+            .map_or_else(|| "new".to_owned(), |p| p.post_status.clone());
         let post_id = before.as_ref().map_or(0, |p| p.id);
-        let pick = |new: &Option<String>, old: Option<&String>| new.clone().or_else(|| old.cloned()).unwrap_or_default();
+        let pick = |new: &Option<String>, old: Option<&String>| {
+            new.clone().or_else(|| old.cloned()).unwrap_or_default()
+        };
 
-        let post_type = data.post_type.clone().or_else(|| before.as_ref().map(|p| p.post_type.clone())).filter(|t| !t.is_empty()).unwrap_or_else(|| "post".to_owned());
+        let post_type = data
+            .post_type
+            .clone()
+            .or_else(|| before.as_ref().map(|p| p.post_type.clone()))
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "post".to_owned());
         let post_title = pick(&data.post_title, before.as_ref().map(|p| &p.post_title));
         let post_content = pick(&data.post_content, before.as_ref().map(|p| &p.post_content));
         let post_excerpt = pick(&data.post_excerpt, before.as_ref().map(|p| &p.post_excerpt));
@@ -290,22 +379,57 @@ impl Content<'_> {
         } else {
             // `edit_css` maps to `unfiltered_html`; `wp_strip_custom_css_from_blocks()` runs before kses.
             let post_content = rustpress_blocks::custom_css::strip_custom_css(&post_content);
-            (kses_post(&post_title).replace('<', "&lt;").replace('>', "&gt;").replace("&amp;lt;", "&lt;"), kses_post(&post_content), kses_post(&post_excerpt))
+            (
+                kses_post(&post_title)
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+                    .replace("&amp;lt;", "&lt;"),
+                kses_post(&post_content),
+                kses_post(&post_excerpt),
+            )
         };
-        let post_title = if self.can("unfiltered_html") { post_title.trim().to_owned() } else { rustpress_core::formatting::strip_tags(&post_title).trim().to_owned() };
+        let post_title = if self.can("unfiltered_html") {
+            post_title.trim().to_owned()
+        } else {
+            rustpress_core::formatting::strip_tags(&post_title)
+                .trim()
+                .to_owned()
+        };
         let supports = |feature: &str| self.site.post_type_supports(&post_type, feature);
-        if post_type != "attachment" && post_content.is_empty() && post_title.is_empty() && post_excerpt.is_empty() && supports("editor") && supports("title") && supports("excerpt") {
-            return Err(ContentError::Message(self.site.tr("Content, title, and excerpt are empty.")));
+        if post_type != "attachment"
+            && post_content.is_empty()
+            && post_title.is_empty()
+            && post_excerpt.is_empty()
+            && supports("editor")
+            && supports("title")
+            && supports("excerpt")
+        {
+            return Err(ContentError::Message(
+                self.site.tr("Content, title, and excerpt are empty."),
+            ));
         }
-        let mut post_status = data.post_status.clone().or_else(|| before.as_ref().map(|p| p.post_status.clone())).filter(|s| !s.is_empty()).unwrap_or_else(|| "draft".to_owned());
-        if post_type == "attachment" && !["inherit", "private", "trash", "auto-draft"].contains(&post_status.as_str()) {
+        let mut post_status = data
+            .post_status
+            .clone()
+            .or_else(|| before.as_ref().map(|p| p.post_status.clone()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "draft".to_owned());
+        if post_type == "attachment"
+            && !["inherit", "private", "trash", "auto-draft"].contains(&post_status.as_str())
+        {
             post_status = "inherit".to_owned();
         }
 
         // Categories
         let mut post_category: Vec<u64> = match &data.post_category {
             Some(cats) => cats.iter().copied().filter(|c| *c != 0).collect(),
-            None if update => self.db.terms_for_post(post_id, Some("category")).await?.into_iter().map(|t| t.term_id).collect(),
+            None if update => self
+                .db
+                .terms_for_post(post_id, Some("category"))
+                .await?
+                .into_iter()
+                .map(|t| t.term_id)
+                .collect(),
             None => Vec::new(),
         };
         if post_category.is_empty() && post_type == "post" && post_status != "auto-draft" {
@@ -315,31 +439,66 @@ impl Content<'_> {
         // Slug
         let mut post_name = match &data.post_name {
             Some(name) => name.clone(),
-            None => before.as_ref().map(|p| p.post_name.clone()).unwrap_or_default(),
+            None => before
+                .as_ref()
+                .map(|p| p.post_name.clone())
+                .unwrap_or_default(),
         };
         if post_status == "pending" {
-            let publish_cap = if post_type == "page" { "publish_pages" } else { "publish_posts" };
+            let publish_cap = if post_type == "page" {
+                "publish_pages"
+            } else {
+                "publish_posts"
+            };
             if !self.can(publish_cap) {
                 post_name = String::new();
             }
         }
         if post_name.is_empty() {
-            post_name = if !DATE_FLOATING.contains(&post_status.as_str()) { sanitize_title_save(&post_title, &self.site.locale()) } else { String::new() };
+            post_name = if !DATE_FLOATING.contains(&post_status.as_str()) {
+                sanitize_title_save(&post_title, &self.site.locale())
+            } else {
+                String::new()
+            };
         } else {
-            let current = before.as_ref().map(|p| p.post_name.as_str()).unwrap_or_default();
+            let current = before
+                .as_ref()
+                .map(|p| p.post_name.as_str())
+                .unwrap_or_default();
             if !(update && post_name == current) {
                 post_name = sanitize_title_save(&post_name, &self.site.locale());
             }
         }
 
         // Dates
-        let requested_date = data.post_date.clone().or_else(|| before.as_ref().filter(|_| !data.edit_date || data.post_date.is_none()).map(|p| p.post_date.clone()));
-        let requested_gmt = data.post_date_gmt.clone().or_else(|| before.as_ref().map(|p| p.post_date_gmt.clone()));
-        let clear_date = update && DATE_FLOATING.contains(&previous_status.as_str()) && !data.edit_date && before.as_ref().is_some_and(|p| p.post_date_gmt == "0000-00-00 00:00:00");
-        let (requested_date, requested_gmt) = if clear_date { (Some(self.local_now()), Some(String::new())) } else { (requested_date, requested_gmt) };
-        let post_date = match requested_date.filter(|d| !d.is_empty() && d != "0000-00-00 00:00:00") {
+        let requested_date = data.post_date.clone().or_else(|| {
+            before
+                .as_ref()
+                .filter(|_| !data.edit_date || data.post_date.is_none())
+                .map(|p| p.post_date.clone())
+        });
+        let requested_gmt = data
+            .post_date_gmt
+            .clone()
+            .or_else(|| before.as_ref().map(|p| p.post_date_gmt.clone()));
+        let clear_date = update
+            && DATE_FLOATING.contains(&previous_status.as_str())
+            && !data.edit_date
+            && before
+                .as_ref()
+                .is_some_and(|p| p.post_date_gmt == "0000-00-00 00:00:00");
+        let (requested_date, requested_gmt) = if clear_date {
+            (Some(self.local_now()), Some(String::new()))
+        } else {
+            (requested_date, requested_gmt)
+        };
+        let post_date = match requested_date.filter(|d| !d.is_empty() && d != "0000-00-00 00:00:00")
+        {
             Some(date) => date,
-            None => match requested_gmt.as_deref().filter(|g| !g.is_empty() && *g != "0000-00-00 00:00:00") {
+            None => match requested_gmt
+                .as_deref()
+                .filter(|g| !g.is_empty() && *g != "0000-00-00 00:00:00")
+            {
                 Some(gmt) => self.local_from_gmt(gmt),
                 None => self.local_now(),
             },
@@ -347,19 +506,25 @@ impl Content<'_> {
         if !valid_date(&post_date) {
             return Err(ContentError::Message(self.site.tr("Invalid date.")));
         }
-        let post_date_gmt = match requested_gmt.filter(|g| !g.is_empty() && g != "0000-00-00 00:00:00") {
-            Some(gmt) if data.post_date.is_none() || data.post_date_gmt.is_some() => gmt,
-            _ => {
-                if DATE_FLOATING.contains(&post_status.as_str()) {
-                    "0000-00-00 00:00:00".to_owned()
-                } else {
-                    self.gmt_from_local(&post_date)
+        let post_date_gmt =
+            match requested_gmt.filter(|g| !g.is_empty() && g != "0000-00-00 00:00:00") {
+                Some(gmt) if data.post_date.is_none() || data.post_date_gmt.is_some() => gmt,
+                _ => {
+                    if DATE_FLOATING.contains(&post_status.as_str()) {
+                        "0000-00-00 00:00:00".to_owned()
+                    } else {
+                        self.gmt_from_local(&post_date)
+                    }
                 }
-            }
+            };
+        let (post_modified, post_modified_gmt) = if update || post_date == "0000-00-00 00:00:00" {
+            (self.local_now(), self.gmt_now())
+        } else {
+            (post_date.clone(), post_date_gmt.clone())
         };
-        let (post_modified, post_modified_gmt) = if update || post_date == "0000-00-00 00:00:00" { (self.local_now(), self.gmt_now()) } else { (post_date.clone(), post_date_gmt.clone()) };
         if post_type != "attachment" {
-            let gmt_ts = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post_date_gmt).unwrap_or(0);
+            let gmt_ts =
+                rustpress_core::datetime::SiteTimezone::gmt_timestamp(&post_date_gmt).unwrap_or(0);
             if post_status == "publish" && gmt_ts - self.now >= 60 {
                 post_status = "future".to_owned();
             } else if post_status == "future" && gmt_ts - self.now < 60 {
@@ -369,21 +534,41 @@ impl Content<'_> {
 
         let comment_status = match data.comment_status.clone().filter(|s| !s.is_empty()) {
             Some(s) => s,
-            None if update => before.as_ref().map(|p| p.comment_status.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "closed".to_owned()),
+            None if update => before
+                .as_ref()
+                .map(|p| p.comment_status.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "closed".to_owned()),
             None => self.default_status(&post_type, "comment"),
         };
         let ping_status = match data.ping_status.clone().filter(|s| !s.is_empty()) {
             Some(s) => s,
-            None if update => before.as_ref().map(|p| p.ping_status.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| self.default_status(&post_type, "ping")),
+            None if update => before
+                .as_ref()
+                .map(|p| p.ping_status.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| self.default_status(&post_type, "ping")),
             None => self.default_status(&post_type, "ping"),
         };
-        let post_author = data.post_author.or(before.as_ref().map(|p| p.post_author)).unwrap_or(self.user.id);
-        let menu_order = data.menu_order.or(before.as_ref().map(|p| p.menu_order)).unwrap_or(0);
-        let mut post_password = pick(&data.post_password, before.as_ref().map(|p| &p.post_password));
+        let post_author = data
+            .post_author
+            .or(before.as_ref().map(|p| p.post_author))
+            .unwrap_or(self.user.id);
+        let menu_order = data
+            .menu_order
+            .or(before.as_ref().map(|p| p.menu_order))
+            .unwrap_or(0);
+        let mut post_password = pick(
+            &data.post_password,
+            before.as_ref().map(|p| &p.post_password),
+        );
         if post_status == "private" {
             post_password.clear();
         }
-        let mut post_parent = data.post_parent.or(before.as_ref().map(|p| p.post_parent)).unwrap_or(0);
+        let mut post_parent = data
+            .post_parent
+            .or(before.as_ref().map(|p| p.post_parent))
+            .unwrap_or(0);
         // `wp_check_post_hierarchy_for_loops()`: a parent that is the post itself or one of its descendants is none.
         if post_id != 0 && post_parent != 0 {
             let mut seen = std::collections::HashSet::new();
@@ -396,19 +581,33 @@ impl Content<'_> {
                 ancestor = self.db.post(ancestor).await?.map_or(0, |p| p.post_parent);
             }
         }
-        let post_mime_type = pick(&data.post_mime_type, before.as_ref().map(|p| &p.post_mime_type));
+        let post_mime_type = pick(
+            &data.post_mime_type,
+            before.as_ref().map(|p| &p.post_mime_type),
+        );
 
         // Trash
         if previous_status == "trash" && post_status != "trash" {
-            let desired = self.db.post_meta_value(post_id, "_wp_desired_post_slug").await?;
+            let desired = self
+                .db
+                .post_meta_value(post_id, "_wp_desired_post_slug")
+                .await?;
             if let Some(desired) = desired.filter(|d| !d.is_empty()) {
-                self.writer.delete_post_meta(post_id, "_wp_desired_post_slug").await?;
+                self.writer
+                    .delete_post_meta(post_id, "_wp_desired_post_slug")
+                    .await?;
                 post_name = desired;
             }
         }
         if post_status != "trash" && !post_name.is_empty() {
             // Other trashed posts with this slug give it up.
-            let query = rustpress_db::PostQuery { post_types: Vec::new(), statuses: vec!["trash".into()], name: Some(post_name.clone()), exclude_ids: vec![post_id], ..Default::default() };
+            let query = rustpress_db::PostQuery {
+                post_types: Vec::new(),
+                statuses: vec!["trash".into()],
+                name: Some(post_name.clone()),
+                exclude_ids: vec![post_id],
+                ..Default::default()
+            };
             for other in self.db.posts(&query).await? {
                 self.add_trashed_suffix(&other).await?;
             }
@@ -421,15 +620,25 @@ impl Content<'_> {
             post_name = self.add_trashed_suffix(current).await?;
         }
         // `sanitize_title( $post_title, $post_ID )`: what has no title takes its ID.
-        let post_name = if post_name.is_empty() && update && !DATE_FLOATING.contains(&post_status.as_str()) { post_id.to_string() } else { post_name };
-        let post_name = self.unique_post_slug(&post_name, post_id, &post_status, &post_type, post_parent).await?;
+        let post_name =
+            if post_name.is_empty() && update && !DATE_FLOATING.contains(&post_status.as_str()) {
+                post_id.to_string()
+            } else {
+                post_name
+            };
+        let post_name = self
+            .unique_post_slug(&post_name, post_id, &post_status, &post_type, post_parent)
+            .await?;
 
         let fields: Vec<(&str, Val)> = vec![
             ("post_author", Val::Int(post_author as i64)),
             ("post_date", Val::Str(post_date.clone())),
             ("post_date_gmt", Val::Str(post_date_gmt.clone())),
             ("post_content", Val::Str(post_content.clone())),
-            ("post_content_filtered", Val::Str(before.as_ref().map(|_| String::new()).unwrap_or_default())),
+            (
+                "post_content_filtered",
+                Val::Str(before.as_ref().map(|_| String::new()).unwrap_or_default()),
+            ),
             ("post_title", Val::Str(post_title.clone())),
             ("post_excerpt", Val::Str(post_excerpt.clone())),
             ("post_status", Val::Str(post_status.clone())),
@@ -446,16 +655,27 @@ impl Content<'_> {
             ("menu_order", Val::Int(i64::from(menu_order))),
             ("post_mime_type", Val::Str(post_mime_type)),
         ];
-        let guid = data.guid.clone().or_else(|| before.as_ref().map(|p| p.guid.clone())).unwrap_or_default();
+        let guid = data
+            .guid
+            .clone()
+            .or_else(|| before.as_ref().map(|p| p.guid.clone()))
+            .unwrap_or_default();
         let mut fields = fields;
         let post_id = if update {
             // `post_content_filtered` is kept as it is stored.
             fields.retain(|(c, _)| *c != "post_content_filtered");
             // An update stores the guid as `get_post_field( 'guid' )` displays it (`esc_url()`: `&` becomes `&#038;`).
             if let Some(before) = &before {
-                fields.push(("guid", Val::Str(rustpress_core::formatting::esc_url(&rustpress_core::formatting::wp_strip_all_tags(&before.guid)))));
+                fields.push((
+                    "guid",
+                    Val::Str(rustpress_core::formatting::esc_url(
+                        &rustpress_core::formatting::wp_strip_all_tags(&before.guid),
+                    )),
+                ));
             }
-            self.writer.update_rows("posts", "ID", post_id, &fields).await?;
+            self.writer
+                .update_rows("posts", "ID", post_id, &fields)
+                .await?;
             post_id
         } else {
             fields.push(("guid", Val::Str(guid)));
@@ -464,24 +684,51 @@ impl Content<'_> {
 
         if post_name.is_empty() && !DATE_FLOATING.contains(&post_status.as_str()) {
             let title = sanitize_title_save(&post_title, &self.site.locale());
-            let title = if title.is_empty() { post_id.to_string() } else { title };
-            let unique = self.unique_post_slug(&title, post_id, &post_status, &post_type, post_parent).await?;
-            self.writer.update_rows("posts", "ID", post_id, &[("post_name", Val::Str(unique))]).await?;
+            let title = if title.is_empty() {
+                post_id.to_string()
+            } else {
+                title
+            };
+            let unique = self
+                .unique_post_slug(&title, post_id, &post_status, &post_type, post_parent)
+                .await?;
+            self.writer
+                .update_rows("posts", "ID", post_id, &[("post_name", Val::Str(unique))])
+                .await?;
         }
 
         // Terms
         let taxonomies = self.object_taxonomies(&post_type);
         if taxonomies.iter().any(|(n, _)| n == "category") {
-            self.set_object_terms(post_id, &post_category.iter().map(|c| TermRef::Id(*c)).collect::<Vec<_>>(), "category", false).await?;
+            self.set_object_terms(
+                post_id,
+                &post_category
+                    .iter()
+                    .map(|c| TermRef::Id(*c))
+                    .collect::<Vec<_>>(),
+                "category",
+                false,
+            )
+            .await?;
         }
         if let Some(tags) = &data.tags_input
             && taxonomies.iter().any(|(n, _)| n == "post_tag")
         {
-            self.set_object_terms(post_id, &tags.iter().map(|t| TermRef::Name(t.clone())).collect::<Vec<_>>(), "post_tag", false).await?;
+            self.set_object_terms(
+                post_id,
+                &tags
+                    .iter()
+                    .map(|t| TermRef::Name(t.clone()))
+                    .collect::<Vec<_>>(),
+                "post_tag",
+                false,
+            )
+            .await?;
         }
         for (taxonomy, terms) in &data.tax_input {
             if taxonomies.iter().any(|(n, _)| n == taxonomy) {
-                self.set_object_terms(post_id, terms, taxonomy, false).await?;
+                self.set_object_terms(post_id, terms, taxonomy, false)
+                    .await?;
             }
         }
         for (key, value) in &data.meta_input {
@@ -495,31 +742,48 @@ impl Content<'_> {
             && post.guid.is_empty()
             && let Ok(link) = self.site.permalink(post).await
         {
-            self.writer.update_rows("posts", "ID", post_id, &[("guid", Val::Str(link))]).await?;
+            self.writer
+                .update_rows("posts", "ID", post_id, &[("guid", Val::Str(link))])
+                .await?;
         }
         if let Some(thumbnail) = data.thumbnail_id {
             if thumbnail == -1 {
-                self.writer.delete_post_meta(post_id, "_thumbnail_id").await?;
+                self.writer
+                    .delete_post_meta(post_id, "_thumbnail_id")
+                    .await?;
             } else {
-                self.writer.update_post_meta(post_id, "_thumbnail_id", &thumbnail.to_string()).await?;
+                self.writer
+                    .update_post_meta(post_id, "_thumbnail_id", &thumbnail.to_string())
+                    .await?;
             }
         }
         if let Some(template) = &data.page_template {
-            self.writer.update_post_meta(post_id, "_wp_page_template", template).await?;
+            self.writer
+                .update_post_meta(post_id, "_wp_page_template", template)
+                .await?;
         }
         if post_type != "attachment"
             && let Some(post) = &stored
         {
-            self.transition_post_status(post_id, &post.post_status, &post.post_date).await?;
+            self.transition_post_status(post_id, &post.post_status, &post.post_date)
+                .await?;
         }
         hooks.save_post(post_id).await?;
         if update && post_type != "attachment" {
             self.save_revision(post_id, hooks).await?;
         }
         // `_update_term_count_on_transition_post_status()`: the counts follow the publish state.
-        let final_status = stored.as_ref().map_or(post_status.as_str(), |p| p.post_status.as_str());
+        let final_status = stored
+            .as_ref()
+            .map_or(post_status.as_str(), |p| p.post_status.as_str());
         if (previous_status == "publish") != (final_status == "publish") {
-            let ids: Vec<u64> = self.db.terms_for_post(post_id, None).await?.into_iter().map(|t| t.term_taxonomy_id).collect();
+            let ids: Vec<u64> = self
+                .db
+                .terms_for_post(post_id, None)
+                .await?
+                .into_iter()
+                .map(|t| t.term_taxonomy_id)
+                .collect();
             self.update_term_counts(&ids).await?;
         }
         Ok(post_id)
@@ -528,13 +792,20 @@ impl Content<'_> {
     /// What `wp_transition_post_status()` does to the scheduled events: `_transition_post_status()` always clears
     /// `publish_future_post` of the post, and `_future_post_hook()` (on `future_{$post_type}`) schedules it again
     /// at the post's date while the post is scheduled.
-    pub async fn transition_post_status(&self, post_id: u64, new_status: &str, post_date: &str) -> Result<()> {
+    pub async fn transition_post_status(
+        &self,
+        post_id: u64,
+        new_status: &str,
+        post_date: &str,
+    ) -> Result<()> {
         let mut cron = crate::cron::CronArray::load(self.db).await?;
         let before = cron.clone();
         let args = crate::cron::post_args(post_id);
         cron.clear_scheduled_hook("publish_future_post", &args);
         if new_status == "future"
-            && let Some(timestamp) = rustpress_core::datetime::SiteTimezone::gmt_timestamp(&self.gmt_from_local(post_date))
+            && let Some(timestamp) = rustpress_core::datetime::SiteTimezone::gmt_timestamp(
+                &self.gmt_from_local(post_date),
+            )
         {
             cron.schedule_single_event(timestamp, "publish_future_post", args, self.now);
         }
@@ -545,27 +816,52 @@ impl Content<'_> {
     }
 
     fn default_status(&self, post_type: &str, kind: &str) -> String {
-        let feature = if kind == "ping" { "trackbacks" } else { "comments" };
+        let feature = if kind == "ping" {
+            "trackbacks"
+        } else {
+            "comments"
+        };
         if post_type == "page" || !self.site.post_type_supports(post_type, feature) {
             "closed".to_owned()
         } else {
-            self.site.options.string(&format!("default_{kind}_status"), "closed")
+            self.site
+                .options
+                .string(&format!("default_{kind}_status"), "closed")
         }
     }
 
     /// `wp_save_post_revision()`.
     async fn save_revision(&self, post_id: u64, hooks: &dyn InsertHooks) -> Result<()> {
-        let Some(post) = self.db.post(post_id).await? else { return Ok(()) };
-        if post.post_status == "auto-draft" || post.post_type == "nav_menu_item" || !self.site.post_type_supports(&post.post_type, "revisions") {
+        let Some(post) = self.db.post(post_id).await? else {
+            return Ok(());
+        };
+        if post.post_status == "auto-draft"
+            || post.post_type == "nav_menu_item"
+            || !self.site.post_type_supports(&post.post_type, "revisions")
+        {
             return Ok(());
         }
-        let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), order_by: rustpress_db::OrderBy::Date, ..Default::default() };
+        let query = rustpress_db::PostQuery {
+            post_types: vec!["revision".into()],
+            statuses: vec!["inherit".into()],
+            parent: Some(post_id),
+            order_by: rustpress_db::OrderBy::Date,
+            ..Default::default()
+        };
         let revisions = self.db.posts(&query).await?;
-        if let Some(latest) = revisions.iter().find(|r| r.post_name.contains(&format!("{post_id}-revision"))) {
-            let changed = normalize_whitespace(&post.post_title) != normalize_whitespace(&latest.post_title)
-                || normalize_whitespace(&post.post_content) != normalize_whitespace(&latest.post_content)
-                || normalize_whitespace(&post.post_excerpt) != normalize_whitespace(&latest.post_excerpt);
-            let changed = hooks.revision_post_has_changed(post_id, latest.id, changed).await?;
+        if let Some(latest) = revisions
+            .iter()
+            .find(|r| r.post_name.contains(&format!("{post_id}-revision")))
+        {
+            let changed = normalize_whitespace(&post.post_title)
+                != normalize_whitespace(&latest.post_title)
+                || normalize_whitespace(&post.post_content)
+                    != normalize_whitespace(&latest.post_content)
+                || normalize_whitespace(&post.post_excerpt)
+                    != normalize_whitespace(&latest.post_excerpt);
+            let changed = hooks
+                .revision_post_has_changed(post_id, latest.id, changed)
+                .await?;
             if !changed {
                 return Ok(());
             }
@@ -588,34 +884,71 @@ impl Content<'_> {
             ("to_ping", Val::Str(String::new())),
             ("pinged", Val::Str(String::new())),
             ("post_modified", Val::Str(post.post_modified.clone())),
-            ("post_modified_gmt", Val::Str(post.post_modified_gmt.clone())),
+            (
+                "post_modified_gmt",
+                Val::Str(post.post_modified_gmt.clone()),
+            ),
             ("post_parent", Val::Int(post_id as i64)),
             ("menu_order", Val::Int(0)),
             ("post_mime_type", Val::Str(String::new())),
             ("guid", Val::Str(String::new())),
         ];
         let revision_id = self.writer.insert_row("posts", &fields).await?;
-        let guid = format!("{}/?p={revision_id}", self.site.settings.home.trim_end_matches('/'));
-        self.writer.update_rows("posts", "ID", revision_id, &[("guid", Val::Str(guid))]).await?;
+        let guid = format!(
+            "{}/?p={revision_id}",
+            self.site.settings.home.trim_end_matches('/')
+        );
+        self.writer
+            .update_rows("posts", "ID", revision_id, &[("guid", Val::Str(guid))])
+            .await?;
         hooks.put_post_revision(post_id, revision_id).await?;
         Ok(())
     }
 
     /// `wp_create_post_autosave()`: the autosave of the current user is a revision named `<id>-autosave-v1`.
     pub async fn create_autosave(&self, post_id: u64, data: &PostData) -> Result<()> {
-        let Some(post) = self.db.post(post_id).await? else { return Err(ContentError::Message(self.site.tr("Invalid post ID."))) };
-        let title = data.post_title.clone().unwrap_or_else(|| post.post_title.clone());
-        let content = data.post_content.clone().unwrap_or_else(|| post.post_content.clone());
-        let excerpt = data.post_excerpt.clone().unwrap_or_else(|| post.post_excerpt.clone());
+        let Some(post) = self.db.post(post_id).await? else {
+            return Err(ContentError::Message(self.site.tr("Invalid post ID.")));
+        };
+        let title = data
+            .post_title
+            .clone()
+            .unwrap_or_else(|| post.post_title.clone());
+        let content = data
+            .post_content
+            .clone()
+            .unwrap_or_else(|| post.post_content.clone());
+        let excerpt = data
+            .post_excerpt
+            .clone()
+            .unwrap_or_else(|| post.post_excerpt.clone());
         let name = format!("{post_id}-autosave-v1");
-        let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), order_by: rustpress_db::OrderBy::Date, ..Default::default() };
-        let existing = self.db.posts(&query).await?.into_iter().find(|r| r.post_name == name && r.post_author == self.user.id);
+        let query = rustpress_db::PostQuery {
+            post_types: vec!["revision".into()],
+            statuses: vec!["inherit".into()],
+            parent: Some(post_id),
+            order_by: rustpress_db::OrderBy::Date,
+            ..Default::default()
+        };
+        let existing = self
+            .db
+            .posts(&query)
+            .await?
+            .into_iter()
+            .find(|r| r.post_name == name && r.post_author == self.user.id);
         let now_local = self.site.date("Y-m-d H:i:s", self.now);
         let now_gmt = self.site.date_utc("Y-m-d H:i:s", self.now);
         // The autosave equals the post: nothing to keep.
-        if title == post.post_title && content == post.post_content && excerpt == post.post_excerpt {
+        if title == post.post_title && content == post.post_content && excerpt == post.post_excerpt
+        {
             if let Some(autosave) = existing {
-                self.writer.execute(format!("DELETE FROM {} WHERE post_id = {}", self.writer.table("postmeta"), autosave.id)).await?;
+                self.writer
+                    .execute(format!(
+                        "DELETE FROM {} WHERE post_id = {}",
+                        self.writer.table("postmeta"),
+                        autosave.id
+                    ))
+                    .await?;
                 self.writer.delete_rows("posts", "ID", autosave.id).await?;
             }
             return Ok(());
@@ -662,16 +995,35 @@ impl Content<'_> {
         ];
         let id = self.writer.insert_row("posts", &fields).await?;
         let guid = format!("{}/?p={id}", self.site.settings.home.trim_end_matches('/'));
-        self.writer.update_rows("posts", "ID", id, &[("guid", Val::Str(guid))]).await?;
+        self.writer
+            .update_rows("posts", "ID", id, &[("guid", Val::Str(guid))])
+            .await?;
         Ok(())
     }
 
     /// Removes the autosave of the current user: saving the post makes it obsolete.
     pub async fn delete_user_autosave(&self, post_id: u64) -> Result<()> {
-        let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(post_id), ..Default::default() };
+        let query = rustpress_db::PostQuery {
+            post_types: vec!["revision".into()],
+            statuses: vec!["inherit".into()],
+            parent: Some(post_id),
+            ..Default::default()
+        };
         let name = format!("{post_id}-autosave-v1");
-        for revision in self.db.posts(&query).await?.into_iter().filter(|r| r.post_name == name && r.post_author == self.user.id) {
-            self.writer.execute(format!("DELETE FROM {} WHERE post_id = {}", self.writer.table("postmeta"), revision.id)).await?;
+        for revision in self
+            .db
+            .posts(&query)
+            .await?
+            .into_iter()
+            .filter(|r| r.post_name == name && r.post_author == self.user.id)
+        {
+            self.writer
+                .execute(format!(
+                    "DELETE FROM {} WHERE post_id = {}",
+                    self.writer.table("postmeta"),
+                    revision.id
+                ))
+                .await?;
             self.writer.delete_rows("posts", "ID", revision.id).await?;
         }
         Ok(())
@@ -680,32 +1032,66 @@ impl Content<'_> {
     // ------------------------------------------------------------------ terms
 
     /// Finds a term of a taxonomy by ID, name or slug, or makes it (`wp_insert_term()`); returns its `term_taxonomy_id`.
-    async fn term_taxonomy_id(&self, term: &TermRef, taxonomy: &str, hierarchical: bool) -> Result<Option<u64>> {
+    async fn term_taxonomy_id(
+        &self,
+        term: &TermRef,
+        taxonomy: &str,
+        hierarchical: bool,
+    ) -> Result<Option<u64>> {
         match term {
-            TermRef::Id(id) => Ok(self.db.term_by_id(Some(taxonomy), *id).await?.map(|t| t.term_taxonomy_id)),
+            TermRef::Id(id) => Ok(self
+                .db
+                .term_by_id(Some(taxonomy), *id)
+                .await?
+                .map(|t| t.term_taxonomy_id)),
             TermRef::Name(name) => {
                 let name = name.trim();
                 if name.is_empty() {
                     return Ok(None);
                 }
-                if hierarchical && let Ok(id) = name.parse::<u64>() && let Some(t) = self.db.term_by_id(Some(taxonomy), id).await? {
+                if hierarchical
+                    && let Ok(id) = name.parse::<u64>()
+                    && let Some(t) = self.db.term_by_id(Some(taxonomy), id).await?
+                {
                     return Ok(Some(t.term_taxonomy_id));
                 }
                 let slug = sanitize_title_save(name, &self.site.locale());
                 if let Some(t) = self.db.term_by_slug(taxonomy, &slug).await? {
                     return Ok(Some(t.term_taxonomy_id));
                 }
-                if let Some(t) = self.db.terms(taxonomy).await?.into_iter().find(|t| t.name.eq_ignore_ascii_case(name)) {
+                if let Some(t) = self
+                    .db
+                    .terms(taxonomy)
+                    .await?
+                    .into_iter()
+                    .find(|t| t.name.eq_ignore_ascii_case(name))
+                {
                     return Ok(Some(t.term_taxonomy_id));
                 }
                 // A new term.
                 let unique = self.db.unique_term_slug(&slug).await?;
-                let term_id = self.writer.insert_row("terms", &[("name", Val::Str(name.to_owned())), ("slug", Val::Str(unique)), ("term_group", Val::Int(0))]).await?;
+                let term_id = self
+                    .writer
+                    .insert_row(
+                        "terms",
+                        &[
+                            ("name", Val::Str(name.to_owned())),
+                            ("slug", Val::Str(unique)),
+                            ("term_group", Val::Int(0)),
+                        ],
+                    )
+                    .await?;
                 let tt = self
                     .writer
                     .insert_row(
                         "term_taxonomy",
-                        &[("term_id", Val::Int(term_id as i64)), ("taxonomy", Val::Str(taxonomy.to_owned())), ("description", Val::Str(String::new())), ("parent", Val::Int(0)), ("count", Val::Int(0))],
+                        &[
+                            ("term_id", Val::Int(term_id as i64)),
+                            ("taxonomy", Val::Str(taxonomy.to_owned())),
+                            ("description", Val::Str(String::new())),
+                            ("parent", Val::Int(0)),
+                            ("count", Val::Int(0)),
+                        ],
                     )
                     .await?;
                 Ok(Some(tt))
@@ -714,8 +1100,26 @@ impl Content<'_> {
     }
 
     /// `wp_set_object_terms()`.
-    pub async fn set_object_terms(&self, object_id: u64, terms: &[TermRef], taxonomy: &str, append: bool) -> Result<()> {
-        let hierarchical = self.object_taxonomies("post").iter().chain(self.site.types.taxonomies.iter().map(|t| (t.name.clone(), t.hierarchical)).collect::<Vec<_>>().iter()).any(|(n, h)| n == taxonomy && *h);
+    pub async fn set_object_terms(
+        &self,
+        object_id: u64,
+        terms: &[TermRef],
+        taxonomy: &str,
+        append: bool,
+    ) -> Result<()> {
+        let hierarchical = self
+            .object_taxonomies("post")
+            .iter()
+            .chain(
+                self.site
+                    .types
+                    .taxonomies
+                    .iter()
+                    .map(|t| (t.name.clone(), t.hierarchical))
+                    .collect::<Vec<_>>()
+                    .iter(),
+            )
+            .any(|(n, h)| n == taxonomy && *h);
         let mut wanted: Vec<u64> = Vec::new();
         for term in terms {
             if let Some(id) = self.term_taxonomy_id(term, taxonomy, hierarchical).await?
@@ -724,11 +1128,22 @@ impl Content<'_> {
                 wanted.push(id);
             }
         }
-        let current: Vec<u64> = self.db.terms_for_post(object_id, Some(taxonomy)).await?.into_iter().map(|t| t.term_taxonomy_id).collect();
+        let current: Vec<u64> = self
+            .db
+            .terms_for_post(object_id, Some(taxonomy))
+            .await?
+            .into_iter()
+            .map(|t| t.term_taxonomy_id)
+            .collect();
         let mut touched: Vec<u64> = Vec::new();
         if !append {
             for old in current.iter().filter(|c| !wanted.contains(c)) {
-                self.writer.execute(format!("DELETE FROM {} WHERE object_id = {object_id} AND term_taxonomy_id = {old}", self.writer.table("term_relationships"))).await?;
+                self.writer
+                    .execute(format!(
+                        "DELETE FROM {} WHERE object_id = {object_id} AND term_taxonomy_id = {old}",
+                        self.writer.table("term_relationships")
+                    ))
+                    .await?;
                 touched.push(*old);
             }
         }
@@ -736,7 +1151,16 @@ impl Content<'_> {
             if current.contains(id) {
                 continue;
             }
-            self.writer.insert_row("term_relationships", &[("object_id", Val::Int(object_id as i64)), ("term_taxonomy_id", Val::Int(*id as i64)), ("term_order", Val::Int(order as i64 + 1))]).await?;
+            self.writer
+                .insert_row(
+                    "term_relationships",
+                    &[
+                        ("object_id", Val::Int(object_id as i64)),
+                        ("term_taxonomy_id", Val::Int(*id as i64)),
+                        ("term_order", Val::Int(order as i64 + 1)),
+                    ],
+                )
+                .await?;
             touched.push(*id);
         }
         self.update_term_counts(&touched).await?;
@@ -759,8 +1183,16 @@ impl Content<'_> {
 
     /// `wp_delete_object_term_relationships()`.
     async fn delete_object_terms(&self, object_id: u64) -> Result<()> {
-        let ids: Vec<u64> = self.db.terms_for_post(object_id, None).await?.into_iter().map(|t| t.term_taxonomy_id).collect();
-        self.writer.delete_rows("term_relationships", "object_id", object_id).await?;
+        let ids: Vec<u64> = self
+            .db
+            .terms_for_post(object_id, None)
+            .await?
+            .into_iter()
+            .map(|t| t.term_taxonomy_id)
+            .collect();
+        self.writer
+            .delete_rows("term_relationships", "object_id", object_id)
+            .await?;
         self.update_term_counts(&ids).await
     }
 
@@ -768,20 +1200,47 @@ impl Content<'_> {
 
     /// `wp_trash_post()`.
     pub async fn trash_post(&self, id: u64) -> Result<bool> {
-        let Some(post) = self.db.post(id).await? else { return Ok(false) };
+        let Some(post) = self.db.post(id).await? else {
+            return Ok(false);
+        };
         if post.post_status == "trash" {
             return Ok(false);
         }
-        self.writer.add_post_meta(id, "_wp_trash_meta_status", &post.post_status).await?;
-        self.writer.add_post_meta(id, "_wp_trash_meta_time", &self.now.to_string()).await?;
-        self.insert_post(&PostData { id: Some(id), post_status: Some("trash".into()), ..Default::default() }).await?;
-        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Trashed).await?;
+        self.writer
+            .add_post_meta(id, "_wp_trash_meta_status", &post.post_status)
+            .await?;
+        self.writer
+            .add_post_meta(id, "_wp_trash_meta_time", &self.now.to_string())
+            .await?;
+        self.insert_post(&PostData {
+            id: Some(id),
+            post_status: Some("trash".into()),
+            ..Default::default()
+        })
+        .await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Trashed)
+            .await?;
         // `wp_trash_post_comments()`
         let comments_table = self.writer.table("comments");
         let rows = self.db.comment_statuses(id).await?;
         if !rows.is_empty() {
-            let statuses = Value::Array(rows.iter().map(|(cid, status)| (Key::Int(*cid as i64), Value::Str(status.as_bytes().to_vec()))).collect());
-            self.writer.add_post_meta(id, "_wp_trash_meta_comments_status", &String::from_utf8_lossy(&rustpress_phpser::serialize(&statuses))).await?;
+            let statuses = Value::Array(
+                rows.iter()
+                    .map(|(cid, status)| {
+                        (
+                            Key::Int(*cid as i64),
+                            Value::Str(status.as_bytes().to_vec()),
+                        )
+                    })
+                    .collect(),
+            );
+            self.writer
+                .add_post_meta(
+                    id,
+                    "_wp_trash_meta_comments_status",
+                    &String::from_utf8_lossy(&rustpress_phpser::serialize(&statuses)),
+                )
+                .await?;
             self.writer.execute(format!("UPDATE {comments_table} SET comment_approved = 'post-trashed' WHERE comment_post_ID = {id}")).await?;
             self.update_comment_count(id).await?;
         }
@@ -797,31 +1256,71 @@ impl Content<'_> {
     /// [`Self::untrash_post`], with `wp_untrash_post_set_previous_status()` (the "Undo" of `edit.php`): back to the
     /// status the post had.
     pub async fn untrash_post_with(&self, id: u64, previous_status: bool) -> Result<bool> {
-        let Some(post) = self.db.post(id).await? else { return Ok(false) };
+        let Some(post) = self.db.post(id).await? else {
+            return Ok(false);
+        };
         if post.post_status != "trash" {
             return Ok(false);
         }
-        let new_status = if post.post_type == "attachment" { "inherit" } else { "draft" };
-        let previous = self.db.post_meta_value(id, "_wp_trash_meta_status").await?.unwrap_or_default();
-        let mut status = self.site.plugins.untrash_post_status(&post, new_status, &previous);
+        let new_status = if post.post_type == "attachment" {
+            "inherit"
+        } else {
+            "draft"
+        };
+        let previous = self
+            .db
+            .post_meta_value(id, "_wp_trash_meta_status")
+            .await?
+            .unwrap_or_default();
+        let mut status = self
+            .site
+            .plugins
+            .untrash_post_status(&post, new_status, &previous);
         if previous_status {
             status = previous.clone();
         }
-        self.writer.delete_post_meta(id, "_wp_trash_meta_status").await?;
-        self.writer.delete_post_meta(id, "_wp_trash_meta_time").await?;
-        self.insert_post(&PostData { id: Some(id), post_status: Some(status), ..Default::default() }).await?;
-        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Untrashed).await?;
+        self.writer
+            .delete_post_meta(id, "_wp_trash_meta_status")
+            .await?;
+        self.writer
+            .delete_post_meta(id, "_wp_trash_meta_time")
+            .await?;
+        self.insert_post(&PostData {
+            id: Some(id),
+            post_status: Some(status),
+            ..Default::default()
+        })
+        .await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Untrashed)
+            .await?;
         // `wp_untrash_post_comments()`
-        if let Some(raw) = self.db.post_meta_value(id, "_wp_trash_meta_comments_status").await?
+        if let Some(raw) = self
+            .db
+            .post_meta_value(id, "_wp_trash_meta_comments_status")
+            .await?
             && let Ok(Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes())
         {
             for (key, status) in items {
                 let Key::Int(cid) = key else { continue };
-                let status = String::from_utf8_lossy(status.as_bytes().unwrap_or_default()).into_owned();
-                let status = if status == "post-trashed" { "0".to_owned() } else { status };
-                self.writer.update_rows("comments", "comment_ID", cid as u64, &[("comment_approved", Val::Str(status))]).await?;
+                let status =
+                    String::from_utf8_lossy(status.as_bytes().unwrap_or_default()).into_owned();
+                let status = if status == "post-trashed" {
+                    "0".to_owned()
+                } else {
+                    status
+                };
+                self.writer
+                    .update_rows(
+                        "comments",
+                        "comment_ID",
+                        cid as u64,
+                        &[("comment_approved", Val::Str(status))],
+                    )
+                    .await?;
             }
-            self.writer.delete_post_meta(id, "_wp_trash_meta_comments_status").await?;
+            self.writer
+                .delete_post_meta(id, "_wp_trash_meta_comments_status")
+                .await?;
             self.update_comment_count(id).await?;
         }
         Ok(true)
@@ -840,12 +1339,21 @@ impl Content<'_> {
 
     /// `wp_delete_post( $id, $force )`.
     pub async fn delete_post(&self, id: u64, force: bool) -> Result<bool> {
-        let Some(post) = self.db.post(id).await? else { return Ok(false) };
-        if !force && (post.post_type == "post" || post.post_type == "page") && post.post_status != "trash" {
+        let Some(post) = self.db.post(id).await? else {
+            return Ok(false);
+        };
+        if !force
+            && (post.post_type == "post" || post.post_type == "page")
+            && post.post_status != "trash"
+        {
             return self.trash_post(id).await;
         }
-        self.writer.delete_post_meta(id, "_wp_trash_meta_status").await?;
-        self.writer.delete_post_meta(id, "_wp_trash_meta_time").await?;
+        self.writer
+            .delete_post_meta(id, "_wp_trash_meta_status")
+            .await?;
+        self.writer
+            .delete_post_meta(id, "_wp_trash_meta_time")
+            .await?;
         self.delete_object_terms(id).await?;
         let posts = self.writer.table("posts");
         if self.is_hierarchical(&post.post_type) {
@@ -854,32 +1362,55 @@ impl Content<'_> {
         // Revisions go with the post; attachments stay, with the grandparent as their parent.
         let revisions = self.db.revision_ids(id).await?;
         for revision in revisions {
-            self.writer.execute(format!("DELETE FROM {} WHERE post_id = {revision}", self.writer.table("postmeta"))).await?;
+            self.writer
+                .execute(format!(
+                    "DELETE FROM {} WHERE post_id = {revision}",
+                    self.writer.table("postmeta")
+                ))
+                .await?;
             self.writer.delete_rows("posts", "ID", revision).await?;
         }
         self.writer.execute(format!("UPDATE {posts} SET post_parent = {} WHERE post_parent = {id} AND post_type = 'attachment'", post.post_parent)).await?;
         // Comments and their meta.
         self.writer.execute(format!("DELETE FROM {cm} WHERE comment_id IN (SELECT comment_ID FROM {c} WHERE comment_post_ID = {id})", cm = self.writer.table("commentmeta"), c = self.writer.table("comments"))).await?;
-        self.writer.delete_rows("comments", "comment_post_ID", id).await?;
+        self.writer
+            .delete_rows("comments", "comment_post_ID", id)
+            .await?;
         self.writer.delete_rows("postmeta", "post_id", id).await?;
         self.writer.delete_rows("posts", "ID", id).await?;
         let mut cron = crate::cron::CronArray::load(self.db).await?;
         if cron.clear_scheduled_hook("publish_future_post", &crate::cron::post_args(id)) > 0 {
             cron.save(self.writer).await?;
         }
-        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Deleted).await?;
+        self.post_trash_change(&post, rustpress_core::native::PostChangeKind::Deleted)
+            .await?;
         Ok(true)
     }
 
     /// `trashed_post`, `untrashed_post` and `deleted_post` of the plugins.
-    async fn post_trash_change(&self, post: &rustpress_db::Post, kind: rustpress_core::native::PostChangeKind) -> Result<()> {
+    async fn post_trash_change(
+        &self,
+        post: &rustpress_db::Post,
+        kind: rustpress_core::native::PostChangeKind,
+    ) -> Result<()> {
         if self.site.plugins.is_empty() {
             return Ok(());
         }
-        let change = rustpress_core::native::PostChange { site: self.site, writer: self.writer, now: self.now, user: self.user.id, post, kind };
-        self.site.plugins.post_trash_change(&change).await.map_err(|e| match e {
-            rustpress_core::Error::Db(e) => ContentError::Db(e),
-        })
+        let change = rustpress_core::native::PostChange {
+            site: self.site,
+            writer: self.writer,
+            now: self.now,
+            user: self.user.id,
+            post,
+            kind,
+        };
+        self.site
+            .plugins
+            .post_trash_change(&change)
+            .await
+            .map_err(|e| match e {
+                rustpress_core::Error::Db(e) => ContentError::Db(e),
+            })
     }
 }
 
@@ -890,7 +1421,9 @@ pub fn valid_date(date: &str) -> bool {
         return false;
     }
     let parse = |range: std::ops::Range<usize>| date.get(range).and_then(|s| s.parse::<u32>().ok());
-    let (Some(y), Some(m), Some(d)) = (parse(0..4), parse(5..7), parse(8..10)) else { return false };
+    let (Some(y), Some(m), Some(d)) = (parse(0..4), parse(5..7), parse(8..10)) else {
+        return false;
+    };
     if y == 0 && m == 0 && d == 0 {
         return true;
     }

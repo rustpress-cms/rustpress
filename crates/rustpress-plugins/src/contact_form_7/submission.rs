@@ -11,7 +11,10 @@ use serde_json::{Map, Value};
 use super::form::ContactForm;
 use super::form_tag::{FormTag, features};
 use super::formatter::{Side, strip_whitespaces};
-use super::mail::{Component, Compose, Lang, Special, Tags, Template, compose as compose_mail, php_string, replace_tags};
+use super::mail::{
+    Component, Compose, Lang, Special, Tags, Template, compose as compose_mail, php_string,
+    replace_tags,
+};
 use super::posted::{PostData, Posted, clean};
 use super::swv::{self, FormData, Messages, SubmittedFile};
 
@@ -74,7 +77,15 @@ impl Submission {
 
     /// The names of the uploaded files by field, for the mail tags.
     pub fn uploaded_names(&self) -> Vec<(String, Vec<String>)> {
-        self.uploaded.iter().map(|(field, files)| (field.clone(), files.iter().map(|f| f.filename.clone()).collect())).collect()
+        self.uploaded
+            .iter()
+            .map(|(field, files)| {
+                (
+                    field.clone(),
+                    files.iter().map(|f| f.filename.clone()).collect(),
+                )
+            })
+            .collect()
     }
 
     /// `get_result()` with the contact form's ID first (`submit()`).
@@ -87,7 +98,14 @@ impl Submission {
             // Replaced by the list of the REST response.
             result.insert("invalid_fields".into(), Value::Null);
         }
-        let hash = if matches!(self.status.as_str(), "init" | "validation_failed" | "acceptance_missing" | "spam") { String::new() } else { self.posted_hash.clone() };
+        let hash = if matches!(
+            self.status.as_str(),
+            "init" | "validation_failed" | "acceptance_missing" | "spam"
+        ) {
+            String::new()
+        } else {
+            self.posted_hash.clone()
+        };
         result.insert("posted_data_hash".into(), Value::from(hash));
         result
     }
@@ -95,30 +113,63 @@ impl Submission {
 
 /// The mail tags of a message replaced, without markup (`filter_message()`).
 pub fn filter_message(text: &str, tags: &Tags<'_>) -> String {
-    rustpress_core::formatting::wp_strip_all_tags(&replace_tags(text, false, false, Component::None, tags))
+    rustpress_core::formatting::wp_strip_all_tags(&replace_tags(
+        text,
+        false,
+        false,
+        Component::None,
+        tags,
+    ))
 }
 
 /// `wpcf7_messages()`: the messages of the plugin and its modules with their default texts.
 pub const DEFAULT_MESSAGES: &[(&str, &str)] = &[
-    ("mail_sent_ok", "Thank you for your message. It has been sent."),
-    ("mail_sent_ng", "There was an error trying to send your message. Please try again later."),
-    ("validation_error", "One or more fields have an error. Please check and try again."),
-    ("spam", "There was an error trying to send your message. Please try again later."),
-    ("accept_terms", "You must accept the terms and conditions before sending your message."),
+    (
+        "mail_sent_ok",
+        "Thank you for your message. It has been sent.",
+    ),
+    (
+        "mail_sent_ng",
+        "There was an error trying to send your message. Please try again later.",
+    ),
+    (
+        "validation_error",
+        "One or more fields have an error. Please check and try again.",
+    ),
+    (
+        "spam",
+        "There was an error trying to send your message. Please try again later.",
+    ),
+    (
+        "accept_terms",
+        "You must accept the terms and conditions before sending your message.",
+    ),
     ("invalid_required", "Please fill out this field."),
     ("invalid_too_long", "This field has a too long input."),
     ("invalid_too_short", "This field has a too short input."),
-    ("upload_failed", "There was an unknown error uploading the file."),
-    ("upload_file_type_invalid", "You are not allowed to upload files of this type."),
+    (
+        "upload_failed",
+        "There was an unknown error uploading the file.",
+    ),
+    (
+        "upload_file_type_invalid",
+        "You are not allowed to upload files of this type.",
+    ),
     ("upload_file_too_large", "The uploaded file is too large."),
-    ("upload_failed_php_error", "There was an error uploading the file."),
+    (
+        "upload_failed_php_error",
+        "There was an error uploading the file.",
+    ),
     ("invalid_date", "Please enter a date in YYYY-MM-DD format."),
     ("date_too_early", "This field has a too early date."),
     ("date_too_late", "This field has a too late date."),
     ("invalid_number", "Please enter a number."),
     ("number_too_small", "This field has a too small number."),
     ("number_too_large", "This field has a too large number."),
-    ("quiz_answer_not_correct", "The answer to the quiz is incorrect."),
+    (
+        "quiz_answer_not_correct",
+        "The answer to the quiz is incorrect.",
+    ),
     ("captcha_not_match", "Your entered code is incorrect."),
     ("invalid_email", "Please enter an email address."),
     ("invalid_url", "Please enter a URL."),
@@ -136,15 +187,23 @@ pub fn stored_message(form: &ContactForm, status: &str, tr: &dyn Fn(&str) -> Str
     if stored.is_some_and(|m| m.as_array().is_none()) {
         return String::new();
     }
-    DEFAULT_MESSAGES.iter().find(|(key, _)| *key == status).map(|(_, text)| tr(text)).unwrap_or_default()
+    DEFAULT_MESSAGES
+        .iter()
+        .find(|(key, _)| *key == status)
+        .map(|(_, text)| tr(text))
+        .unwrap_or_default()
 }
 
 /// The rules of the form with its messages.
 pub fn schema(env: &Env<'_>, tags: &Tags<'_>) -> Vec<swv::Rule> {
-    let message = |status: &str| filter_message(&stored_message(env.form, status, env.lang.tr), tags);
+    let message =
+        |status: &str| filter_message(&stored_message(env.form, status, env.lang.tr), tags);
     let messages = Messages {
         message: &message,
-        undefined_value: filter_message(&(env.lang.tr)("Undefined value was submitted through this field."), tags),
+        undefined_value: filter_message(
+            &(env.lang.tr)("Undefined value was submitted through this field."),
+            tags,
+        ),
         too_many_items: filter_message(&(env.lang.tr)("Too many items are selected."), tags),
     };
     swv::schema(env.tags, &messages, env.today)
@@ -160,16 +219,25 @@ pub fn canonicalize_as_is(text: &str) -> String {
 /// `WPCF7_Pipes::do_pipe()` over the pipes of every tag named `name`.
 fn do_pipe(tags: &[FormTag], name: &str, input: &str) -> String {
     let wanted = canonicalize_as_is(input);
-    tags.iter().filter(|t| t.name == name).flat_map(|t| t.pipes.iter()).find(|p| canonicalize_as_is(&p.before) == wanted).map_or_else(|| input.to_owned(), |p| p.after.clone())
+    tags.iter()
+        .filter(|t| t.name == name)
+        .flat_map(|t| t.pipes.iter())
+        .find(|p| canonicalize_as_is(&p.before) == wanted)
+        .map_or_else(|| input.to_owned(), |p| p.after.clone())
 }
 
 /// `wpcf7_antiscript_file_name()`.
 pub fn antiscript_file_name(name: &str) -> String {
-    static DASHES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\x09-\x0D\x20\xA0\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}-]+").unwrap());
+    static DASHES: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"[\x09-\x0D\x20\xA0\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}-]+").unwrap()
+    });
     static INVISIBLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\pC\pZ]+").unwrap());
     let name = strip_whitespaces(name, Side::Both);
     let name = name.rsplit(['/', '\\']).next().unwrap_or_default();
-    let removed: String = name.chars().filter(|c| !"?[]/\\=<>:;,'\"&$#*()|~`!{}%+’«»”“\0".contains(*c)).collect();
+    let removed: String = name
+        .chars()
+        .filter(|c| !"?[]/\\=<>:;,'\"&$#*()|~`!{}%+’«»”“\0".contains(*c))
+        .collect();
     let name = DASHES.replace_all(&removed, "-");
     let name = INVISIBLE.replace_all(&name, "").into_owned();
     let mut parts: Vec<&str> = name.split('.').collect();
@@ -203,33 +271,68 @@ pub fn antiscript_file_name(name: &str) -> String {
 
 /// The type PHPMailer gives a file by its extension.
 fn mime_of(filename: &str) -> String {
-    let ext = filename.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
-    let known = [("pdf", "application/pdf"), ("txt", "text/plain"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"), ("png", "image/png"), ("gif", "image/gif"), ("webp", "image/webp"), ("zip", "application/zip"), ("doc", "application/msword")];
-    known.iter().find(|(e, _)| *e == ext).map_or("application/octet-stream", |(_, t)| t).to_owned()
+    let ext = filename
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default();
+    let known = [
+        ("pdf", "application/pdf"),
+        ("txt", "text/plain"),
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("png", "image/png"),
+        ("gif", "image/gif"),
+        ("webp", "image/webp"),
+        ("zip", "application/zip"),
+        ("doc", "application/msword"),
+    ];
+    known
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map_or("application/octet-stream", |(_, t)| t)
+        .to_owned()
 }
 
 /// What the browser posted, as `setup_posted_data()` leaves it.
 fn setup_posted_data(env: &Env<'_>, post: &PostData) -> PostData {
-    let mut posted = PostData(post.0.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), clean(v))).collect());
+    let mut posted = PostData(
+        post.0
+            .iter()
+            .filter(|(k, _)| !k.starts_with('_'))
+            .map(|(k, v)| (k.clone(), clean(v)))
+            .collect(),
+    );
     let mut seen: Vec<&str> = Vec::new();
     for tag in env.tags {
         let f = features(&tag.tag_type);
-        if !f.name_attr || f.not_for_mail || tag.name.is_empty() || seen.contains(&tag.name.as_str()) {
+        if !f.name_attr
+            || f.not_for_mail
+            || tag.name.is_empty()
+            || seen.contains(&tag.name.as_str())
+        {
             continue;
         }
         seen.push(&tag.name);
-        let mut value = posted.get(&tag.name).cloned().unwrap_or(Posted::Str(String::new()));
+        let mut value = posted
+            .get(&tag.name)
+            .cloned()
+            .unwrap_or(Posted::Str(String::new()));
         if f.selectable_values {
             let items: Vec<(String, Posted)> = match value {
                 Posted::Str(s) if s.is_empty() => Vec::new(),
                 Posted::Str(s) => vec![("0".to_owned(), Posted::Str(s))],
                 Posted::Map(items) => items,
             };
-            let piped = items.into_iter().map(|(k, v)| (k, v.map(&|s| do_pipe(env.tags, &tag.name, s)))).collect::<Vec<_>>();
+            let piped = items
+                .into_iter()
+                .map(|(k, v)| (k, v.map(&|s| do_pipe(env.tags, &tag.name, s))))
+                .collect::<Vec<_>>();
             value = Posted::Map(piped);
         }
         // `wpcf7_posted_data_checkbox()`: the text of a `free_text` option joins the last value.
-        if matches!(tag.tag_type.as_str(), "checkbox" | "checkbox*" | "radio") && tag.has_option("free_text") {
+        if matches!(tag.tag_type.as_str(), "checkbox" | "checkbox*" | "radio")
+            && tag.has_option("free_text")
+        {
             let mut items = match value {
                 Posted::Map(items) => items,
                 Posted::Str(s) => vec![("0".to_owned(), Posted::Str(s))],
@@ -237,8 +340,17 @@ fn setup_posted_data(env: &Env<'_>, post: &PostData) -> PostData {
             if let Some((_, last)) = items.pop() {
                 let free_text = post.string(&format!("_wpcf7_free_text_{}", tag.name));
                 let last = last.flatten().into_iter().next().unwrap_or_default();
-                let next = items.iter().filter_map(|(k, _)| k.parse::<i64>().ok()).max().map_or(0, |n| n + 1);
-                items.push((next.to_string(), Posted::Str(super::formatter::php_trim(&format!("{last} {free_text}")).to_owned())));
+                let next = items
+                    .iter()
+                    .filter_map(|(k, _)| k.parse::<i64>().ok())
+                    .max()
+                    .map_or(0, |n| n + 1);
+                items.push((
+                    next.to_string(),
+                    Posted::Str(
+                        super::formatter::php_trim(&format!("{last} {free_text}")).to_owned(),
+                    ),
+                ));
             }
             value = Posted::Map(items);
         }
@@ -255,36 +367,82 @@ fn setup_posted_data(env: &Env<'_>, post: &PostData) -> PostData {
 pub fn prepare(env: &Env<'_>, request: &Request<'_>) -> Submission {
     let post = PostData::from_fields(request.fields);
     let posted = setup_posted_data(env, &post);
-    let mut flat: Vec<String> = vec![(request.now as f64 / 1800.0).ceil().to_string(), request.remote_ip.clone(), request.unit_tag.clone()];
+    let mut flat: Vec<String> = vec![
+        (request.now as f64 / 1800.0).ceil().to_string(),
+        request.remote_ip.clone(),
+        request.unit_tag.clone(),
+    ];
     for (_, value) in &posted.0 {
         flat.extend(value.flatten());
     }
     let posted_hash = (env.hash)(&super::posted::flat_join(&flat, ", "), "wpcf7_submission");
-    let mut sub = Submission { status: "init".into(), response: String::new(), post, posted, posted_hash, invalid: Vec::new(), uploaded: Vec::new() };
-    let submitted_files: Vec<SubmittedFile> = request.files.iter().filter(|f| !f.filename.is_empty()).map(|f| SubmittedFile { field: f.field.trim_end_matches("[]").to_owned(), name: strip_whitespaces(&f.filename, Side::Both).to_owned(), size: f.bytes.len() as u64 }).collect();
+    let mut sub = Submission {
+        status: "init".into(),
+        response: String::new(),
+        post,
+        posted,
+        posted_hash,
+        invalid: Vec::new(),
+        uploaded: Vec::new(),
+    };
+    let submitted_files: Vec<SubmittedFile> = request
+        .files
+        .iter()
+        .filter(|f| !f.filename.is_empty())
+        .map(|f| SubmittedFile {
+            field: f.field.trim_end_matches("[]").to_owned(),
+            name: strip_whitespaces(&f.filename, Side::Both).to_owned(),
+            size: f.bytes.len() as u64,
+        })
+        .collect();
 
     let names = sub.uploaded_names();
-    let tags_ctx = Tags { tags: env.tags, posted: Some(&sub.posted), post: &sub.post, uploaded: &names, special: env.special, lang: env.lang, format_date: env.format_date };
-    let message = |status: &str| filter_message(&stored_message(env.form, status, env.lang.tr), &tags_ctx);
+    let tags_ctx = Tags {
+        tags: env.tags,
+        posted: Some(&sub.posted),
+        post: &sub.post,
+        uploaded: &names,
+        special: env.special,
+        lang: env.lang,
+        format_date: env.format_date,
+    };
+    let message =
+        |status: &str| filter_message(&stored_message(env.form, status, env.lang.tr), &tags_ctx);
 
     // `validate()`: the schema, then the modules' filters of each tag that is not a file.
     let mut invalid: Vec<Invalid> = Vec::new();
     let invalidate = |invalid: &mut Vec<Invalid>, tag: &FormTag, reason: String| {
-        if tag.name.is_empty() || !super::form_tag::is_name(&tag.name) || invalid.iter().any(|i| i.field == tag.name) {
+        if tag.name.is_empty()
+            || !super::form_tag::is_name(&tag.name)
+            || invalid.iter().any(|i| i.field == tag.name)
+        {
             return;
         }
-        let idref = tag.get_option("id", "id").filter(|id| super::form_tag::is_name(id) && !id.starts_with("wpcf7"));
-        invalid.push(Invalid { field: tag.name.clone(), reason, idref });
+        let idref = tag
+            .get_option("id", "id")
+            .filter(|id| super::form_tag::is_name(id) && !id.starts_with("wpcf7"));
+        invalid.push(Invalid {
+            field: tag.name.clone(),
+            reason,
+            idref,
+        });
     };
     let rules = schema(env, &tags_ctx);
-    let data = FormData { post: &sub.post, files: &submitted_files };
+    let data = FormData {
+        post: &sub.post,
+        files: &submitted_files,
+    };
     for (field, error) in swv::validate(&rules, &data) {
         if let Some(tag) = env.tags.iter().find(|t| t.name == field) {
             invalidate(&mut invalid, tag, error);
         }
     }
     let acceptance_as_validation = env.form.is_true("acceptance_as_validation");
-    for tag in env.tags.iter().filter(|t| !features(&t.tag_type).file_uploading) {
+    for tag in env
+        .tags
+        .iter()
+        .filter(|t| !features(&t.tag_type).file_uploading)
+    {
         match tag.tag_type.as_str() {
             "quiz" => {
                 let answer = super::controls::canonicalize(&sub.post.string(&tag.name), true);
@@ -294,7 +452,11 @@ pub fn prepare(env: &Env<'_>, request: &Request<'_>) -> Submission {
                 }
             }
             "acceptance" if acceptance_as_validation && !tag.has_option("optional") => {
-                let value = sub.post.get(&tag.name).map(clean).is_some_and(|v| v.is_truthy());
+                let value = sub
+                    .post
+                    .get(&tag.name)
+                    .map(clean)
+                    .is_some_and(|v| v.is_truthy());
                 if tag.has_option("invert") == value {
                     invalidate(&mut invalid, tag, message("accept_terms"));
                 }
@@ -309,10 +471,20 @@ pub fn prepare(env: &Env<'_>, request: &Request<'_>) -> Submission {
     }
     // `wpcf7_acceptance_filter()`.
     if status == "init" {
-        let accepted = env.tags.iter().filter(|t| t.tag_type == "acceptance" && !t.name.is_empty() && !t.has_option("optional")).all(|tag| {
-            let value = sub.post.get(&tag.name).map(clean).is_some_and(|v| v.is_truthy());
-            tag.has_option("invert") != value
-        });
+        let accepted = env
+            .tags
+            .iter()
+            .filter(|t| {
+                t.tag_type == "acceptance" && !t.name.is_empty() && !t.has_option("optional")
+            })
+            .all(|tag| {
+                let value = sub
+                    .post
+                    .get(&tag.name)
+                    .map(clean)
+                    .is_some_and(|v| v.is_truthy());
+                tag.has_option("invert") != value
+            });
         if !accepted {
             status = "acceptance_missing".into();
             response = message("accept_terms");
@@ -327,14 +499,22 @@ pub fn prepare(env: &Env<'_>, request: &Request<'_>) -> Submission {
     sub.response = response;
     // `unship_uploaded_files()`: the files of the file fields, renamed safely.
     if sub.is("init") {
-        for tag in env.tags.iter().filter(|t| features(&t.tag_type).file_uploading) {
+        for tag in env
+            .tags
+            .iter()
+            .filter(|t| features(&t.tag_type).file_uploading)
+        {
             let files: Vec<Attachment> = request
                 .files
                 .iter()
                 .filter(|f| f.field.trim_end_matches("[]") == tag.name && !f.filename.is_empty())
                 .map(|f| {
                     let filename = antiscript_file_name(&canonicalize_as_is(&f.filename));
-                    Attachment { content_type: mime_of(&filename), filename, bytes: f.bytes.clone() }
+                    Attachment {
+                        content_type: mime_of(&filename),
+                        filename,
+                        bytes: f.bytes.clone(),
+                    }
                 })
                 .collect();
             if files.is_empty() {
@@ -358,17 +538,49 @@ pub fn prepare(env: &Env<'_>, request: &Request<'_>) -> Submission {
 /// The mails of a submission that got through (`mail()`): `mail`, then `mail_2` when it is active.
 pub fn mails(env: &Env<'_>, sub: &Submission) -> Vec<Email> {
     let names = sub.uploaded_names();
-    let special = Special { invalid_fields: sub.invalid.len(), ..env.special.clone() };
-    let tags = Tags { tags: env.tags, posted: Some(&sub.posted), post: &sub.post, uploaded: &names, special: &special, lang: env.lang, format_date: env.format_date };
+    let special = Special {
+        invalid_fields: sub.invalid.len(),
+        ..env.special.clone()
+    };
+    let tags = Tags {
+        tags: env.tags,
+        posted: Some(&sub.posted),
+        post: &sub.post,
+        uploaded: &names,
+        special: &special,
+        lang: env.lang,
+        format_date: env.format_date,
+    };
     let content_file = |_: &str| None;
-    let compose = Compose { tags: &tags, locale: &env.form.locale, files: &sub.uploaded, content_file: &content_file };
-    let mut template = env.form.mail.as_ref().map(Template::from_php).unwrap_or_default();
+    let compose = Compose {
+        tags: &tags,
+        locale: &env.form.locale,
+        files: &sub.uploaded,
+        content_file: &content_file,
+    };
+    let mut template = env
+        .form
+        .mail
+        .as_ref()
+        .map(Template::from_php)
+        .unwrap_or_default();
     // `upgrade()`: a mail without a recipient goes to the administrator.
-    if env.form.mail.as_ref().is_some_and(|m| m.as_array().is_some() && m.get("recipient").is_none()) {
+    if env
+        .form
+        .mail
+        .as_ref()
+        .is_some_and(|m| m.as_array().is_some() && m.get("recipient").is_none())
+    {
         template.recipient = env.special.admin_email.clone();
     }
     let mut out = vec![compose_mail(&template, &compose)];
-    if let Some(second) = env.form.mail_2.as_ref().map(Template::from_php).filter(|t| t.active) {
+    if let Some(second) = env
+        .form
+        .mail_2
+        .as_ref()
+        .map(Template::from_php)
+        .filter(|t| t.active)
+    {
         out.push(compose_mail(&second, &compose));
     }
     out
@@ -378,14 +590,32 @@ pub fn mails(env: &Env<'_>, sub: &Submission) -> Vec<Email> {
 pub fn conclude(env: &Env<'_>, sub: &mut Submission, sent: bool) {
     sub.status = if sent { "mail_sent" } else { "mail_failed" }.to_owned();
     let names = sub.uploaded_names();
-    let tags = Tags { tags: env.tags, posted: Some(&sub.posted), post: &sub.post, uploaded: &names, special: env.special, lang: env.lang, format_date: env.format_date };
-    sub.response = filter_message(&stored_message(env.form, if sent { "mail_sent_ok" } else { "mail_sent_ng" }, env.lang.tr), &tags);
+    let tags = Tags {
+        tags: env.tags,
+        posted: Some(&sub.posted),
+        post: &sub.post,
+        uploaded: &names,
+        special: env.special,
+        lang: env.lang,
+        format_date: env.format_date,
+    };
+    sub.response = filter_message(
+        &stored_message(
+            env.form,
+            if sent { "mail_sent_ok" } else { "mail_sent_ng" },
+            env.lang.tr,
+        ),
+        &tags,
+    );
 }
 
 /// `hash_file( 'sha256', $path )`.
 fn sha256_bytes(bytes: &[u8]) -> String {
     use sha2::Digest;
-    sha2::Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `spam()`: the checks of the plugin and of `wpcf7_disallowed_list()`.
@@ -408,12 +638,19 @@ fn is_spam(env: &Env<'_>, sub: &Submission, request: &Request<'_>) -> bool {
     target.push(request.remote_ip.clone());
     target.push(request.user_agent.clone());
     let target = target.join("\n").to_ascii_lowercase();
-    env.disallowed_keys.trim().split('\n').map(str::trim).filter(|w| (2..=256).contains(&w.len())).any(|word| target.contains(&word.to_ascii_lowercase()))
+    env.disallowed_keys
+        .trim()
+        .split('\n')
+        .map(str::trim)
+        .filter(|w| (2..=256).contains(&w.len()))
+        .any(|word| target.contains(&word.to_ascii_lowercase()))
 }
 
 /// The unit tag as `wpcf7_sanitize_unit_tag()` leaves it.
 pub fn sanitize_unit_tag(tag: &str) -> String {
-    tag.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+    tag.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect()
 }
 
 #[cfg(test)]
@@ -431,6 +668,9 @@ mod tests {
 
     #[test]
     fn unit_tags() {
-        assert_eq!(sanitize_unit_tag("wpcf7-f5-p2-o1<script>"), "wpcf7-f5-p2-o1script");
+        assert_eq!(
+            sanitize_unit_tag("wpcf7-f5-p2-o1<script>"),
+            "wpcf7-f5-p2-o1script"
+        );
     }
 }

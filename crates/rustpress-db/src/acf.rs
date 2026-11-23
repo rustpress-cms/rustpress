@@ -50,7 +50,10 @@ impl Db {
             "SELECT ID, post_parent, post_title, post_name, post_excerpt, menu_order, post_status, post_content FROM {} WHERE post_type = ? AND post_status IN ('publish', 'acf-disabled') ORDER BY menu_order ASC, post_title ASC",
             self.prefix.table("posts")
         );
-        let rows: Vec<Row> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_type).fetch_all(&self.pool).await?;
+        let rows: Vec<Row> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(post_type)
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(acf_post).collect())
     }
 
@@ -61,7 +64,11 @@ impl Db {
             "SELECT ID, post_parent, post_title, post_name, post_excerpt, menu_order, post_status, post_content FROM {} WHERE post_type = ? AND post_name = ? AND post_status IN ('publish', 'acf-disabled', 'trash') ORDER BY menu_order ASC, post_title ASC LIMIT 1",
             self.prefix.table("posts")
         );
-        let row: Option<Row> = sqlx::query_as(AssertSqlSafe(sql)).bind(post_type).bind(key).fetch_optional(&self.pool).await?;
+        let row: Option<Row> = sqlx::query_as(AssertSqlSafe(sql))
+            .bind(post_type)
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(row.map(acf_post))
     }
 
@@ -72,28 +79,49 @@ impl Db {
             "SELECT ID, post_parent, post_title, post_name, post_excerpt, menu_order, post_status, post_content FROM {} WHERE post_type = 'acf-field' AND post_status IN ('publish', 'trash') ORDER BY menu_order ASC, ID ASC",
             self.prefix.table("posts")
         );
-        let rows: Vec<Row> = sqlx::query_as(AssertSqlSafe(sql)).fetch_all(&self.pool).await?;
+        let rows: Vec<Row> = sqlx::query_as(AssertSqlSafe(sql))
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(acf_post).collect())
     }
 
     /// `get_posts( [ 'post_type' => $type, 'post_parent' => $id, 'posts_per_page' => 1 ] )` is not empty: a
     /// published child of the same type exists.
     pub async fn acf_has_child(&self, post_type: &str, parent: u64) -> Result<bool> {
-        let sql = format!("SELECT ID FROM {} WHERE post_type = ? AND post_parent = ? AND post_status = 'publish' LIMIT 1", self.prefix.table("posts"));
-        let id: Option<u64> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(post_type).bind(parent).fetch_optional(&self.pool).await?;
+        let sql = format!(
+            "SELECT ID FROM {} WHERE post_type = ? AND post_parent = ? AND post_status = 'publish' LIMIT 1",
+            self.prefix.table("posts")
+        );
+        let id: Option<u64> = sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(post_type)
+            .bind(parent)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(id.is_some())
     }
 
     /// `get_metadata( $type, $id, $key )[0]`: the first value of a meta key.
-    pub async fn acf_meta(&self, kind: MetaKind, object_id: u64, key: &str) -> Result<Option<String>> {
+    pub async fn acf_meta(
+        &self,
+        kind: MetaKind,
+        object_id: u64,
+        key: &str,
+    ) -> Result<Option<String>> {
         let (table, column, id) = match kind {
             MetaKind::Post => ("postmeta", "post_id", "meta_id"),
             MetaKind::Term => ("termmeta", "term_id", "meta_id"),
             MetaKind::User => ("usermeta", "user_id", "umeta_id"),
             MetaKind::Comment => ("commentmeta", "comment_id", "meta_id"),
         };
-        let sql = format!("SELECT meta_value FROM {} WHERE {column} = ? AND meta_key = ? ORDER BY {id} ASC LIMIT 1", self.prefix.table(table));
-        let value: Option<Option<String>> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(object_id).bind(key).fetch_optional(&self.pool).await?;
+        let sql = format!(
+            "SELECT meta_value FROM {} WHERE {column} = ? AND meta_key = ? ORDER BY {id} ASC LIMIT 1",
+            self.prefix.table(table)
+        );
+        let value: Option<Option<String>> = sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(object_id)
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(value.map(Option::unwrap_or_default))
     }
 }
@@ -102,7 +130,11 @@ impl Db {
     /// `get_posts( [ 'post__in' => $ids, 'post_type' => $types, 'post_status' => 'any', 'posts_per_page' => -1 ] )`
     /// as `acf_get_posts()` runs it: every status that is not excluded from search (`trash`, `auto-draft`), in the
     /// order of `$ids`.
-    pub async fn acf_get_posts(&self, ids: &[u64], post_types: &[String]) -> Result<Vec<AcfWpPost>> {
+    pub async fn acf_get_posts(
+        &self,
+        ids: &[u64],
+        post_types: &[String],
+    ) -> Result<Vec<AcfWpPost>> {
         if ids.is_empty() || post_types.is_empty() {
             return Ok(Vec::new());
         }
@@ -127,12 +159,27 @@ impl Db {
 
     /// `term_group` of a term (`WP_Term`), which [`crate::Term`] leaves out.
     pub async fn acf_term_group(&self, term_id: u64) -> Result<i64> {
-        let sql = format!("SELECT term_group FROM {} WHERE term_id = ?", self.prefix.table("terms"));
-        let group: Option<i64> = sqlx::query_scalar(AssertSqlSafe(sql)).bind(term_id).fetch_optional(&self.pool).await?;
+        let sql = format!(
+            "SELECT term_group FROM {} WHERE term_id = ?",
+            self.prefix.table("terms")
+        );
+        let group: Option<i64> = sqlx::query_scalar(AssertSqlSafe(sql))
+            .bind(term_id)
+            .fetch_optional(&self.pool)
+            .await?;
         Ok(group.unwrap_or(0))
     }
 }
 
 fn acf_post((id, parent, title, name, excerpt, menu_order, status, content): Row) -> AcfPost {
-    AcfPost { id, parent, title, name, excerpt, menu_order, status, content }
+    AcfPost {
+        id,
+        parent,
+        title,
+        name,
+        excerpt,
+        menu_order,
+        status,
+        content,
+    }
 }

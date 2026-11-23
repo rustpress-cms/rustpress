@@ -11,13 +11,19 @@ use crate::{Outcome, Resp, Rest, Result};
 
 /// `plugins/akismet/akismet`: the plugin file without `.php`.
 fn plugin_id(info: &PluginInfo) -> String {
-    info.file.strip_suffix(".php").unwrap_or(&info.file).to_owned()
+    info.file
+        .strip_suffix(".php")
+        .unwrap_or(&info.file)
+        .to_owned()
 }
 
 impl Rest<'_> {
     fn active_plugins(&self) -> Vec<String> {
         match self.site.options.value("active_plugins") {
-            Some(rustpress_phpser::Value::Array(items)) => items.iter().filter_map(|(_, v)| v.as_str().map(str::to_owned)).collect(),
+            Some(rustpress_phpser::Value::Array(items)) => items
+                .iter()
+                .filter_map(|(_, v)| v.as_str().map(str::to_owned))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -28,11 +34,26 @@ impl Rest<'_> {
         let description = kses_description(&info.description);
         let plugin_uri = rustpress_core::formatting::esc_url(&info.plugin_uri);
         let author_uri = rustpress_core::formatting::esc_url(&info.author_uri);
-        let author = if author_uri.is_empty() || info.author.is_empty() { info.author.clone() } else { format!("<a href=\"{author_uri}\">{}</a>", info.author) };
+        let author = if author_uri.is_empty() || info.author.is_empty() {
+            info.author.clone()
+        } else {
+            format!("<a href=\"{author_uri}\">{}</a>", info.author)
+        };
         let texturized = self.site.texturize(&description);
-        let rendered = if info.author.is_empty() { texturized } else { format!("{texturized} <cite>{}</cite>", self.site.tr("By %s.").replace("%s", &author)) };
+        let rendered = if info.author.is_empty() {
+            texturized
+        } else {
+            format!(
+                "{texturized} <cite>{}</cite>",
+                self.site.tr("By %s.").replace("%s", &author)
+            )
+        };
         let mut links = Links::new();
-        let allow = if self.can("activate_plugins") { vec!["GET", "POST", "PUT", "PATCH", "DELETE"] } else { vec!["GET"] };
+        let allow = if self.can("activate_plugins") {
+            vec!["GET", "POST", "PUT", "PATCH", "DELETE"]
+        } else {
+            vec!["GET"]
+        };
         links.push_raw("self", json!({"href": self.rest_url(&format!("wp/v2/plugins/{}", plugin_id(info))), "targetHints": {"allow": allow}}));
         json!({
             "plugin": plugin_id(info),
@@ -51,30 +72,71 @@ impl Rest<'_> {
         })
     }
 
-    pub(crate) async fn plugins_route(&self, segments: &[&str], method: &str, args: &Args) -> Result<Outcome> {
+    pub(crate) async fn plugins_route(
+        &self,
+        segments: &[&str],
+        method: &str,
+        args: &Args,
+    ) -> Result<Outcome> {
         let id = segments[3..].join("/");
         let single = !id.is_empty();
-        let denied = if single { "rest_cannot_view_plugin" } else { "rest_cannot_view_plugins" };
+        let denied = if single {
+            "rest_cannot_view_plugin"
+        } else {
+            "rest_cannot_view_plugins"
+        };
         let managing = matches!(method, "POST" | "PUT" | "PATCH" | "DELETE");
         if !self.can("activate_plugins") {
-            let code = if managing { "rest_cannot_manage_plugins" } else { denied };
-            return Ok(Err(self.forbidden(code, "Sorry, you are not allowed to manage plugins for this site.")));
+            let code = if managing {
+                "rest_cannot_manage_plugins"
+            } else {
+                denied
+            };
+            return Ok(Err(self.forbidden(
+                code,
+                "Sorry, you are not allowed to manage plugins for this site.",
+            )));
         }
         let installed = plugins::installed(&self.theme.wp_root);
         let mut active = self.active_plugins();
         match (method, single) {
             ("GET", false) => {
-                let search = args.str("search").map(|s| s.to_lowercase()).filter(|s| !s.is_empty());
+                let search = args
+                    .str("search")
+                    .map(|s| s.to_lowercase())
+                    .filter(|s| !s.is_empty());
                 let wanted = args.list("status").unwrap_or_default();
                 for status in &wanted {
                     if !matches!(status.as_str(), "active" | "inactive") {
-                        return Ok(Err(RestError::invalid_param_with_data("status", Msg::new("%1$s is not one of %2$s.").with(&["status[0]", "inactive and active"]), "rest_not_in_enum", Value::Null)));
+                        return Ok(Err(RestError::invalid_param_with_data(
+                            "status",
+                            Msg::new("%1$s is not one of %2$s.")
+                                .with(&["status[0]", "inactive and active"]),
+                            "rest_not_in_enum",
+                            Value::Null,
+                        )));
                     }
                 }
                 let items: Vec<Value> = installed
                     .iter()
-                    .filter(|p| search.as_ref().is_none_or(|s| [&p.name, &p.description, &p.author, &p.version].iter().any(|f| f.to_lowercase().contains(s))))
-                    .filter(|p| wanted.is_empty() || wanted.contains(&(if active.contains(&p.file) { "active" } else { "inactive" }).to_owned()))
+                    .filter(|p| {
+                        search.as_ref().is_none_or(|s| {
+                            [&p.name, &p.description, &p.author, &p.version]
+                                .iter()
+                                .any(|f| f.to_lowercase().contains(s))
+                        })
+                    })
+                    .filter(|p| {
+                        wanted.is_empty()
+                            || wanted.contains(
+                                &(if active.contains(&p.file) {
+                                    "active"
+                                } else {
+                                    "inactive"
+                                })
+                                .to_owned(),
+                            )
+                    })
                     .map(|p| self.prepare_plugin(p, active.contains(&p.file)))
                     .collect();
                 let mut resp = Resp::item(Value::Array(items));
@@ -82,34 +144,73 @@ impl Rest<'_> {
                 Ok(Ok(resp))
             }
             ("GET", true) | ("PUT" | "PATCH" | "POST", true) => {
-                let Some(info) = installed.iter().find(|p| plugin_id(p) == id) else { return Ok(Err(RestError::new("rest_plugin_not_found", "Plugin not found.", 404))) };
+                let Some(info) = installed.iter().find(|p| plugin_id(p) == id) else {
+                    return Ok(Err(RestError::new(
+                        "rest_plugin_not_found",
+                        "Plugin not found.",
+                        404,
+                    )));
+                };
                 if method != "GET"
-                    && let Some(status) = args.str("status") {
-                        if !matches!(status.as_str(), "active" | "inactive") {
-                            return Ok(Err(RestError::invalid_param_with_data("status", Msg::new("%1$s is not one of %2$s.").with(&["status", "inactive and active"]), "rest_not_in_enum", Value::Null)));
-                        }
-                        let writer = match self.writer() {
-                            Ok(w) => w,
-                            Err(e) => return Ok(Err(e)),
-                        };
-                        let now_active = active.contains(&info.file);
-                        if status == "active" && !now_active {
-                            active.push(info.file.clone());
-                        } else if status == "inactive" && now_active {
-                            active.retain(|f| f != &info.file);
-                        } else {
-                            return Ok(Ok(Resp::item(self.prepare_plugin(info, now_active))));
-                        }
-                        let value = rustpress_phpser::Value::Array(active.iter().enumerate().map(|(i, s)| (rustpress_phpser::Key::Int(i as i64), rustpress_phpser::Value::Str(s.as_bytes().to_vec()))).collect());
-                        let text = String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned();
-                        if writer.update_option("active_plugins", &text).await.is_err() {
-                            return Ok(Err(RestError::new("rest_cannot_edit", "The plugin status could not be changed.", 500)));
-                        }
+                    && let Some(status) = args.str("status")
+                {
+                    if !matches!(status.as_str(), "active" | "inactive") {
+                        return Ok(Err(RestError::invalid_param_with_data(
+                            "status",
+                            Msg::new("%1$s is not one of %2$s.")
+                                .with(&["status", "inactive and active"]),
+                            "rest_not_in_enum",
+                            Value::Null,
+                        )));
                     }
-                Ok(Ok(Resp::item(self.prepare_plugin(info, active.contains(&info.file)))))
+                    let writer = match self.writer() {
+                        Ok(w) => w,
+                        Err(e) => return Ok(Err(e)),
+                    };
+                    let now_active = active.contains(&info.file);
+                    if status == "active" && !now_active {
+                        active.push(info.file.clone());
+                    } else if status == "inactive" && now_active {
+                        active.retain(|f| f != &info.file);
+                    } else {
+                        return Ok(Ok(Resp::item(self.prepare_plugin(info, now_active))));
+                    }
+                    let value = rustpress_phpser::Value::Array(
+                        active
+                            .iter()
+                            .enumerate()
+                            .map(|(i, s)| {
+                                (
+                                    rustpress_phpser::Key::Int(i as i64),
+                                    rustpress_phpser::Value::Str(s.as_bytes().to_vec()),
+                                )
+                            })
+                            .collect(),
+                    );
+                    let text =
+                        String::from_utf8_lossy(&rustpress_phpser::serialize(&value)).into_owned();
+                    if writer.update_option("active_plugins", &text).await.is_err() {
+                        return Ok(Err(RestError::new(
+                            "rest_cannot_edit",
+                            "The plugin status could not be changed.",
+                            500,
+                        )));
+                    }
+                }
+                Ok(Ok(Resp::item(
+                    self.prepare_plugin(info, active.contains(&info.file)),
+                )))
             }
-            ("POST", false) => Ok(Err(RestError::new("rest_cannot_install_plugin", "Sorry, you are not allowed to install plugins on this site.", 403))),
-            _ => Ok(Err(RestError::new("rest_no_route", "No route was found matching the URL and request method.", 404))),
+            ("POST", false) => Ok(Err(RestError::new(
+                "rest_cannot_install_plugin",
+                "Sorry, you are not allowed to install plugins on this site.",
+                403,
+            ))),
+            _ => Ok(Err(RestError::new(
+                "rest_no_route",
+                "No route was found matching the URL and request method.",
+                404,
+            ))),
         }
     }
 }

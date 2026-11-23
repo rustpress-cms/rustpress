@@ -19,7 +19,16 @@ pub const MAX_RENDER_DEPTH: u32 = 64;
 
 /// Blocks that render their inner blocks themselves (`skip_inner_blocks`).
 fn skips_inner_blocks(name: &str) -> bool {
-    matches!(name, "core/post-template" | "core/comment-template" | "core/comments" | "core/term-template" | "core/navigation" | "core/navigation-link" | "core/navigation-submenu")
+    matches!(
+        name,
+        "core/post-template"
+            | "core/comment-template"
+            | "core/comments"
+            | "core/term-template"
+            | "core/navigation"
+            | "core/navigation-link"
+            | "core/navigation-submenu"
+    )
 }
 
 /// Everything a dynamic block's render callback receives.
@@ -42,7 +51,12 @@ pub struct BlockCtx<'a> {
 impl BlockCtx<'_> {
     /// `get_block_wrapper_attributes( $extra )`.
     pub fn wrapper_attributes(&self, extra: &[(&str, String)]) -> String {
-        wrapper_attributes_with(self.block_type.as_deref(), &self.raw_attrs, extra, Some(self.env.theme.global_settings()))
+        wrapper_attributes_with(
+            self.block_type.as_deref(),
+            &self.raw_attrs,
+            extra,
+            Some(self.env.theme.global_settings()),
+        )
     }
 
     pub fn attr_str(&self, key: &str) -> Option<&str> {
@@ -50,7 +64,10 @@ impl BlockCtx<'_> {
     }
 
     pub fn attr_bool(&self, key: &str) -> bool {
-        self.attrs.get(key).and_then(Value::as_bool).unwrap_or(false)
+        self.attrs
+            .get(key)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
     }
 
     pub fn attr_u64(&self, key: &str) -> Option<u64> {
@@ -65,7 +82,12 @@ impl<'a> Env<'a> {
         self.render_blocks(&blocks, available, None).await
     }
 
-    pub fn render_blocks<'b>(&'b self, blocks: &'b [Block], available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
+    pub fn render_blocks<'b>(
+        &'b self,
+        blocks: &'b [Block],
+        available: &'b Context,
+        parent: Option<&'b Block>,
+    ) -> BoxFuture<'b, Result<String>> {
         Box::pin(async move {
             let mut out = String::new();
             for block in blocks {
@@ -77,26 +99,47 @@ impl<'a> Env<'a> {
 
     /// Renders one block. Blocks nested deeper than [`MAX_RENDER_DEPTH`] keep their saved HTML: a post of
     /// thousands of nested groups must not exhaust the stack of the worker.
-    pub fn render_block<'b>(&'b self, block: &'b Block, available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
+    pub fn render_block<'b>(
+        &'b self,
+        block: &'b Block,
+        available: &'b Context,
+        parent: Option<&'b Block>,
+    ) -> BoxFuture<'b, Result<String>> {
         Box::pin(async move {
             let depth = self.with_state(|s| {
                 s.render_depth += 1;
                 s.render_depth
             });
             let started = std::time::Instant::now();
-            let result = if depth > MAX_RENDER_DEPTH { Ok(block.inner_html.clone()) } else { self.render_block_unguarded(block, available, parent).await };
+            let result = if depth > MAX_RENDER_DEPTH {
+                Ok(block.inner_html.clone())
+            } else {
+                self.render_block_unguarded(block, available, parent).await
+            };
             let elapsed = started.elapsed();
             if elapsed.as_micros() > 1500 {
-                tracing::debug!(block = block.name.as_deref().unwrap_or(""), depth, ms = elapsed.as_secs_f64() * 1000.0, "slow block");
+                tracing::debug!(
+                    block = block.name.as_deref().unwrap_or(""),
+                    depth,
+                    ms = elapsed.as_secs_f64() * 1000.0,
+                    "slow block"
+                );
             }
             self.with_state(|s| s.render_depth -= 1);
             result
         })
     }
 
-    fn render_block_unguarded<'b>(&'b self, block: &'b Block, available: &'b Context, parent: Option<&'b Block>) -> BoxFuture<'b, Result<String>> {
+    fn render_block_unguarded<'b>(
+        &'b self,
+        block: &'b Block,
+        available: &'b Context,
+        parent: Option<&'b Block>,
+    ) -> BoxFuture<'b, Result<String>> {
         Box::pin(async move {
-            let Some(name) = block.name.as_deref() else { return Ok(block.inner_html.clone()) };
+            let Some(name) = block.name.as_deref() else {
+                return Ok(block.inner_html.clone());
+            };
             // The `render_block_context` filter of the tabs block.
             let provided;
             let available = if name == "core/tabs" {
@@ -104,13 +147,15 @@ impl<'a> Env<'a> {
                 &provided
             } else if name == "core/gallery" {
                 // `block_core_gallery_render_context()`.
-                provided = available.with("galleryId", Value::String(self.with_state(|s| s.uniqid())));
+                provided =
+                    available.with("galleryId", Value::String(self.with_state(|s| s.uniqid())));
                 &provided
             } else {
                 available
             };
             let block_type = self.registry.get(name);
-            let (blocks_before, modules_before) = self.with_state(|s| (s.used_blocks.len(), s.script_modules.clone()));
+            let (blocks_before, modules_before) =
+                self.with_state(|s| (s.used_blocks.len(), s.script_modules.clone()));
             self.with_state(|s| {
                 if !s.rendered_blocks.iter().any(|b| b == name) {
                     s.rendered_blocks.push(name.to_owned());
@@ -119,7 +164,12 @@ impl<'a> Env<'a> {
 
             // The first block that supports the Interactivity API processes the directives of all it contains.
             let is_root_interactive = !self.with_state(|s| s.interactive_root)
-                && block_type.as_ref().is_some_and(|bt| matches!(bt.support(&["interactivity"]), Some(Value::Bool(true))) || bt.support(&["interactivity", "interactive"]).is_some_and(|v| !crate::style_engine::is_empty(v)));
+                && block_type.as_ref().is_some_and(|bt| {
+                    matches!(bt.support(&["interactivity"]), Some(Value::Bool(true)))
+                        || bt
+                            .support(&["interactivity", "interactive"])
+                            .is_some_and(|v| !crate::style_engine::is_empty(v))
+                });
             if is_root_interactive {
                 self.with_state(|s| s.interactive_root = true);
             }
@@ -130,7 +180,13 @@ impl<'a> Env<'a> {
             if let Some(bt) = &block_type {
                 crate::elements::prepare_block_data(self, bt, &mut raw_attrs);
                 crate::variations::prepare_block_data(self, bt, &mut raw_attrs);
-                crate::custom_css::prepare_block_data(self, bt, block, parent_layout.as_ref(), &mut raw_attrs);
+                crate::custom_css::prepare_block_data(
+                    self,
+                    bt,
+                    block,
+                    parent_layout.as_ref(),
+                    &mut raw_attrs,
+                );
             }
             let prepared = match &block_type {
                 Some(bt) => bt.prepare_attributes(&raw_attrs),
@@ -138,7 +194,10 @@ impl<'a> Env<'a> {
             };
 
             // The block's own context and the one it hands down.
-            let mut context = Context { values: Map::new(), post: available.post.clone() };
+            let mut context = Context {
+                values: Map::new(),
+                post: available.post.clone(),
+            };
             if let Some(bt) = &block_type {
                 for key in &bt.uses_context {
                     if let Some(v) = available.values.get(key) {
@@ -165,20 +224,32 @@ impl<'a> Env<'a> {
                         Content::Html(html) => content.push_str(html),
                         Content::InnerBlock => {
                             // A placeholder without its block (a hand-built tree) renders nothing.
-                            let Some(inner) = block.inner_blocks.get(index) else { continue };
+                            let Some(inner) = block.inner_blocks.get(index) else {
+                                continue;
+                            };
                             // `block_core_gallery_data_id_backcompatibility` (a `render_block_data` filter).
                             let with_data_id;
                             let inner = match inner.attrs.get("id") {
-                                Some(id) if name == "core/gallery" && inner.name.as_deref() == Some("core/image") && !inner.attrs.contains_key("data-id") => {
-                                    let text = id.as_str().map_or_else(|| id.to_string(), str::to_owned);
+                                Some(id)
+                                    if name == "core/gallery"
+                                        && inner.name.as_deref() == Some("core/image")
+                                        && !inner.attrs.contains_key("data-id") =>
+                                {
+                                    let text =
+                                        id.as_str().map_or_else(|| id.to_string(), str::to_owned);
                                     let mut copy = inner.clone();
-                                    copy.attrs.insert("data-id".into(), Value::String(rustpress_core::formatting::esc_attr(&text)));
+                                    copy.attrs.insert(
+                                        "data-id".into(),
+                                        Value::String(rustpress_core::formatting::esc_attr(&text)),
+                                    );
                                     with_data_id = copy;
                                     &with_data_id
                                 }
                                 _ => inner,
                             };
-                            content.push_str(&self.render_block(inner, &child_ctx, Some(block)).await?);
+                            content.push_str(
+                                &self.render_block(inner, &child_ctx, Some(block)).await?,
+                            );
                             index += 1;
                         }
                     }
@@ -204,7 +275,9 @@ impl<'a> Env<'a> {
                 content = crate::supports::render_typography_support(self, &raw_attrs, content);
                 content = crate::elements::render_class_name(&raw_attrs, content);
                 let first_chunk = match block.inner_content.first() {
-                    Some(Content::Html(html)) if block.inner_content.len() > 1 => Some(html.as_str()),
+                    Some(Content::Html(html)) if block.inner_content.len() > 1 => {
+                        Some(html.as_str())
+                    }
                     _ => None,
                 };
                 content = layout::render_layout_support(
@@ -218,7 +291,8 @@ impl<'a> Env<'a> {
                 );
                 content = layout::render_position_support(self, bt, &raw_attrs, content);
                 content = crate::dimensions::render_dimensions_support(bt, &raw_attrs, content);
-                content = crate::duotone::render_duotone_support(self, bt, name, &raw_attrs, content);
+                content =
+                    crate::duotone::render_duotone_support(self, bt, name, &raw_attrs, content);
                 content = crate::variations::render_class_name(&raw_attrs, content);
                 content = crate::states::render_visibility_support(self, bt, &raw_attrs, content);
                 content = crate::custom_css::render_class_name(&raw_attrs, content);
@@ -227,7 +301,11 @@ impl<'a> Env<'a> {
             content = dynamic::name_filter(name, &raw_attrs, content);
             // `wp_restore_group_inner_container()` and `wp_restore_image_outer_container()`.
             if (name == "core/group" || name == "core/image") && !self.theme.has_theme_json() {
-                content = if name == "core/group" { layout::restore_group_inner_container(&raw_attrs, content) } else { layout::restore_image_outer_container(&raw_attrs, content) };
+                content = if name == "core/group" {
+                    layout::restore_group_inner_container(&raw_attrs, content)
+                } else {
+                    layout::restore_image_outer_container(&raw_attrs, content)
+                };
             }
             if name == "core/image" && self.with_state(|s| s.image_lightbox) {
                 content = dynamic::lightbox::render(self, block, &child_ctx, content).await?;

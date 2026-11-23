@@ -16,13 +16,19 @@ use crate::config::Config;
 
 /// The seconds since the epoch.
 pub fn now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 /// `$wp_version` of the WordPress files.
 pub fn wp_version(includes: &Path) -> String {
     let text = std::fs::read_to_string(includes.join("version.php")).unwrap_or_default();
-    text.split("$wp_version = '").nth(1).and_then(|rest| rest.split('\'').next()).unwrap_or("0").to_owned()
+    text.split("$wp_version = '")
+        .nth(1)
+        .and_then(|rest| rest.split('\'').next())
+        .unwrap_or("0")
+        .to_owned()
 }
 
 /// Everything the administration area derives from the site once per snapshot.
@@ -43,12 +49,26 @@ pub struct SmtpMail(rustpress_mail::Mailer);
 impl SmtpMail {
     /// The mailer of `RUSTPRESS_SMTP_URL` or `sendmail`, sending as the host of the site.
     pub fn for_site(site: &Site) -> Option<Self> {
-        let host = site.settings.home.split_once("://").map_or("localhost", |(_, rest)| rest.split(['/', ':']).next().unwrap_or("localhost")).to_owned();
-        let Some(settings) = site.plugins.mail_settings() else { return rustpress_mail::Mailer::from_env(&host).map(SmtpMail) };
+        let host = site
+            .settings
+            .home
+            .split_once("://")
+            .map_or("localhost", |(_, rest)| {
+                rest.split(['/', ':']).next().unwrap_or("localhost")
+            })
+            .to_owned();
+        let Some(settings) = site.plugins.mail_settings() else {
+            return rustpress_mail::Mailer::from_env(&host).map(SmtpMail);
+        };
         use rustpress_core::native::{MailTransport, SmtpSecurity};
         let route = settings.transport.map(|transport| match transport {
             MailTransport::Sendmail => rustpress_mail::Route::Sendmail,
-            MailTransport::Smtp { host, port, security, credentials } => rustpress_mail::Route::Smtp(rustpress_mail::Smtp {
+            MailTransport::Smtp {
+                host,
+                port,
+                security,
+                credentials,
+            } => rustpress_mail::Route::Smtp(rustpress_mail::Smtp {
                 host,
                 port,
                 security: match security {
@@ -61,30 +81,74 @@ impl SmtpMail {
             }),
         });
         let filter = settings.sender.clone();
-        let sender: rustpress_mail::SenderFilter = std::sync::Arc::new(move |s: rustpress_mail::Sender| {
-            let out = filter(rustpress_core::native::MailSender { email: s.email, name: s.name, default_email: s.default_email, reply_to: s.reply_to, headers: s.headers });
-            rustpress_mail::Sender { email: out.email, name: out.name, default_email: out.default_email, reply_to: out.reply_to, headers: out.headers }
-        });
-        rustpress_mail::Mailer::configured(&host, route, Some(sender), settings.blocked).map(SmtpMail)
+        let sender: rustpress_mail::SenderFilter =
+            std::sync::Arc::new(move |s: rustpress_mail::Sender| {
+                let out = filter(rustpress_core::native::MailSender {
+                    email: s.email,
+                    name: s.name,
+                    default_email: s.default_email,
+                    reply_to: s.reply_to,
+                    headers: s.headers,
+                });
+                rustpress_mail::Sender {
+                    email: out.email,
+                    name: out.name,
+                    default_email: out.default_email,
+                    reply_to: out.reply_to,
+                    headers: out.headers,
+                }
+            });
+        rustpress_mail::Mailer::configured(&host, route, Some(sender), settings.blocked)
+            .map(SmtpMail)
     }
 }
 
 impl rustpress_core::native::Mailer for SmtpMail {
-    fn send<'a>(&'a self, email: &'a rustpress_core::native::Email) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+    fn send<'a>(
+        &'a self,
+        email: &'a rustpress_core::native::Email,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let headers: Vec<&str> = email.headers.iter().map(String::as_str).collect();
-            let attachments: Vec<rustpress_mail::Attached<'_>> = email.attachments.iter().map(|a| rustpress_mail::Attached { filename: &a.filename, content_type: &a.content_type, bytes: &a.bytes }).collect();
-            self.0.send_mail(&email.to, &email.subject, &email.body, &headers, &attachments).await
+            let attachments: Vec<rustpress_mail::Attached<'_>> = email
+                .attachments
+                .iter()
+                .map(|a| rustpress_mail::Attached {
+                    filename: &a.filename,
+                    content_type: &a.content_type,
+                    bytes: &a.bytes,
+                })
+                .collect();
+            self.0
+                .send_mail(
+                    &email.to,
+                    &email.subject,
+                    &email.body,
+                    &headers,
+                    &attachments,
+                )
+                .await
         })
     }
 }
 
 impl rustpress_admin::login::Mail for SmtpMail {
-    fn send<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+    fn send<'a>(
+        &'a self,
+        to: &'a str,
+        subject: &'a str,
+        message: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(self.0.send(to, subject, message))
     }
 
-    fn send_with_headers<'a>(&'a self, to: &'a str, subject: &'a str, message: &'a str, headers: &'a str) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+    fn send_with_headers<'a>(
+        &'a self,
+        to: &'a str,
+        subject: &'a str,
+        message: &'a str,
+        headers: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(self.0.send_with_headers(to, subject, message, headers))
     }
 }
@@ -103,7 +167,10 @@ fn config_path(config: &Config) -> Option<std::path::PathBuf> {
 
 /// The keys and salts of `wp-config.php` and of the options (`wp_salt()`).
 pub async fn load_salts(config: &Config, site: &Site) -> Salts {
-    let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
+    let constants = config_path(config)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|text| rustpress_auth::salts::parse_config_constants(&text))
+        .unwrap_or_default();
     let mut options = std::collections::HashMap::new();
     // The ones that are not autoloaded in one query instead of one `get_option()` each.
     let mut missing = Vec::new();
@@ -126,17 +193,32 @@ pub async fn load_salts(config: &Config, site: &Site) -> Salts {
 /// is made up and stored, so that cookies and nonces work on a site without keys in its configuration
 /// (a database given by `RUSTPRESS_DATABASE_URL` and no `wp-config.php`). WordPress does this for a
 /// scheme when it is first used; here all four are filled in when the site is loaded.
-pub async fn store_missing_salts(config: &Config, db: &rustpress_db::Db, writer: &rustpress_db::Writer) {
-    let constants = config_path(config).and_then(|path| std::fs::read_to_string(path).ok()).map(|text| rustpress_auth::salts::parse_config_constants(&text)).unwrap_or_default();
+pub async fn store_missing_salts(
+    config: &Config,
+    db: &rustpress_db::Db,
+    writer: &rustpress_db::Writer,
+) {
+    let constants = config_path(config)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|text| rustpress_auth::salts::parse_config_constants(&text))
+        .unwrap_or_default();
     // The usual case costs no query: `wp-config.php` has every key.
-    if Salts::new(constants.clone(), std::collections::HashMap::new()).missing().is_empty() {
+    if Salts::new(constants.clone(), std::collections::HashMap::new())
+        .missing()
+        .is_empty()
+    {
         return;
     }
     let names = Salts::option_names();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
-    let Ok(options) = db.options_named(&names).await else { return };
+    let Ok(options) = db.options_named(&names).await else {
+        return;
+    };
     for name in Salts::new(constants, options.into_iter().collect()).missing() {
-        if let Err(error) = writer.update_option(&name, &rustpress_auth::salts::generate_salt()).await {
+        if let Err(error) = writer
+            .update_option(&name, &rustpress_auth::salts::generate_salt())
+            .await
+        {
             tracing::warn!(%error, option = %name, "could not store a key for cookies and nonces");
         }
     }
@@ -146,7 +228,15 @@ impl AdminParts {
     pub async fn load(config: &Config, site: &Site, salts: Salts) -> AdminParts {
         let auth = Auth::new(salts, &site.settings.siteurl);
         let prefix = site.db.table_prefix();
-        let roles = Roles::from_option(&site.options.fetch(&site.db, &format!("{prefix}user_roles")).await.ok().flatten().unwrap_or_default());
+        let roles = Roles::from_option(
+            &site
+                .options
+                .fetch(&site.db, &format!("{prefix}user_roles"))
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+        );
         let includes = config.wp_root.join("wp-includes");
         let siteurl = site.settings.siteurl.trim_end_matches('/').to_owned();
         let loader = LoaderEnv {
@@ -162,8 +252,16 @@ impl AdminParts {
         };
         let languages = installed_languages(config, site).await;
         let privacy_policy = privacy_policy(site).await;
-        let mailer = SmtpMail::for_site(site).map(|m| std::sync::Arc::new(m) as std::sync::Arc<dyn rustpress_admin::login::Mail>);
-        AdminParts { auth, roles, loader, languages, privacy_policy, mailer }
+        let mailer = SmtpMail::for_site(site)
+            .map(|m| std::sync::Arc::new(m) as std::sync::Arc<dyn rustpress_admin::login::Mail>);
+        AdminParts {
+            auth,
+            roles,
+            loader,
+            languages,
+            privacy_policy,
+            mailer,
+        }
     }
 }
 
@@ -172,23 +270,41 @@ async fn installed_languages(config: &Config, site: &Site) -> Vec<LanguageOption
     let dir = config.wp_root.join("wp-content").join("languages");
     let mut locales: Vec<String> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
-        let mut names: Vec<String> = entries.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        let mut names: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
         names.sort();
         for name in names {
-            let stem = name.strip_suffix(".mo").or_else(|| name.strip_suffix(".l10n.php"));
+            let stem = name
+                .strip_suffix(".mo")
+                .or_else(|| name.strip_suffix(".l10n.php"));
             let Some(stem) = stem else { continue };
-            if stem.starts_with("continents-cities") || stem.starts_with("ms-") || stem.starts_with("admin-") || locales.iter().any(|l| l == stem) {
+            if stem.starts_with("continents-cities")
+                || stem.starts_with("ms-")
+                || stem.starts_with("admin-")
+                || locales.iter().any(|l| l == stem)
+            {
                 continue;
             }
             locales.push(stem.to_owned());
         }
     }
-    let translations = site.options.fetch(&site.db, "_site_transient_available_translations").await.ok().flatten().and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
+    let translations = site
+        .options
+        .fetch(&site.db, "_site_transient_available_translations")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| rustpress_phpser::unserialize(raw.as_bytes()).ok());
     locales
         .into_iter()
         .map(|locale| {
             let entry = translations.as_ref().and_then(|t| t.get(&locale));
-            let native_name = entry.and_then(|e| e.get("native_name")).and_then(|v| v.as_str()).map_or_else(|| locale.clone(), str::to_owned);
+            let native_name = entry
+                .and_then(|e| e.get("native_name"))
+                .and_then(|v| v.as_str())
+                .map_or_else(|| locale.clone(), str::to_owned);
             let lang = entry
                 .and_then(|e| e.get("iso"))
                 .and_then(|iso| iso.as_array())
@@ -196,25 +312,56 @@ async fn installed_languages(config: &Config, site: &Site) -> Vec<LanguageOption
                 .and_then(|(_, v)| v.as_str())
                 .map(str::to_owned)
                 .unwrap_or_default();
-            LanguageOption { locale, native_name, lang }
+            LanguageOption {
+                locale,
+                native_name,
+                lang,
+            }
         })
         .collect()
 }
 
 /// `wp_get_available_translations()` from its transient: `(locale, native name, lang)` in the order it was stored.
 async fn available_translations(site: &Site, now: i64) -> Vec<(String, String, String)> {
-    let timeout = site.options.fetch(&site.db, "_site_transient_timeout_available_translations").await.ok().flatten().and_then(|t| t.parse::<i64>().ok());
+    let timeout = site
+        .options
+        .fetch(&site.db, "_site_transient_timeout_available_translations")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|t| t.parse::<i64>().ok());
     if timeout.is_some_and(|t| t < now) {
         return Vec::new();
     }
-    let Some(raw) = site.options.fetch(&site.db, "_site_transient_available_translations").await.ok().flatten() else { return Vec::new() };
-    let Ok(rustpress_phpser::Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes()) else { return Vec::new() };
+    let Some(raw) = site
+        .options
+        .fetch(&site.db, "_site_transient_available_translations")
+        .await
+        .ok()
+        .flatten()
+    else {
+        return Vec::new();
+    };
+    let Ok(rustpress_phpser::Value::Array(items)) = rustpress_phpser::unserialize(raw.as_bytes())
+    else {
+        return Vec::new();
+    };
     items
         .iter()
         .filter_map(|(_, entry)| {
             let language = entry.get("language")?.as_str()?.to_owned();
-            let native_name = entry.get("native_name").and_then(|v| v.as_str()).unwrap_or_default().to_owned();
-            let lang = entry.get("iso").and_then(|iso| iso.as_array()).and_then(|items| items.first()).and_then(|(_, v)| v.as_str()).unwrap_or_default().to_owned();
+            let native_name = entry
+                .get("native_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            let lang = entry
+                .get("iso")
+                .and_then(|iso| iso.as_array())
+                .and_then(|items| items.first())
+                .and_then(|(_, v)| v.as_str())
+                .unwrap_or_default()
+                .to_owned();
             Some((language, native_name, lang))
         })
         .collect()
@@ -241,89 +388,202 @@ fn cookies_of(headers: &HeaderMap) -> Vec<(String, String)> {
     for value in headers.get_all(header::COOKIE) {
         let Ok(text) = value.to_str() else { continue };
         for pair in text.split(';') {
-            let Some((name, value)) = pair.trim().split_once('=') else { continue };
-            out.push((name.trim().to_owned(), String::from_utf8_lossy(&urldecode(value.trim().as_bytes())).into_owned()));
+            let Some((name, value)) = pair.trim().split_once('=') else {
+                continue;
+            };
+            out.push((
+                name.trim().to_owned(),
+                String::from_utf8_lossy(&urldecode(value.trim().as_bytes())).into_owned(),
+            ));
         }
     }
     out
 }
 
 /// The user who looks at the site (`wp_validate_auth_cookie( '', 'logged_in' )`) and the token of their session.
-pub async fn frontend_user(loaded: &Loaded, headers: &HeaderMap) -> Option<(rustpress_auth::CurrentUser, String)> {
+pub async fn frontend_user(
+    loaded: &Loaded,
+    headers: &HeaderMap,
+) -> Option<(rustpress_auth::CurrentUser, String)> {
     let parts = loaded.admin.as_ref()?;
     let scheme = rustpress_auth::Scheme::LoggedIn;
     let name = parts.auth.cookie_name(scheme);
-    let cookie = cookies_of(headers).into_iter().find(|(k, _)| *k == name).map(|(_, v)| v)?;
-    let session = parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, now(), false).await.ok().flatten()?;
-    let user = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await.ok()?;
+    let cookie = cookies_of(headers)
+        .into_iter()
+        .find(|(k, _)| *k == name)
+        .map(|(_, v)| v)?;
+    let session = parts
+        .auth
+        .validate_cookie(&loaded.site.db, &cookie, scheme, now(), false)
+        .await
+        .ok()
+        .flatten()?;
+    let user = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user)
+        .await
+        .ok()?;
     Some((user, session.token))
 }
 
 /// The toolbar of the site for a signed-in user: a function of the page it is printed on. `changeset` is the UUID of
 /// the Customizer's preview.
-pub async fn front_toolbar(loaded: &std::sync::Arc<Loaded>, user: &std::sync::Arc<rustpress_auth::CurrentUser>, token: &str, changeset: Option<String>) -> Option<rustpress_theme::Extras> {
+pub async fn front_toolbar(
+    loaded: &std::sync::Arc<Loaded>,
+    user: &std::sync::Arc<rustpress_auth::CurrentUser>,
+    token: &str,
+    changeset: Option<String>,
+) -> Option<rustpress_theme::Extras> {
     let parts = loaded.admin.as_ref()?;
     let at = now();
     let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
-    let pending = loaded.site.db.count_comments_with_status("0").await.unwrap_or(0);
-    let logout_nonce = parts.auth.create_nonce("log-out", user.id, token, at).unwrap_or_default();
+    let pending = loaded
+        .site
+        .db
+        .count_comments_with_status("0")
+        .await
+        .unwrap_or(0);
+    let logout_nonce = parts
+        .auth
+        .create_nonce("log-out", user.id, token, at)
+        .unwrap_or_default();
     // `has_site_icon()`.
     let site_icon = if loaded.site.options.string("site_icon", "0") == "0" {
         None
     } else {
         let query = rustpress_core::QueryResult::blank();
         let env = rustpress_blocks::Env::new(&loaded.site, &query, &loaded.theme, &loaded.registry);
-        let icon = rustpress_theme::embed::site_icon_url(&env, 32, "").await.unwrap_or_default();
-        let icon_2x = rustpress_theme::embed::site_icon_url(&env, 64, "").await.unwrap_or_default();
+        let icon = rustpress_theme::embed::site_icon_url(&env, 32, "")
+            .await
+            .unwrap_or_default();
+        let icon_2x = rustpress_theme::embed::site_icon_url(&env, 64, "")
+            .await
+            .unwrap_or_default();
         (!icon.is_empty()).then_some((icon, icon_2x))
     };
     let (loaded, user) = (loaded.clone(), user.clone());
-    let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> = std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
-        // The previewed site title and theme of the Customizer.
-        let site = info.site;
-        let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
-        let mut context = rustpress_admin::adminbar::FrontContext { updates, pending_comments: pending, logout_nonce: logout_nonce.clone(), site_icon: site_icon.clone(), ..Default::default() };
-        if [&site.settings.stylesheet, &site.settings.template].iter().any(|t| loaded.theme.wp_root.join("wp-content").join("themes").join(t.as_str()).join("templates").join("index.html").is_file()) && user.can("edit_theme_options") {
-            context.site_editor_url = Some(format!("{}?postType=wp_template&postId={}//{}&canvas=edit", admin("site-editor.php"), site.settings.stylesheet, info.template_slug));
-        }
-        context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
-        context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme) || rustpress_theme::classic::is_twentytwenty(&loaded.theme);
-        let home = site.home_url("");
-        let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
-        let host = info.query.http_host.as_deref().unwrap_or_else(|| home.split_once("://").map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default()));
-        let query = if info.query.raw_query.is_empty() { String::new() } else { format!("?{}", info.query.raw_query) };
-        context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
-        context.customize_changeset = changeset.clone();
-        let tr = |s: &str| site.tr(s);
-        context.edit = match &info.query.queried {
-            // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
-            // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
-            rustpress_core::Queried::Post(post) if changeset.is_none() => {
-                let can = user.can(match post.post_type.as_str() {
-                    "page" => if post.post_author == user.id { "edit_pages" } else { "edit_others_pages" },
-                    _ => if post.post_author == user.id { "edit_posts" } else { "edit_others_posts" },
-                });
-                let label = match post.post_type.as_str() {
-                    "page" => tr("Edit Page"),
-                    "attachment" => tr("Edit Media"),
-                    _ => tr("Edit Post"),
-                };
-                can.then(|| (label, admin(&format!("post.php?post={}&action=edit", post.id))))
+    let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> =
+        std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
+            // The previewed site title and theme of the Customizer.
+            let site = info.site;
+            let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
+            let mut context = rustpress_admin::adminbar::FrontContext {
+                updates,
+                pending_comments: pending,
+                logout_nonce: logout_nonce.clone(),
+                site_icon: site_icon.clone(),
+                ..Default::default()
+            };
+            if [&site.settings.stylesheet, &site.settings.template]
+                .iter()
+                .any(|t| {
+                    loaded
+                        .theme
+                        .wp_root
+                        .join("wp-content")
+                        .join("themes")
+                        .join(t.as_str())
+                        .join("templates")
+                        .join("index.html")
+                        .is_file()
+                })
+                && user.can("edit_theme_options")
+            {
+                context.site_editor_url = Some(format!(
+                    "{}?postType=wp_template&postId={}//{}&canvas=edit",
+                    admin("site-editor.php"),
+                    site.settings.stylesheet,
+                    info.template_slug
+                ));
             }
-            rustpress_core::Queried::Term(term) if user.can("manage_categories") => {
-                let label = if term.taxonomy == "category" || site.types.taxonomy(&term.taxonomy).is_some_and(|t| t.hierarchical) { tr("Edit Category") } else { tr("Edit Tag") };
-                let post_type = site.types.taxonomy(&term.taxonomy).and_then(|t| t.object_types.first().cloned()).unwrap_or_else(|| "post".to_owned());
-                Some((label, admin(&format!("term.php?taxonomy={}&tag_ID={}&post_type={post_type}", term.taxonomy, term.term_id))))
-            }
-            rustpress_core::Queried::User(author) if user.can("edit_users") || author.id == user.id => {
-                let url = if author.id == user.id { admin("profile.php") } else { admin(&format!("user-edit.php?user_id={}", author.id)) };
-                Some((tr("Edit User"), url))
-            }
-            _ => None,
-        };
-        rustpress_admin::adminbar::render_front(site, &user, &context)
-    });
-    Some(rustpress_theme::Extras { toolbar: Some(toolbar) })
+            context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
+            context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme)
+                || rustpress_theme::classic::is_twentytwenty(&loaded.theme);
+            let home = site.home_url("");
+            let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
+            let host = info.query.http_host.as_deref().unwrap_or_else(|| {
+                home.split_once("://")
+                    .map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default())
+            });
+            let query = if info.query.raw_query.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", info.query.raw_query)
+            };
+            context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
+            context.customize_changeset = changeset.clone();
+            let tr = |s: &str| site.tr(s);
+            context.edit = match &info.query.queried {
+                // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
+                // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
+                rustpress_core::Queried::Post(post) if changeset.is_none() => {
+                    let can = user.can(match post.post_type.as_str() {
+                        "page" => {
+                            if post.post_author == user.id {
+                                "edit_pages"
+                            } else {
+                                "edit_others_pages"
+                            }
+                        }
+                        _ => {
+                            if post.post_author == user.id {
+                                "edit_posts"
+                            } else {
+                                "edit_others_posts"
+                            }
+                        }
+                    });
+                    let label = match post.post_type.as_str() {
+                        "page" => tr("Edit Page"),
+                        "attachment" => tr("Edit Media"),
+                        _ => tr("Edit Post"),
+                    };
+                    can.then(|| {
+                        (
+                            label,
+                            admin(&format!("post.php?post={}&action=edit", post.id)),
+                        )
+                    })
+                }
+                rustpress_core::Queried::Term(term) if user.can("manage_categories") => {
+                    let label = if term.taxonomy == "category"
+                        || site
+                            .types
+                            .taxonomy(&term.taxonomy)
+                            .is_some_and(|t| t.hierarchical)
+                    {
+                        tr("Edit Category")
+                    } else {
+                        tr("Edit Tag")
+                    };
+                    let post_type = site
+                        .types
+                        .taxonomy(&term.taxonomy)
+                        .and_then(|t| t.object_types.first().cloned())
+                        .unwrap_or_else(|| "post".to_owned());
+                    Some((
+                        label,
+                        admin(&format!(
+                            "term.php?taxonomy={}&tag_ID={}&post_type={post_type}",
+                            term.taxonomy, term.term_id
+                        )),
+                    ))
+                }
+                rustpress_core::Queried::User(author)
+                    if user.can("edit_users") || author.id == user.id =>
+                {
+                    let url = if author.id == user.id {
+                        admin("profile.php")
+                    } else {
+                        admin(&format!("user-edit.php?user_id={}", author.id))
+                    };
+                    Some((tr("Edit User"), url))
+                }
+                _ => None,
+            };
+            rustpress_admin::adminbar::render_front(site, &user, &context)
+        });
+    Some(rustpress_theme::Extras {
+        toolbar: Some(toolbar),
+    })
 }
 
 /// The user of a REST request, from the cookie of the sign-in and the `wp_rest` nonce.
@@ -344,23 +604,43 @@ pub enum RestAuth {
 pub fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {
     use base64::Engine;
     let value = headers.get("authorization")?.to_str().ok()?;
-    let encoded = value.strip_prefix("Basic ").or_else(|| value.strip_prefix("basic "))?;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded.trim()).ok()?;
+    let encoded = value
+        .strip_prefix("Basic ")
+        .or_else(|| value.strip_prefix("basic "))?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .ok()?;
     let text = String::from_utf8(decoded).ok()?;
     let (login, password) = text.split_once(':')?;
     Some((login.to_owned(), password.to_owned()))
 }
 
-pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_nonce: Option<&str>) -> RestAuth {
-    let Some(parts) = &loaded.admin else { return RestAuth::Anonymous };
+pub async fn rest_auth(
+    loaded: &Loaded,
+    headers: &HeaderMap,
+    query: &str,
+    body_nonce: Option<&str>,
+) -> RestAuth {
+    let Some(parts) = &loaded.admin else {
+        return RestAuth::Anonymous;
+    };
     let scheme = rustpress_auth::Scheme::LoggedIn;
     let name = parts.auth.cookie_name(scheme);
     let cookies = cookies_of(headers);
     let at = now();
     // `determine_current_user`: the cookie comes before the application password, which only counts when nobody
     // is signed in by cookie.
-    let session = match cookies.iter().find(|(k, _)| *k == name).map(|(_, v)| v.clone()) {
-        Some(cookie) => parts.auth.validate_cookie(&loaded.site.db, &cookie, scheme, at, false).await.ok().flatten(),
+    let session = match cookies
+        .iter()
+        .find(|(k, _)| *k == name)
+        .map(|(_, v)| v.clone())
+    {
+        Some(cookie) => parts
+            .auth
+            .validate_cookie(&loaded.site.db, &cookie, scheme, at, false)
+            .await
+            .ok()
+            .flatten(),
         None => None,
     };
     // Application passwords work where WordPress offers them (HTTPS, or a local environment).
@@ -368,14 +648,28 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
         && loaded.site.app_passwords_available()
         && let Some((login, password)) = basic_credentials(headers)
     {
-        return match rustpress_auth::app_passwords::authenticate(&loaded.site.db, &login, &password).await {
+        return match rustpress_auth::app_passwords::authenticate(&loaded.site.db, &login, &password)
+            .await
+        {
             Ok((user_id, uuid)) => {
                 let account = match loaded.site.db.user(user_id).await.ok().flatten() {
-                    Some(user) => loaded.site.db.auth_user_by_login(&user.user_login).await.ok().flatten(),
+                    Some(user) => loaded
+                        .site
+                        .db
+                        .auth_user_by_login(&user.user_login)
+                        .await
+                        .ok()
+                        .flatten(),
                     None => None,
                 };
                 match account {
-                    Some(account) => match rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &account).await {
+                    Some(account) => match rustpress_auth::CurrentUser::load(
+                        &loaded.site.db,
+                        &parts.roles,
+                        &account,
+                    )
+                    .await
+                    {
                         Ok(current) => RestAuth::AppPassword(current, uuid),
                         Err(_) => RestAuth::Anonymous,
                     },
@@ -386,11 +680,37 @@ pub async fn rest_auth(loaded: &Loaded, headers: &HeaderMap, query: &str, body_n
             Err(Some((code, message))) => RestAuth::BadAppPassword(code, message),
         };
     }
-    let Some(session) = session else { return RestAuth::Anonymous };
-    let nonce = headers.get("x-wp-nonce").and_then(|v| v.to_str().ok()).map(str::to_owned).or_else(|| pairs_of(query).into_iter().find(|(k, _)| k == "_wpnonce").map(|(_, v)| v)).or_else(|| body_nonce.map(str::to_owned));
-    let Some(nonce) = nonce else { return RestAuth::Anonymous };
-    let Ok(user) = rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await else { return RestAuth::Anonymous };
-    if parts.auth.verify_nonce(&nonce, "wp_rest", user.id, &session.token, at).is_some() { RestAuth::User(user, session.token.clone()) } else { RestAuth::BadNonce }
+    let Some(session) = session else {
+        return RestAuth::Anonymous;
+    };
+    let nonce = headers
+        .get("x-wp-nonce")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned)
+        .or_else(|| {
+            pairs_of(query)
+                .into_iter()
+                .find(|(k, _)| k == "_wpnonce")
+                .map(|(_, v)| v)
+        })
+        .or_else(|| body_nonce.map(str::to_owned));
+    let Some(nonce) = nonce else {
+        return RestAuth::Anonymous;
+    };
+    let Ok(user) =
+        rustpress_auth::CurrentUser::load(&loaded.site.db, &parts.roles, &session.user).await
+    else {
+        return RestAuth::Anonymous;
+    };
+    if parts
+        .auth
+        .verify_nonce(&nonce, "wp_rest", user.id, &session.token, at)
+        .is_some()
+    {
+        RestAuth::User(user, session.token.clone())
+    } else {
+        RestAuth::BadNonce
+    }
 }
 
 pub fn pairs_of_public(text: &str) -> Vec<(String, String)> {
@@ -404,21 +724,38 @@ fn pairs_of(text: &str) -> Vec<(String, String)> {
         .map(|pair| {
             let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
             // Invalid UTF-8 is dropped, like `wp_check_invalid_utf8()` does.
-            (String::from_utf8_lossy(&urldecode(name.as_bytes())).replace('\u{fffd}', ""), String::from_utf8_lossy(&urldecode(value.as_bytes())).replace('\u{fffd}', ""))
+            (
+                String::from_utf8_lossy(&urldecode(name.as_bytes())).replace('\u{fffd}', ""),
+                String::from_utf8_lossy(&urldecode(value.as_bytes())).replace('\u{fffd}', ""),
+            )
         })
         .collect()
 }
 
 /// `wp-login.php`.
 #[allow(clippy::too_many_arguments)]
-pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, method_post: bool, path: &str, request_uri: &str, query: &str, body: &str, headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
+pub async fn login_page(
+    loaded: &Loaded,
+    writer: Option<&rustpress_db::Writer>,
+    method_post: bool,
+    path: &str,
+    request_uri: &str,
+    query: &str,
+    body: &str,
+    headers: &HeaderMap,
+    client: &crate::client::Client,
+) -> Response<Body> {
     let remote_addr = client.ip.clone();
-    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+    let Some(parts) = &loaded.admin else {
+        return plain(StatusCode::NOT_FOUND, "Not Found");
+    };
     let mut loader = parts.loader.clone();
     // Nobody is signed in on this page: the nonces belong to user 0 without a session.
     let auth = parts.auth.clone();
     let at = now();
-    loader.nonce = Some(std::sync::Arc::new(move |action: &str| auth.create_nonce(action, 0, "", at).unwrap_or_default()));
+    loader.nonce = Some(std::sync::Arc::new(move |action: &str| {
+        auth.create_nonce(action, 0, "", at).unwrap_or_default()
+    }));
     let env = LoginEnv {
         site: &loaded.site,
         db: &loaded.site.db,
@@ -436,18 +773,35 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
         post: method_post,
         path: path.to_owned(),
         request_uri: request_uri.to_owned(),
-        referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        referer: headers
+            .get(header::REFERER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
         query: pairs_of(query),
-        form: if method_post { pairs_of(body) } else { Vec::new() },
+        form: if method_post {
+            pairs_of(body)
+        } else {
+            Vec::new()
+        },
         cookies: cookies_of(headers),
         remote_addr,
-        user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        user_agent: headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
     };
     let reply = login::handle(&env, &request).await;
-    let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
+    let mut response = if reply.bytes.is_empty() {
+        Response::new(Body::from(reply.body))
+    } else {
+        Response::new(Body::from(reply.bytes))
+    };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
-        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+        if let (Ok(name), Ok(value)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
             response.headers_mut().append(name, value);
         }
     }
@@ -460,9 +814,17 @@ pub async fn login_page(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, 
 }
 
 /// `wp-comments-post.php`: a comment is sent.
-pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer>, body: &str, headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
+pub async fn comments_post(
+    loaded: &Loaded,
+    writer: Option<&rustpress_db::Writer>,
+    body: &str,
+    headers: &HeaderMap,
+    client: &crate::client::Client,
+) -> Response<Body> {
     let remote_addr = client.ip.clone();
-    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+    let Some(parts) = &loaded.admin else {
+        return plain(StatusCode::NOT_FOUND, "Not Found");
+    };
     let env = rustpress_admin::comments_post::CommentEnv {
         site: &loaded.site,
         db: &loaded.site.db,
@@ -474,12 +836,22 @@ pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer
         user: frontend_user(loaded, headers).await,
         https: client.https,
     };
-    let request = rustpress_admin::comments_post::CommentRequest { form: pairs_of(body), remote_addr, user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned) };
+    let request = rustpress_admin::comments_post::CommentRequest {
+        form: pairs_of(body),
+        remote_addr,
+        user_agent: headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+    };
     let reply = rustpress_admin::comments_post::handle(&env, &request).await;
     let mut response = Response::new(Body::from(reply.body));
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
-        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+        if let (Ok(name), Ok(value)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
             response.headers_mut().append(name, value);
         }
     }
@@ -493,10 +865,34 @@ pub async fn comments_post(loaded: &Loaded, writer: Option<&rustpress_db::Writer
 
 /// A file in `wp-admin` (`index.php`, `options-general.php`, ...).
 #[allow(clippy::too_many_arguments)]
-pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpress_db::Writer>, file: &str, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
-    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+pub async fn admin_page(
+    loaded: &Loaded,
+    config: &Config,
+    writer: Option<&rustpress_db::Writer>,
+    file: &str,
+    method_post: bool,
+    request_uri: &str,
+    query: &str,
+    body: &[u8],
+    headers: &HeaderMap,
+    client: &crate::client::Client,
+) -> Response<Body> {
+    let Some(parts) = &loaded.admin else {
+        return plain(StatusCode::NOT_FOUND, "Not Found");
+    };
     let themes = config.wp_root.join("wp-content").join("themes");
-    let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
+    let block_theme = [
+        &loaded.site.settings.stylesheet,
+        &loaded.site.settings.template,
+    ]
+    .iter()
+    .any(|t| {
+        themes
+            .join(t.as_str())
+            .join("templates")
+            .join("index.html")
+            .is_file()
+    });
     let env = rustpress_admin::screens::AdminEnv {
         site: &loaded.site,
         db: &loaded.site.db,
@@ -514,7 +910,10 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         mailer: parts.mailer.clone(),
         plugin_mailer: loaded.mail.clone(),
     };
-    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
     let (form, files) = if !method_post {
         (Vec::new(), Vec::new())
     } else if let Some(boundary) = rustpress_admin::multipart::boundary(content_type) {
@@ -531,17 +930,36 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
         cookies: cookies_of(headers),
         request_uri: request_uri.to_owned(),
         remote_addr: client.ip.clone(),
-        user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
-        referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
-        host: headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        user_agent: headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        referer: headers
+            .get(header::REFERER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        host: headers
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
     };
     // The caches that lists prime for the request (terms, meta, rows of posts).
     // `is_admin()`: the administration's language pack joins WordPress' own (`load_default_textdomain()`).
-    let reply = rustpress_core::i18n::in_admin(rustpress_db::Db::with_term_cache(rustpress_admin::screens::handle(&env, &request))).await;
-    let mut response = if reply.bytes.is_empty() { Response::new(Body::from(reply.body)) } else { Response::new(Body::from(reply.bytes)) };
+    let reply = rustpress_core::i18n::in_admin(rustpress_db::Db::with_term_cache(
+        rustpress_admin::screens::handle(&env, &request),
+    ))
+    .await;
+    let mut response = if reply.bytes.is_empty() {
+        Response::new(Body::from(reply.body))
+    } else {
+        Response::new(Body::from(reply.bytes))
+    };
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
-        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+        if let (Ok(name), Ok(value)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
             response.headers_mut().append(name, value);
         }
     }
@@ -556,8 +974,20 @@ pub async fn admin_page(loaded: &Loaded, config: &Config, writer: Option<&rustpr
 /// `admin-ajax.php` on a read-only site, where the administration is closed: only the plugins' actions for visitors
 /// (`wp_ajax_nopriv_{$action}`, such as sending a WPForms form); everything else is `wp_die( '0', 400 )`.
 #[allow(clippy::too_many_arguments)]
-pub async fn visitor_ajax(loaded: &Loaded, config: &Config, method_post: bool, request_uri: &str, query: &str, body: &[u8], headers: &HeaderMap, client: &crate::client::Client) -> Response<Body> {
-    let content_type = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or_default();
+pub async fn visitor_ajax(
+    loaded: &Loaded,
+    config: &Config,
+    method_post: bool,
+    request_uri: &str,
+    query: &str,
+    body: &[u8],
+    headers: &HeaderMap,
+    client: &crate::client::Client,
+) -> Response<Body> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
     let (form, files) = if !method_post {
         (Vec::new(), Vec::new())
     } else if let Some(boundary) = rustpress_admin::multipart::boundary(content_type) {
@@ -565,7 +995,12 @@ pub async fn visitor_ajax(loaded: &Loaded, config: &Config, method_post: bool, r
     } else {
         (pairs_of(&String::from_utf8_lossy(body)), Vec::new())
     };
-    let header = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let header = |name: header::HeaderName| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
     let request = rustpress_admin::screens::AdminRequest {
         post: method_post,
         file: "admin-ajax.php".to_owned(),
@@ -583,17 +1018,39 @@ pub async fn visitor_ajax(loaded: &Loaded, config: &Config, method_post: bool, r
     let includes = config.wp_root.join("wp-includes");
     let version = wp_version(&includes);
     let auth = Auth::new(loaded.salts.clone(), &loaded.site.settings.siteurl);
-    let visitor = rustpress_admin::screens::ajax::Visitor { site: &loaded.site, writer: None, auth: &auth, now: now(), wp_version: &version, wp_root: &config.wp_root, mailer: loaded.mail.as_deref() };
+    let visitor = rustpress_admin::screens::ajax::Visitor {
+        site: &loaded.site,
+        writer: None,
+        auth: &auth,
+        now: now(),
+        wp_version: &version,
+        wp_root: &config.wp_root,
+        mailer: loaded.mail.as_deref(),
+    };
     let origin = match request.host.as_deref().filter(|h| !h.is_empty()) {
         Some(host) => format!("{}://{host}", if client.https { "https" } else { "http" }),
-        None => loaded.site.settings.siteurl.split('/').take(3).collect::<Vec<_>>().join("/"),
+        None => loaded
+            .site
+            .settings
+            .siteurl
+            .split('/')
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("/"),
     };
-    let answer = rustpress_admin::screens::ajax::plugin_nopriv(&visitor, &request, &action, origin).await;
-    let reply = rustpress_core::i18n::in_admin(async { answer.unwrap_or_else(|| rustpress_admin::screens::ajax::text(400, "0")) }).await;
+    let answer =
+        rustpress_admin::screens::ajax::plugin_nopriv(&visitor, &request, &action, origin).await;
+    let reply = rustpress_core::i18n::in_admin(async {
+        answer.unwrap_or_else(|| rustpress_admin::screens::ajax::text(400, "0"))
+    })
+    .await;
     let mut response = Response::new(Body::from(reply.body));
     *response.status_mut() = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::OK);
     for (name, value) in &reply.headers {
-        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value)) {
+        if let (Ok(name), Ok(value)) = (
+            header::HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
             response.headers_mut().append(name, value);
         }
     }
@@ -612,9 +1069,22 @@ pub async fn customize_preview_exports(
     result: &rustpress_core::QueryResult,
     preview: &rustpress_core::customize::Preview,
 ) -> String {
-    let Some(parts) = &loaded.admin else { return String::new() };
+    let Some(parts) = &loaded.admin else {
+        return String::new();
+    };
     let themes = config.wp_root.join("wp-content").join("themes");
-    let block_theme = [&loaded.site.settings.stylesheet, &loaded.site.settings.template].iter().any(|t| themes.join(t.as_str()).join("templates").join("index.html").is_file());
+    let block_theme = [
+        &loaded.site.settings.stylesheet,
+        &loaded.site.settings.template,
+    ]
+    .iter()
+    .any(|t| {
+        themes
+            .join(t.as_str())
+            .join("templates")
+            .join("index.html")
+            .is_file()
+    });
     let env = rustpress_admin::screens::AdminEnv {
         site,
         db: &site.db,
@@ -632,7 +1102,11 @@ pub async fn customize_preview_exports(
         mailer: parts.mailer.clone(),
         plugin_mailer: loaded.mail.clone(),
     };
-    let request_uri = if result.raw_query.is_empty() { result.url_path.clone() } else { format!("{}?{}", result.url_path, result.raw_query) };
+    let request_uri = if result.raw_query.is_empty() {
+        result.url_path.clone()
+    } else {
+        format!("{}?{}", result.url_path, result.raw_query)
+    };
     let request = rustpress_admin::screens::AdminRequest {
         post: false,
         file: String::new(),
@@ -642,29 +1116,61 @@ pub async fn customize_preview_exports(
         cookies: cookies_of(headers),
         request_uri,
         remote_addr: client.ip.clone(),
-        user_agent: headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).map(str::to_owned),
-        referer: headers.get(header::REFERER).and_then(|v| v.to_str().ok()).map(str::to_owned),
-        host: headers.get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_owned),
+        user_agent: headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        referer: headers
+            .get(header::REFERER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
+        host: headers
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
     };
-    rustpress_admin::screens::customize_preview_exports(&env, &loaded.site, &request, result, preview).await
+    rustpress_admin::screens::customize_preview_exports(
+        &env,
+        &loaded.site,
+        &request,
+        result,
+        preview,
+    )
+    .await
 }
 
 fn plain(status: StatusCode, text: &'static str) -> Response<Body> {
     let mut response = Response::new(Body::from(text));
     *response.status_mut() = status;
-    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=UTF-8"));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=UTF-8"),
+    );
     response
 }
 
 /// The `load` parameter of `load-styles.php` / `load-scripts.php`: sorted chunks joined, cleaned, split.
 fn load_list(query: &str) -> Vec<String> {
-    let mut chunks: Vec<(String, String)> = pairs_of(query).into_iter().filter_map(|(k, v)| k.strip_prefix("load[").and_then(|r| r.strip_suffix(']')).map(|name| (name.to_owned(), v))).collect();
+    let mut chunks: Vec<(String, String)> = pairs_of(query)
+        .into_iter()
+        .filter_map(|(k, v)| {
+            k.strip_prefix("load[")
+                .and_then(|r| r.strip_suffix(']'))
+                .map(|name| (name.to_owned(), v))
+        })
+        .collect();
     if chunks.is_empty() {
-        chunks = pairs_of(query).into_iter().filter(|(k, _)| k == "load").collect();
+        chunks = pairs_of(query)
+            .into_iter()
+            .filter(|(k, _)| k == "load")
+            .collect();
     }
     chunks.sort_by(|a, b| a.0.cmp(&b.0));
     let joined: String = chunks.into_iter().map(|(_, v)| v).collect();
-    let cleaned: String = joined.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, ',' | '_' | '-')).collect();
+    let cleaned: String = joined
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ',' | '_' | '-'))
+        .collect();
     let mut out: Vec<String> = Vec::new();
     for handle in cleaned.split(',') {
         if !out.iter().any(|h| h == handle) {
@@ -685,14 +1191,19 @@ fn static_reply(content_type: &'static str, etag: &str, body: String) -> Respons
     if let Ok(value) = HeaderValue::from_str(&expires) {
         headers.insert(header::EXPIRES, value);
     }
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"));
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000"),
+    );
     response
 }
 
 /// An HTTP date (`Sun, 06 Nov 1994 08:49:37 GMT`).
 fn chrono_like_http_date(timestamp: i64) -> String {
     const DAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
     let days = timestamp.div_euclid(86_400);
     let secs = timestamp.rem_euclid(86_400);
     // civil from days
@@ -708,11 +1219,20 @@ fn chrono_like_http_date(timestamp: i64) -> String {
     if month <= 2 {
         year += 1;
     }
-    format!("{}, {day:02} {} {year} {:02}:{:02}:{:02} GMT", DAYS[days.rem_euclid(7) as usize], MONTHS[(month - 1) as usize], secs / 3600, (secs % 3600) / 60, secs % 60)
+    format!(
+        "{}, {day:02} {} {year} {:02}:{:02}:{:02} GMT",
+        DAYS[days.rem_euclid(7) as usize],
+        MONTHS[(month - 1) as usize],
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
 }
 
 fn not_modified(etag: &str, headers: &HeaderMap) -> Option<Response<Body>> {
-    let sent = headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok())?;
+    let sent = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())?;
     if sent.replace('\\', "") != etag {
         return None;
     }
@@ -728,17 +1248,28 @@ fn read_file(root: &Path, relative: &str) -> String {
     if relative.split(['/', '\\']).any(|segment| segment == "..") {
         return String::new();
     }
-    rustpress_core::files::read(&root.join(relative)).map(|text| text.to_string()).unwrap_or_default()
+    rustpress_core::files::read(&root.join(relative))
+        .map(|text| text.to_string())
+        .unwrap_or_default()
 }
 
 /// `wp-admin/load-styles.php`.
-pub fn load_styles(loaded: &Loaded, config: &Config, query: &str, headers: &HeaderMap) -> Response<Body> {
-    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+pub fn load_styles(
+    loaded: &Loaded,
+    config: &Config,
+    query: &str,
+    headers: &HeaderMap,
+) -> Response<Body> {
+    let Some(parts) = &loaded.admin else {
+        return plain(StatusCode::NOT_FOUND, "Not Found");
+    };
     let load = load_list(query);
     if load.iter().all(String::is_empty) {
         return plain(StatusCode::BAD_REQUEST, "");
     }
-    let rtl = pairs_of(query).iter().any(|(k, v)| k == "dir" && v == "rtl");
+    let rtl = pairs_of(query)
+        .iter()
+        .any(|(k, v)| k == "dir" && v == "rtl");
     let styles = default_styles(&parts.loader);
     let etag = styles.deps.etag(&load, &parts.loader.version);
     if let Some(response) = not_modified(&etag, headers) {
@@ -746,15 +1277,24 @@ pub fn load_styles(loaded: &Loaded, config: &Config, query: &str, headers: &Head
     }
     let mut out = String::new();
     for handle in &load {
-        let Some(style) = styles.deps.get(handle) else { continue };
-        let Some(src) = style.src.as_deref().filter(|s| !s.is_empty()) else { continue };
+        let Some(style) = styles.deps.get(handle) else {
+            continue;
+        };
+        let Some(src) = style.src.as_deref().filter(|s| !s.is_empty()) else {
+            continue;
+        };
         let mut path = src.to_owned();
         if rtl && style.extra.get("rtl").is_some_and(|e| e.truthy()) {
             path = path.replace(".min.css", "-rtl.min.css");
         }
         let content = format!("{}\n", read_file(&config.wp_root, &path));
         if src.starts_with("/wp-includes/css/") {
-            out.push_str(&content.replace("../images/", "../wp-includes/images/").replace("../js/tinymce/", "../wp-includes/js/tinymce/").replace("../fonts/", "../wp-includes/fonts/"));
+            out.push_str(
+                &content
+                    .replace("../images/", "../wp-includes/images/")
+                    .replace("../js/tinymce/", "../wp-includes/js/tinymce/")
+                    .replace("../fonts/", "../wp-includes/fonts/"),
+            );
         } else {
             out.push_str(&content.replace("../images/", "images/"));
         }
@@ -763,8 +1303,15 @@ pub fn load_styles(loaded: &Loaded, config: &Config, query: &str, headers: &Head
 }
 
 /// `wp-admin/load-scripts.php`.
-pub fn load_scripts(loaded: &Loaded, config: &Config, query: &str, headers: &HeaderMap) -> Response<Body> {
-    let Some(parts) = &loaded.admin else { return plain(StatusCode::NOT_FOUND, "Not Found") };
+pub fn load_scripts(
+    loaded: &Loaded,
+    config: &Config,
+    query: &str,
+    headers: &HeaderMap,
+) -> Response<Body> {
+    let Some(parts) = &loaded.admin else {
+        return plain(StatusCode::NOT_FOUND, "Not Found");
+    };
     let load = load_list(query);
     if load.iter().all(String::is_empty) {
         return plain(StatusCode::BAD_REQUEST, "");
@@ -776,8 +1323,13 @@ pub fn load_scripts(loaded: &Loaded, config: &Config, query: &str, headers: &Hea
     }
     let mut out = String::new();
     for handle in &load {
-        let Some(script) = scripts.deps.get(handle) else { continue };
-        out.push_str(&read_file(&config.wp_root, script.src.as_deref().unwrap_or_default()));
+        let Some(script) = scripts.deps.get(handle) else {
+            continue;
+        };
+        out.push_str(&read_file(
+            &config.wp_root,
+            script.src.as_deref().unwrap_or_default(),
+        ));
         out.push('\n');
     }
     static_reply("application/javascript; charset=UTF-8", &etag, out)

@@ -56,7 +56,8 @@ impl Default for Options {
             reference: "127.0.0.1:8080".into(),
             host: "localhost:8080".into(),
             database_url: "mysql://wordpress:wordpress@127.0.0.1:3306/wordpress".into(),
-            wp_root: std::env::var_os("RUSTPRESS_WP_ROOT").map_or_else(|| PathBuf::from("wordpress"), PathBuf::from),
+            wp_root: std::env::var_os("RUSTPRESS_WP_ROOT")
+                .map_or_else(|| PathBuf::from("wordpress"), PathBuf::from),
             limit: 1500,
             concurrency: 4,
             only: None,
@@ -67,39 +68,80 @@ impl Default for Options {
 
 /// The `wp-theme-<slug>` body class of the reference's front page, i.e. the active theme.
 fn theme_slug(home: &str) -> String {
-    home.split("wp-theme-").nth(1).map(|rest| rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect()).unwrap_or_default()
+    home.split("wp-theme-")
+        .nth(1)
+        .map(|rest| {
+            rest.chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// `<meta name="generator" content="WordPress 7.1.3" />`.
 fn wp_version(home: &str) -> String {
-    home.split("name=\"generator\" content=\"WordPress ").nth(1).and_then(|rest| rest.split('"').next()).unwrap_or("?").to_owned()
+    home.split("name=\"generator\" content=\"WordPress ")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or("?")
+        .to_owned()
 }
 
 async fn ours(app: &Arc<App>, path: &str) -> http::Response {
-    let request = Request::builder().uri(path).body(Body::empty()).expect("valid request");
+    let request = Request::builder()
+        .uri(path)
+        .body(Body::empty())
+        .expect("valid request");
     let response = app.router().oneshot(request).await.expect("infallible");
     let (parts, body) = response.into_parts();
     http::Response {
         status: parts.status.as_u16(),
-        headers: parts.headers.iter().map(|(n, v)| (n.as_str().to_owned(), String::from_utf8_lossy(v.as_bytes()).into_owned())).collect(),
-        body: body.collect().await.map(|b| b.to_bytes().to_vec()).unwrap_or_default(),
+        headers: parts
+            .headers
+            .iter()
+            .map(|(n, v)| {
+                (
+                    n.as_str().to_owned(),
+                    String::from_utf8_lossy(v.as_bytes()).into_owned(),
+                )
+            })
+            .collect(),
+        body: body
+            .collect()
+            .await
+            .map(|b| b.to_bytes().to_vec())
+            .unwrap_or_default(),
     }
 }
 
 /// Fetches one path from both sides: `(ours, theirs)`.
-pub async fn fetch_both(options: &Options, path: &str) -> Result<(http::Response, http::Response), Error> {
+pub async fn fetch_both(
+    options: &Options,
+    path: &str,
+) -> Result<(http::Response, http::Response), Error> {
     let reference = http::Reference::new(&options.reference, &options.host);
     let theirs = {
         let path = path.to_owned();
-        tokio::task::spawn_blocking(move || reference.get(&path)).await.expect("task").map_err(|_| Error::Unreachable(options.reference.clone()))?
+        tokio::task::spawn_blocking(move || reference.get(&path))
+            .await
+            .expect("task")
+            .map_err(|_| Error::Unreachable(options.reference.clone()))?
     };
-    let config = Config { database_url: options.database_url.clone(), wp_root: options.wp_root.clone(), reload_secs: 3600, ..Config::default() };
+    let config = Config {
+        database_url: options.database_url.clone(),
+        wp_root: options.wp_root.clone(),
+        reload_secs: 3600,
+        ..Config::default()
+    };
     let app = App::new(config).await?;
     Ok((ours(&app, path).await, theirs))
 }
 
 /// Runs the comparison. `progress` is called after each URL with `(done, total, path)`.
-pub async fn run(options: &Options, progress: impl Fn(usize, usize, &str)) -> Result<Report, Error> {
+pub async fn run(
+    options: &Options,
+    progress: impl Fn(usize, usize, &str),
+) -> Result<Report, Error> {
     let reference = http::Reference::new(&options.reference, &options.host);
     let home = tokio::task::spawn_blocking({
         let reference = reference.clone();
@@ -112,7 +154,12 @@ pub async fn run(options: &Options, progress: impl Fn(usize, usize, &str)) -> Re
     let theme = theme_slug(&home);
     let known = Arc::new(Known::load(&options.known).map_err(Error::Known)?);
 
-    let config = Config { database_url: options.database_url.clone(), wp_root: options.wp_root.clone(), reload_secs: 3600, ..Config::default() };
+    let config = Config {
+        database_url: options.database_url.clone(),
+        wp_root: options.wp_root.clone(),
+        reload_secs: 3600,
+        ..Config::default()
+    };
     let app = App::new(config).await?;
 
     let limit = options.limit;
@@ -139,14 +186,29 @@ pub async fn run(options: &Options, progress: impl Fn(usize, usize, &str)) -> Re
                 let started = Instant::now();
                 let theirs = {
                     let path = target.path.clone();
-                    tokio::task::spawn_blocking(move || reference.get(&path).unwrap_or_default()).await.expect("task")
+                    tokio::task::spawn_blocking(move || reference.get(&path).unwrap_or_default())
+                        .await
+                        .expect("task")
                 };
                 let theirs_ms = started.elapsed().as_millis();
                 let started = Instant::now();
                 let mine = ours(&app, &target.path).await;
                 let ours_ms = started.elapsed().as_millis();
-                let findings = report::classify(compare::compare(target.kind, &mine, &theirs), &target.path, &theme, &known);
-                (index, Outcome { target, ours_ms, theirs_ms, findings })
+                let findings = report::classify(
+                    compare::compare(target.kind, &mine, &theirs),
+                    &target.path,
+                    &theme,
+                    &known,
+                );
+                (
+                    index,
+                    Outcome {
+                        target,
+                        ours_ms,
+                        theirs_ms,
+                        findings,
+                    },
+                )
             }
         })
         .buffer_unordered(options.concurrency.max(1));

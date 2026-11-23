@@ -15,7 +15,9 @@ use super::php::string;
 /// The list the screen is.
 fn list_of(ctx: &AdminContext<'_>) -> Option<&'static str> {
     let listed = ctx.screen_id.strip_prefix("edit-")?;
-    ["acf-field-group", "acf-post-type", "acf-taxonomy"].into_iter().find(|t| *t == listed)
+    ["acf-field-group", "acf-post-type", "acf-taxonomy"]
+        .into_iter()
+        .find(|t| *t == listed)
 }
 
 /// `$_REQUEST[ $name ]` (`acf_request_arg()`), sanitized.
@@ -25,7 +27,13 @@ fn request<'a>(ctx: &'a AdminContext<'a>, name: &str) -> Option<&'a str> {
 
 /// `post[]` of the request.
 fn posted_ids(ctx: &AdminContext<'_>) -> Vec<u64> {
-    let mut out: Vec<u64> = ctx.query.iter().chain(ctx.form.iter()).filter(|(k, _)| k == "post[]").map(|(_, v)| super::php::intval(Some(&string(v))).max(0) as u64).collect();
+    let mut out: Vec<u64> = ctx
+        .query
+        .iter()
+        .chain(ctx.form.iter())
+        .filter(|(k, _)| k == "post[]")
+        .map(|(_, v)| super::php::intval(Some(&string(v))).max(0) as u64)
+        .collect();
     out.dedup();
     out
 }
@@ -34,9 +42,13 @@ fn posted_ids(ctx: &AdminContext<'_>) -> Vec<u64> {
 fn list_url(ctx: &AdminContext<'_>, post_type: &str, params: &str) -> String {
     let mut params = params.to_owned();
     if let Some(paged) = ctx.get("paged") {
-        params.push_str(&format!("&paged={}", super::php::intval(Some(&string(paged)))));
+        params.push_str(&format!(
+            "&paged={}",
+            super::php::intval(Some(&string(paged)))
+        ));
     }
-    ctx.site.site_url(&format!("wp-admin/edit.php?post_type={post_type}{params}"))
+    ctx.site
+        .site_url(&format!("wp-admin/edit.php?post_type={post_type}{params}"))
 }
 
 /// `check_admin_referer( 'bulk-posts' )`: an invalid nonce ends with `wp_nonce_ays()`.
@@ -47,7 +59,11 @@ fn referer_ok(ctx: &AdminContext<'_>) -> bool {
 /// `wp_nonce_ays( 'bulk-posts' )`.
 fn expired(ctx: &AdminContext<'_>) -> PageLoad {
     let site = ctx.site;
-    PageLoad::Die { status: 403, title: site.tr("An error occurred."), message: site.tr("The link you followed has expired.") }
+    PageLoad::Die {
+        status: 403,
+        title: site.tr("An error occurred."),
+        message: site.tr("The link you followed has expired."),
+    }
 }
 
 /// The items a request asks to act on: `$_GET[ $action ]` or the bulk action of the lower select (`action2`).
@@ -61,23 +77,61 @@ fn targets(ctx: &AdminContext<'_>, action: &str) -> Vec<u64> {
 
 /// `acf_update_internal_post_type_active_status()`: the item saved again with `active` changed; a post type with a key
 /// or a taxonomy goes to `reregistered` for the flush of the rewrite rules after all items.
-async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool, reregistered: &mut Vec<(bool, String, bool)>) -> Result<bool> {
-    let Some(writer) = ctx.writer else { return Ok(false) };
+async fn set_active(
+    ctx: &AdminContext<'_>,
+    post: &Post,
+    active: bool,
+    reregistered: &mut Vec<(bool, String, bool)>,
+) -> Result<bool> {
+    let Some(writer) = ctx.writer else {
+        return Ok(false);
+    };
     let defaults = match post.post_type.as_str() {
         "acf-field-group" => Value::Array(super::save_group::group_defaults()),
         "acf-post-type" => super::internal::post_type_defaults(),
         "acf-taxonomy" => super::internal::taxonomy_defaults(),
         _ => return Ok(false),
     };
-    let acf_post = rustpress_db::AcfPost { id: post.id, parent: post.post_parent, title: post.post_title.clone(), name: post.post_name.clone(), excerpt: post.post_excerpt.clone(), menu_order: i64::from(post.menu_order), status: post.post_status.clone(), content: post.post_content.clone() };
-    let Value::Array(mut items) = super::internal::validated(&acf_post, defaults) else { return Ok(false) };
+    let acf_post = rustpress_db::AcfPost {
+        id: post.id,
+        parent: post.post_parent,
+        title: post.post_title.clone(),
+        name: post.post_name.clone(),
+        excerpt: post.post_excerpt.clone(),
+        menu_order: i64::from(post.menu_order),
+        status: post.post_status.clone(),
+        content: post.post_content.clone(),
+    };
+    let Value::Array(mut items) = super::internal::validated(&acf_post, defaults) else {
+        return Ok(false);
+    };
     super::php::set(&mut items, "active", Value::Bool(active));
     let system = rustpress_auth::CurrentUser::system();
-    let content = rustpress_content::content::Content { site: ctx.site, db: &ctx.site.db, writer, user: &system, now: ctx.now };
+    let content = rustpress_content::content::Content {
+        site: ctx.site,
+        db: &ctx.site.db,
+        writer,
+        user: &system,
+        now: ctx.now,
+    };
     // `update_post()` unslashes the loaded item.
-    let Value::Array(items) = super::php::wp_unslash(Value::Array(items)) else { return Ok(false) };
+    let Value::Array(items) = super::php::wp_unslash(Value::Array(items)) else {
+        return Ok(false);
+    };
     let taxonomy = post.post_type == "acf-taxonomy";
-    let name = items.iter().find(|(k, _)| super::php::key_eq(k, &rustpress_phpser::Key::Str(if taxonomy { b"taxonomy".to_vec() } else { b"post_type".to_vec() }))).map(|(_, v)| v.clone());
+    let name = items
+        .iter()
+        .find(|(k, _)| {
+            super::php::key_eq(
+                k,
+                &rustpress_phpser::Key::Str(if taxonomy {
+                    b"taxonomy".to_vec()
+                } else {
+                    b"post_type".to_vec()
+                }),
+            )
+        })
+        .map(|(_, v)| v.clone());
     let registers = match post.post_type.as_str() {
         "acf-post-type" => super::php::truthy(name.as_ref()),
         "acf-taxonomy" => name.as_ref().is_some_and(|v| !matches!(v, Value::Null)),
@@ -92,13 +146,17 @@ async fn set_active(ctx: &AdminContext<'_>, post: &Post, active: bool, reregiste
 
 /// `current_screen` of the lists: the actions that redirect, or an expired link.
 pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
-    let Some(post_type) = list_of(ctx) else { return Ok(None) };
+    let Some(post_type) = list_of(ctx) else {
+        return Ok(None);
+    };
     if !(ctx.can)("manage_options") {
         return Ok(None);
     }
     let site = ctx.site;
     for action in ["acfduplicate", "acfactivate", "acfdeactivate"] {
-        if request(ctx, &format!("{action}complete")).is_some_and(|v| super::php::truthy(Some(&string(v)))) {
+        if request(ctx, &format!("{action}complete"))
+            .is_some_and(|v| super::php::truthy(Some(&string(v))))
+        {
             if !referer_ok(ctx) {
                 return Ok(Some(expired(ctx)));
             }
@@ -114,11 +172,14 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
         let mut done: Vec<u64> = Vec::new();
         let mut reregistered = Vec::new();
         for id in ids {
-            let Some(post) = site.db.post(id).await? else { continue };
+            let Some(post) = site.db.post(id).await? else {
+                continue;
+            };
             match action {
                 "acfduplicate" => {
                     if post.post_type == "acf-field-group"
-                        && let Some(new_id) = super::save_group::duplicate_field_group(ctx, &post).await?
+                        && let Some(new_id) =
+                            super::save_group::duplicate_field_group(ctx, &post).await?
                     {
                         done.push(new_id);
                     }
@@ -132,12 +193,35 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
         }
         // Each item flushed the rewrite rules; the last flush is what stays.
         if let (false, Some(writer)) = (reregistered.is_empty(), ctx.writer) {
-            let changes: Vec<rustpress_core::rewrite_gen::Reregistered<'_>> = reregistered.iter().map(|(taxonomy, name, active)| rustpress_core::rewrite_gen::Reregistered { taxonomy: *taxonomy, name, active: *active }).collect();
-            rustpress_core::rewrite_gen::flush_rewrite_rules_after(site, writer, ctx.wp_root, &changes).await?;
+            let changes: Vec<rustpress_core::rewrite_gen::Reregistered<'_>> = reregistered
+                .iter()
+                .map(
+                    |(taxonomy, name, active)| rustpress_core::rewrite_gen::Reregistered {
+                        taxonomy: *taxonomy,
+                        name,
+                        active: *active,
+                    },
+                )
+                .collect();
+            rustpress_core::rewrite_gen::flush_rewrite_rules_after(
+                site,
+                writer,
+                ctx.wp_root,
+                &changes,
+            )
+            .await?;
         }
         let nonce = (ctx.nonce)("bulk-posts");
-        let ids = done.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
-        return Ok(Some(PageLoad::Redirect(list_url(ctx, post_type, &format!("&_wpnonce={nonce}&{action}complete={ids}")))));
+        let ids = done
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        return Ok(Some(PageLoad::Redirect(list_url(
+            ctx,
+            post_type,
+            &format!("&_wpnonce={nonce}&{action}complete={ids}"),
+        ))));
     }
     Ok(None)
 }
@@ -145,42 +229,100 @@ pub async fn load(ctx: &AdminContext<'_>) -> Result<Option<PageLoad>> {
 /// `get_action_notice_text( $action, $count )` of the three lists.
 fn notice_text(site: &Site, post_type: &str, action: &str, count: usize) -> String {
     let (one, many) = match (post_type, action) {
-        ("acf-field-group", "acfactivatecomplete") => ("Field group activated.", "%s field groups activated."),
-        ("acf-field-group", "acfdeactivatecomplete") => ("Field group deactivated.", "%s field groups deactivated."),
-        ("acf-field-group", "acfduplicatecomplete") => ("Field group duplicated.", "%s field groups duplicated."),
-        ("acf-post-type", "acfactivatecomplete") => ("Post type activated.", "%s post types activated."),
-        ("acf-post-type", "acfdeactivatecomplete") => ("Post type deactivated.", "%s post types deactivated."),
-        ("acf-post-type", "acfduplicatecomplete") => ("Post type duplicated.", "%s post types duplicated."),
-        ("acf-taxonomy", "acfactivatecomplete") => ("Taxonomy activated.", "%s taxonomies activated."),
-        ("acf-taxonomy", "acfdeactivatecomplete") => ("Taxonomy deactivated.", "%s taxonomies deactivated."),
-        ("acf-taxonomy", "acfduplicatecomplete") => ("Taxonomy duplicated.", "%s taxonomies duplicated."),
+        ("acf-field-group", "acfactivatecomplete") => {
+            ("Field group activated.", "%s field groups activated.")
+        }
+        ("acf-field-group", "acfdeactivatecomplete") => {
+            ("Field group deactivated.", "%s field groups deactivated.")
+        }
+        ("acf-field-group", "acfduplicatecomplete") => {
+            ("Field group duplicated.", "%s field groups duplicated.")
+        }
+        ("acf-post-type", "acfactivatecomplete") => {
+            ("Post type activated.", "%s post types activated.")
+        }
+        ("acf-post-type", "acfdeactivatecomplete") => {
+            ("Post type deactivated.", "%s post types deactivated.")
+        }
+        ("acf-post-type", "acfduplicatecomplete") => {
+            ("Post type duplicated.", "%s post types duplicated.")
+        }
+        ("acf-taxonomy", "acfactivatecomplete") => {
+            ("Taxonomy activated.", "%s taxonomies activated.")
+        }
+        ("acf-taxonomy", "acfdeactivatecomplete") => {
+            ("Taxonomy deactivated.", "%s taxonomies deactivated.")
+        }
+        ("acf-taxonomy", "acfduplicatecomplete") => {
+            ("Taxonomy duplicated.", "%s taxonomies duplicated.")
+        }
         _ => return String::new(),
     };
-    rustpress_core::i18n::sprintf(&site.i18n().ngettext("acf", one, many, count as i64), &[&count.to_string()])
+    rustpress_core::i18n::sprintf(
+        &site.i18n().ngettext("acf", one, many, count as i64),
+        &[&count.to_string()],
+    )
 }
 
 /// `acf_render_admin_notices()` of the notices `check_*()` add after a redirect.
 pub async fn notices(ctx: &AdminContext<'_>) -> Result<String> {
-    let Some(post_type) = list_of(ctx) else { return Ok(String::new()) };
+    let Some(post_type) = list_of(ctx) else {
+        return Ok(String::new());
+    };
     if !(ctx.can)("manage_options") {
         return Ok(String::new());
     }
     let site = ctx.site;
     let mut out = String::new();
-    for action in ["acfduplicatecomplete", "acfactivatecomplete", "acfdeactivatecomplete"] {
-        let Some(ids) = request(ctx, action).filter(|v| super::php::truthy(Some(&string(v)))) else { continue };
-        let ids: Vec<i64> = ids.split(',').map(|s| super::php::intval(Some(&string(s)))).collect();
+    for action in [
+        "acfduplicatecomplete",
+        "acfactivatecomplete",
+        "acfdeactivatecomplete",
+    ] {
+        let Some(ids) = request(ctx, action).filter(|v| super::php::truthy(Some(&string(v))))
+        else {
+            continue;
+        };
+        let ids: Vec<i64> = ids
+            .split(',')
+            .map(|s| super::php::intval(Some(&string(s))))
+            .collect();
         let mut links = Vec::new();
         for id in &ids {
-            let post = if *id > 0 { site.db.post(*id as u64).await? } else { None };
-            let title = post.as_ref().map(|p| rustpress_blocks::content::the_title_in_admin(site, p)).unwrap_or_default();
-            let edit = post.as_ref().map(|p| site.site_url(&format!("wp-admin/post.php?post={}&amp;action=edit", p.id))).unwrap_or_default();
-            links.push(format!("<a href=\"{}\">{}</a>", esc_url(&edit), esc_html(&title)));
+            let post = if *id > 0 {
+                site.db.post(*id as u64).await?
+            } else {
+                None
+            };
+            let title = post
+                .as_ref()
+                .map(|p| rustpress_blocks::content::the_title_in_admin(site, p))
+                .unwrap_or_default();
+            let edit = post
+                .as_ref()
+                .map(|p| site.site_url(&format!("wp-admin/post.php?post={}&amp;action=edit", p.id)))
+                .unwrap_or_default();
+            links.push(format!(
+                "<a href=\"{}\">{}</a>",
+                esc_url(&edit),
+                esc_html(&title)
+            ));
         }
-        let text = format!("{} {}", notice_text(site, post_type, action, ids.len()), links.join(", "));
+        let text = format!(
+            "{} {}",
+            notice_text(site, post_type, action, ids.len()),
+            links.join(", ")
+        );
         // `acf_punctify()`.
         let trimmed = text.trim();
-        let shown = if rustpress_core::formatting::wp_strip_all_tags(trimmed).trim().ends_with('.') { trimmed.to_owned() } else { format!("{trimmed}.") };
+        let shown = if rustpress_core::formatting::wp_strip_all_tags(trimmed)
+            .trim()
+            .ends_with('.')
+        {
+            trimmed.to_owned()
+        } else {
+            format!("{trimmed}.")
+        };
         out.push_str(&format!(
             "<div class=\"acf-admin-notice notice notice-success is-dismissible\" data-persisted=\"false\" data-persist-id=\"{:x}\">{}</div>",
             md5::compute(text.as_bytes()),

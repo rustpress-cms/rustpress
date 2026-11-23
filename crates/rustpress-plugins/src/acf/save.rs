@@ -16,8 +16,12 @@ use super::php::{is_numeric, key, key_eq, string, strval, truthy};
 /// `wp_kses_post_deep()`.
 fn kses_deep(value: Value) -> Value {
     match value {
-        Value::Str(s) => string(&rustpress_core::kses::kses_post(&String::from_utf8_lossy(&s))),
-        Value::Array(items) => Value::Array(items.into_iter().map(|(k, v)| (k, kses_deep(v))).collect()),
+        Value::Str(s) => string(&rustpress_core::kses::kses_post(&String::from_utf8_lossy(
+            &s,
+        ))),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(|(k, v)| (k, kses_deep(v))).collect())
+        }
         other => other,
     }
 }
@@ -31,7 +35,10 @@ fn key_text(k: &Key) -> String {
 
 fn item<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
     match value {
-        Value::Array(items) => items.iter().find(|(k, _)| key_eq(k, &key(name))).map(|(_, v)| v),
+        Value::Array(items) => items
+            .iter()
+            .find(|(k, _)| key_eq(k, &key(name)))
+            .map(|(_, v)| v),
         _ => None,
     }
 }
@@ -57,7 +64,14 @@ pub(super) fn floatval(value: &Value) -> f64 {
 
 /// `acf_validate_value()` with the type's `validate_value()`: an invalid value adds its input and message to
 /// `errors`.
-fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, input: &str, errors: &mut Vec<(String, String)>) {
+fn validate_value(
+    site: &Site,
+    value: &Value,
+    field: &Field,
+    required: bool,
+    input: &str,
+    errors: &mut Vec<(String, String)>,
+) {
     let tr = |text: &str| site.trd("acf", text);
     let label = strval(field.get("label"));
     let mut message = rustpress_core::i18n::sprintf(&tr("%s value is required"), &[&label]);
@@ -70,13 +84,18 @@ fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, inp
                 && truthy(field.get("allow_custom"))
                 && items.iter().any(|(_, v)| empty(v) && *v != string("0"))
             {
-                custom = Some(tr("Checkbox custom values cannot be empty. Uncheck any empty values."));
+                custom = Some(tr(
+                    "Checkbox custom values cannot be empty. Uncheck any empty values.",
+                ));
             }
         }
         "email" => {
             let text = strval(Some(value));
             if truthy(Some(value)) && !is_valid_email(&text) {
-                custom = Some(rustpress_core::i18n::sprintf(&tr("'%s' is not a valid email address"), &[&rustpress_core::formatting::esc_html(&text)]));
+                custom = Some(rustpress_core::i18n::sprintf(
+                    &tr("'%s' is not a valid email address"),
+                    &[&rustpress_core::formatting::esc_html(&text)],
+                ));
             }
         }
         "group" => {
@@ -84,7 +103,14 @@ fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, inp
                 for sub in &field.sub_fields {
                     if let Some(v) = item(value, &sub.key) {
                         let sub_required = required || truthy(sub.get("required"));
-                        validate_value(site, v, sub, sub_required, &format!("{input}[{}]", sub.key), errors);
+                        validate_value(
+                            site,
+                            v,
+                            sub,
+                            sub_required,
+                            &format!("{input}[{}]", sub.key),
+                            errors,
+                        );
                     }
                 }
             }
@@ -119,10 +145,16 @@ fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, inp
             } else {
                 let n = floatval(&number);
                 if is_numeric(&setting("min")) && n < floatval(&setting("min")) {
-                    custom = Some(rustpress_core::i18n::sprintf(&tr("Value must be equal to or higher than %d"), &[&super::php::intval(field.get("min")).to_string()]));
+                    custom = Some(rustpress_core::i18n::sprintf(
+                        &tr("Value must be equal to or higher than %d"),
+                        &[&super::php::intval(field.get("min")).to_string()],
+                    ));
                 }
                 if is_numeric(&setting("max")) && n > floatval(&setting("max")) {
-                    custom = Some(rustpress_core::i18n::sprintf(&tr("Value must be equal to or lower than %d"), &[&super::php::intval(field.get("max")).to_string()]));
+                    custom = Some(rustpress_core::i18n::sprintf(
+                        &tr("Value must be equal to or lower than %d"),
+                        &[&super::php::intval(field.get("max")).to_string()],
+                    ));
                 }
             }
         }
@@ -133,14 +165,25 @@ fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, inp
             };
             let min = super::php::intval(field.get("min"));
             if count < min {
-                let format = site.i18n().ngettext("acf", "%1$s requires at least %2$s selection", "%1$s requires at least %2$s selections", min);
-                custom = Some(rustpress_core::i18n::sprintf(&format, &[&label, &min.to_string()]));
+                let format = site.i18n().ngettext(
+                    "acf",
+                    "%1$s requires at least %2$s selection",
+                    "%1$s requires at least %2$s selections",
+                    min,
+                );
+                custom = Some(rustpress_core::i18n::sprintf(
+                    &format,
+                    &[&label, &min.to_string()],
+                ));
             }
         }
         "text" | "textarea" => {
             let max = super::php::intval(field.get("maxlength"));
             if truthy(field.get("maxlength")) && strlen(value) as i64 > max {
-                custom = Some(rustpress_core::i18n::sprintf(&tr("Value must not exceed %d characters"), &[&max.to_string()]));
+                custom = Some(rustpress_core::i18n::sprintf(
+                    &tr("Value must not exceed %d characters"),
+                    &[&max.to_string()],
+                ));
             }
         }
         "true_false" => {
@@ -168,8 +211,18 @@ fn validate_value(site: &Site, value: &Value, field: &Field, required: bool, inp
 /// `filter_var( $email, FILTER_VALIDATE_EMAIL, FILTER_FLAG_EMAIL_UNICODE )`, close enough: one `@`, a local part and
 /// a domain with a dot, no spaces.
 fn is_valid_email(text: &str) -> bool {
-    let Some((local, domain)) = text.rsplit_once('@') else { return false };
-    !local.is_empty() && local.len() <= 64 && !domain.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.') && !text.chars().any(|c| c.is_whitespace() || c == '<' || c == '>' || c == '"' || c == ',')
+    let Some((local, domain)) = text.rsplit_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && local.len() <= 64
+        && !domain.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !text
+            .chars()
+            .any(|c| c.is_whitespace() || c == '<' || c == '>' || c == '"' || c == ',')
 }
 
 /// `acf_idval()`.
@@ -196,7 +249,9 @@ fn map_items(value: Value, f: impl Fn(&Value) -> Value) -> Value {
 /// The value as stored: `update_metadata()` serializes arrays, writes `false` as nothing and numbers as text.
 fn stored(value: &Value) -> String {
     match value {
-        Value::Array(_) => String::from_utf8_lossy(&rustpress_phpser::serialize(value)).into_owned(),
+        Value::Array(_) => {
+            String::from_utf8_lossy(&rustpress_phpser::serialize(value)).into_owned()
+        }
         Value::Bool(true) => "1".to_owned(),
         Value::Bool(false) | Value::Null => String::new(),
         other => strval(Some(other)),
@@ -204,14 +259,24 @@ fn stored(value: &Value) -> String {
 }
 
 /// `acf_update_value()`: the type's `update_value()`, then the value and its reference (`_{name}` = key).
-fn update_value<'a>(writer: &'a Writer, object: (MetaKind, u64), value: Value, field: &'a Field, name: &'a str) -> futures::future::BoxFuture<'a, Result<()>> {
+fn update_value<'a>(
+    writer: &'a Writer,
+    object: (MetaKind, u64),
+    value: Value,
+    field: &'a Field,
+    name: &'a str,
+) -> futures::future::BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         let value = match field.kind.as_str() {
-            "checkbox" | "select" if !empty(&value) => map_items(value, |v| string(&strval(Some(v)))),
+            "checkbox" | "select" if !empty(&value) => {
+                map_items(value, |v| string(&strval(Some(v))))
+            }
             "file" | "image" if !empty(&value) => Value::Int(idval(&value)),
             "google_map" => {
                 let value = match &value {
-                    Value::Str(s) => serde_json::from_slice::<serde_json::Value>(s).ok().map_or(Value::Null, |j| json_to_php(&j)),
+                    Value::Str(s) => serde_json::from_slice::<serde_json::Value>(s)
+                        .ok()
+                        .map_or(Value::Null, |j| json_to_php(&j)),
                     other => other.clone(),
                 };
                 match value {
@@ -229,7 +294,11 @@ fn update_value<'a>(writer: &'a Writer, object: (MetaKind, u64), value: Value, f
                     0 => v.clone(),
                     id => Value::Int(id),
                 };
-                if sequential(&value) { map_items(value, |v| string(&strval(Some(&maybe(v))))) } else { maybe(&value) }
+                if sequential(&value) {
+                    map_items(value, |v| string(&strval(Some(&maybe(v)))))
+                } else {
+                    maybe(&value)
+                }
             }
             "post_object" | "relationship" | "user" if !empty(&value) => {
                 if sequential(&value) {
@@ -239,7 +308,9 @@ fn update_value<'a>(writer: &'a Writer, object: (MetaKind, u64), value: Value, f
                 }
             }
             "taxonomy" => match value {
-                Value::Array(items) => Value::Array(items.into_iter().filter(|(_, v)| truthy(Some(v))).collect()),
+                Value::Array(items) => {
+                    Value::Array(items.into_iter().filter(|(_, v)| truthy(Some(v))).collect())
+                }
                 other => other,
             },
             "group" => {
@@ -248,7 +319,10 @@ fn update_value<'a>(writer: &'a Writer, object: (MetaKind, u64), value: Value, f
                 } else {
                     // `prepare_field_for_db()`: the sub fields are named `{group}_{sub}`.
                     for sub in &field.sub_fields {
-                        let Some(v) = item(&value, &sub.key).or_else(|| item(&value, &sub.name)) else { continue };
+                        let Some(v) = item(&value, &sub.key).or_else(|| item(&value, &sub.name))
+                        else {
+                            continue;
+                        };
                         let sub_name = format!("{name}_{}", sub.name);
                         update_value(writer, object, v.clone(), sub, &sub_name).await?;
                     }
@@ -262,11 +336,17 @@ fn update_value<'a>(writer: &'a Writer, object: (MetaKind, u64), value: Value, f
         }
         if value == Value::Null {
             writer.delete_metadata(object.0, object.1, name).await?;
-            writer.delete_metadata(object.0, object.1, &format!("_{name}")).await?;
+            writer
+                .delete_metadata(object.0, object.1, &format!("_{name}"))
+                .await?;
             return Ok(());
         }
-        writer.update_metadata(object.0, object.1, name, &stored(&value)).await?;
-        writer.update_metadata(object.0, object.1, &format!("_{name}"), &field.key).await?;
+        writer
+            .update_metadata(object.0, object.1, name, &stored(&value))
+            .await?;
+        writer
+            .update_metadata(object.0, object.1, &format!("_{name}"), &field.key)
+            .await?;
         Ok(())
     })
 }
@@ -276,28 +356,67 @@ fn json_to_php(json: &serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(*b),
-        serde_json::Value::Number(n) => n.as_i64().map_or_else(|| Value::Float(n.as_f64().unwrap_or(0.0)), Value::Int),
+        serde_json::Value::Number(n) => n
+            .as_i64()
+            .map_or_else(|| Value::Float(n.as_f64().unwrap_or(0.0)), Value::Int),
         serde_json::Value::String(s) => string(s),
-        serde_json::Value::Array(items) => Value::Array(items.iter().enumerate().map(|(i, v)| (Key::Int(i as i64), json_to_php(v))).collect()),
-        serde_json::Value::Object(map) => Value::Array(map.iter().map(|(k, v)| (super::php::key(k), json_to_php(v))).collect()),
+        serde_json::Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (Key::Int(i as i64), json_to_php(v)))
+                .collect(),
+        ),
+        serde_json::Value::Object(map) => Value::Array(
+            map.iter()
+                .map(|(k, v)| (super::php::key(k), json_to_php(v)))
+                .collect(),
+        ),
     }
 }
 
 /// `acf_form_comment::save_comment()` on `comment_post`.
 pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Result<Option<Die>> {
     let site = ctx.site;
-    let nonce = ctx.form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    let nonce = ctx
+        .form
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "_acf_nonce")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_default();
     if nonce.is_empty() || !(ctx.verify_nonce)(nonce, "comment") {
         return Ok(None);
     }
-    let Some(acf) = rustpress_core::native::form_value(ctx.form, "acf") else { return Ok(None) };
-    let Value::Array(items) = acf else { return Ok(None) };
+    let Some(acf) = rustpress_core::native::form_value(ctx.form, "acf") else {
+        return Ok(None);
+    };
+    let Value::Array(items) = acf else {
+        return Ok(None);
+    };
     // The fields of the groups shown for the comment's post type.
-    let post_type = site.db.post(ctx.post_id).await?.map(|p| p.post_type).unwrap_or_default();
-    let matcher = MatchContext { site, user: super::fields::MatchUser::Visitor, admin: false };
+    let post_type = site
+        .db
+        .post(ctx.post_id)
+        .await?
+        .map(|p| p.post_type)
+        .unwrap_or_default();
+    let matcher = MatchContext {
+        site,
+        user: super::fields::MatchUser::Visitor,
+        admin: false,
+    };
     let mut allowed: Vec<&Field> = Vec::new();
     for group in groups {
-        if group.visible(&Screen::Comment { post_type: post_type.clone() }, &matcher).await? {
+        if group
+            .visible(
+                &Screen::Comment {
+                    post_type: post_type.clone(),
+                },
+                &matcher,
+            )
+            .await?
+        {
             allowed.extend(group.fields.iter().filter(|f| !f.key.is_empty()));
         }
     }
@@ -316,7 +435,14 @@ pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Resu
     // `acf_validate_save_post( true )`.
     let mut errors = Vec::new();
     for (field, value) in &values {
-        validate_value(site, value, field, truthy(field.get("required")), &format!("acf[{}]", field.key), &mut errors);
+        validate_value(
+            site,
+            value,
+            field,
+            truthy(field.get("required")),
+            &format!("acf[{}]", field.key),
+            &mut errors,
+        );
     }
     if !errors.is_empty() {
         return Ok(Some(validation_die(site, &errors)));
@@ -326,7 +452,14 @@ pub async fn save_comment(groups: &[FieldGroup], ctx: &CommentSaved<'_>) -> Resu
         values = values.into_iter().map(|(f, v)| (f, kses_deep(v))).collect();
     }
     for (field, value) in values {
-        update_value(ctx.writer, (MetaKind::Comment, ctx.comment_id), value, field, &field.name).await?;
+        update_value(
+            ctx.writer,
+            (MetaKind::Comment, ctx.comment_id),
+            value,
+            field,
+            &field.name,
+        )
+        .await?;
     }
     Ok(None)
 }
@@ -339,7 +472,11 @@ fn validation_die(site: &Site, errors: &[(String, String)]) -> Die {
         message.push_str(&format!("<li>{error}</li>"));
     }
     message.push_str("</ul>");
-    Die { title: rustpress_core::formatting::esc_html(&tr("Validation failed")), message: rustpress_core::kses::kses_post(&message), status: 500 }
+    Die {
+        title: rustpress_core::formatting::esc_html(&tr("Validation failed")),
+        message: rustpress_core::kses::kses_post(&message),
+        status: 500,
+    }
 }
 
 /// `acf_form_taxonomy::save_term()` on `create_term`/`edit_term`: `acf_verify_nonce( 'taxonomy' )`,
@@ -349,7 +486,12 @@ fn validation_die(site: &Site, errors: &[(String, String)]) -> Die {
 pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Option<Die>> {
     let form = ctx.ctx.form;
     let site = ctx.ctx.site;
-    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    let nonce = form
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "_acf_nonce")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_default();
     if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "taxonomy") {
         return Ok(None);
     }
@@ -363,7 +505,14 @@ pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Opt
         for (k, v) in &items {
             let key = key_text(k);
             if let Some(field) = field_by_key(groups, &key) {
-                validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+                validate_value(
+                    site,
+                    v,
+                    field,
+                    truthy(field.get("required")),
+                    &format!("acf[{key}]"),
+                    &mut errors,
+                );
             }
         }
     }
@@ -375,9 +524,18 @@ pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Opt
     }
     let unfiltered = (ctx.ctx.can)("unfiltered_html");
     for (k, v) in items {
-        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let Some(field) = field_by_key(groups, &key_text(&k)) else {
+            continue;
+        };
         let value = if unfiltered { v } else { kses_deep(v) };
-        update_value(ctx.writer, (MetaKind::Term, ctx.term_id), value, field, &field.name).await?;
+        update_value(
+            ctx.writer,
+            (MetaKind::Term, ctx.term_id),
+            value,
+            field,
+            &field.name,
+        )
+        .await?;
     }
     Ok(None)
 }
@@ -389,23 +547,58 @@ pub async fn save_term(groups: &[FieldGroup], ctx: &TermSaved<'_>) -> Result<Opt
 pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Option<Die>> {
     let form = ctx.ctx.form;
     let site = ctx.ctx.site;
-    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    let nonce = form
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "_acf_nonce")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_default();
     if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "user") {
         return Ok(None);
     }
-    let Some(acf) = rustpress_core::native::form_value(form, "acf") else { return Ok(None) };
-    let Value::Array(items) = acf else { return Ok(None) };
-    let queries: &[(Option<u64>, &str)] = if ctx.created { &[(None, "register"), (None, "add")] } else { &[(Some(ctx.user_id), "edit")] };
-    let matcher = MatchContext { site, user: super::fields::MatchUser::Admin(ctx.ctx.can), admin: true };
+    let Some(acf) = rustpress_core::native::form_value(form, "acf") else {
+        return Ok(None);
+    };
+    let Value::Array(items) = acf else {
+        return Ok(None);
+    };
+    let queries: &[(Option<u64>, &str)] = if ctx.created {
+        &[(None, "register"), (None, "add")]
+    } else {
+        &[(Some(ctx.user_id), "edit")]
+    };
+    let matcher = MatchContext {
+        site,
+        user: super::fields::MatchUser::Admin(ctx.ctx.can),
+        admin: true,
+    };
     let mut allowed: Vec<String> = Vec::new();
     for (user_id, view) in queries {
         for group in groups {
-            if group.visible(&Screen::User { user_id: *user_id, form: Some(view) }, &matcher).await? {
-                allowed.extend(group.fields.iter().filter(|f| !f.key.is_empty()).map(|f| f.key.clone()));
+            if group
+                .visible(
+                    &Screen::User {
+                        user_id: *user_id,
+                        form: Some(view),
+                    },
+                    &matcher,
+                )
+                .await?
+            {
+                allowed.extend(
+                    group
+                        .fields
+                        .iter()
+                        .filter(|f| !f.key.is_empty())
+                        .map(|f| f.key.clone()),
+                );
             }
         }
     }
-    let items: Vec<(Key, Value)> = items.into_iter().filter(|(k, _)| allowed.contains(&key_text(k))).collect();
+    let items: Vec<(Key, Value)> = items
+        .into_iter()
+        .filter(|(k, _)| allowed.contains(&key_text(k)))
+        .collect();
     if items.is_empty() {
         return Ok(None);
     }
@@ -413,7 +606,14 @@ pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Opt
     for (k, v) in &items {
         let key = key_text(k);
         if let Some(field) = field_by_key(groups, &key) {
-            validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+            validate_value(
+                site,
+                v,
+                field,
+                truthy(field.get("required")),
+                &format!("acf[{key}]"),
+                &mut errors,
+            );
         }
     }
     if !errors.is_empty() {
@@ -421,9 +621,18 @@ pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Opt
     }
     let unfiltered = (ctx.ctx.can)("unfiltered_html");
     for (k, v) in items {
-        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let Some(field) = field_by_key(groups, &key_text(&k)) else {
+            continue;
+        };
         let value = if unfiltered { v } else { kses_deep(v) };
-        update_value(ctx.writer, (MetaKind::User, ctx.user_id), value, field, &field.name).await?;
+        update_value(
+            ctx.writer,
+            (MetaKind::User, ctx.user_id),
+            value,
+            field,
+            &field.name,
+        )
+        .await?;
     }
     Ok(None)
 }
@@ -431,10 +640,19 @@ pub async fn save_user(groups: &[FieldGroup], ctx: &UserSaved<'_>) -> Result<Opt
 /// `acf_form_attachment::save_attachment()` on `attachment_fields_to_save`: `acf_verify_nonce( 'attachment' )`, then
 /// `acf_save_post()` – without validation for `save-attachment-compat`, else after `acf_validate_save_post( true )`
 /// with `wp_die()`.
-pub async fn save_attachment(groups: &[FieldGroup], ctx: &AttachmentSaved<'_>) -> Result<Option<Die>> {
+pub async fn save_attachment(
+    groups: &[FieldGroup],
+    ctx: &AttachmentSaved<'_>,
+) -> Result<Option<Die>> {
     let form = ctx.ctx.form;
     let site = ctx.ctx.site;
-    let nonce = form.iter().chain(ctx.ctx.query.iter()).rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    let nonce = form
+        .iter()
+        .chain(ctx.ctx.query.iter())
+        .rev()
+        .find(|(k, _)| k == "_acf_nonce")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_default();
     if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "attachment") {
         return Ok(None);
     }
@@ -448,7 +666,14 @@ pub async fn save_attachment(groups: &[FieldGroup], ctx: &AttachmentSaved<'_>) -
         for (k, v) in &items {
             let key = key_text(k);
             if let Some(field) = field_by_key(groups, &key) {
-                validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+                validate_value(
+                    site,
+                    v,
+                    field,
+                    truthy(field.get("required")),
+                    &format!("acf[{key}]"),
+                    &mut errors,
+                );
             }
         }
         if !errors.is_empty() {
@@ -460,9 +685,18 @@ pub async fn save_attachment(groups: &[FieldGroup], ctx: &AttachmentSaved<'_>) -
     }
     let unfiltered = (ctx.ctx.can)("unfiltered_html");
     for (k, v) in items {
-        let Some(field) = field_by_key(groups, &key_text(&k)) else { continue };
+        let Some(field) = field_by_key(groups, &key_text(&k)) else {
+            continue;
+        };
         let value = if unfiltered { v } else { kses_deep(v) };
-        update_value(ctx.writer, (MetaKind::Post, ctx.attachment.id), value, field, &field.name).await?;
+        update_value(
+            ctx.writer,
+            (MetaKind::Post, ctx.attachment.id),
+            value,
+            field,
+            &field.name,
+        )
+        .await?;
     }
     Ok(None)
 }
@@ -470,22 +704,54 @@ pub async fn save_attachment(groups: &[FieldGroup], ctx: &AttachmentSaved<'_>) -
 /// `acf_get_field( $key )`: a field of any group by its key, sub fields included.
 fn field_by_key<'a>(groups: &'a [FieldGroup], key: &str) -> Option<&'a Field> {
     fn find<'a>(fields: &'a [Field], key: &str) -> Option<&'a Field> {
-        fields.iter().find_map(|f| if f.key == key { Some(f) } else { find(&f.sub_fields, key) })
+        fields.iter().find_map(|f| {
+            if f.key == key {
+                Some(f)
+            } else {
+                find(&f.sub_fields, key)
+            }
+        })
     }
     groups.iter().find_map(|g| find(&g.fields, key))
 }
 
 /// `acf_validation::ajax_validate_save_post()` (`wp_ajax_acf/validate_save_post`, also for visitors): the errors of
 /// every value of a known field, for the form's script.
-pub async fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::AdminContext<'_>) -> rustpress_core::Result<rustpress_core::native::AjaxAnswer> {
+pub async fn ajax_validate(
+    groups: &[FieldGroup],
+    ctx: &rustpress_core::native::AdminContext<'_>,
+) -> rustpress_core::Result<rustpress_core::native::AjaxAnswer> {
     let site = ctx.site;
     let tr = |text: &str| site.trd("acf", text);
-    let request = |name: &str| ctx.form.iter().chain(ctx.query.iter()).rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    let request = |name: &str| {
+        ctx.form
+            .iter()
+            .chain(ctx.query.iter())
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
     let nonce = request("nonce").unwrap_or_default();
-    let encode = |data: serde_json::Value| rustpress_blocks::php_json::encode_with(&serde_json::json!({"success": true, "data": data}), rustpress_blocks::php_json::Flags { unescaped_slashes: false, unescaped_unicode: false });
+    let encode = |data: serde_json::Value| {
+        rustpress_blocks::php_json::encode_with(
+            &serde_json::json!({"success": true, "data": data}),
+            rustpress_blocks::php_json::Flags {
+                unescaped_slashes: false,
+                unescaped_unicode: false,
+            },
+        )
+    };
     if nonce.is_empty() || !(ctx.verify_nonce)(nonce, "acf_nonce") {
-        let message = if nonce.is_empty() { tr("ACF was unable to perform validation because no nonce was received by the server.") } else { tr("ACF was unable to perform validation because the provided nonce failed verification.") };
-        let url = rustpress_core::formatting::esc_url("https://www.advancedcustomfields.com/resources/validation-nonce-errors/?utm_source=ACF+Free&utm_medium=insideplugin&utm_campaign=docs&utm_content=validation-nonce");
+        let message = if nonce.is_empty() {
+            tr("ACF was unable to perform validation because no nonce was received by the server.")
+        } else {
+            tr(
+                "ACF was unable to perform validation because the provided nonce failed verification.",
+            )
+        };
+        let url = rustpress_core::formatting::esc_url(
+            "https://www.advancedcustomfields.com/resources/validation-nonce-errors/?utm_source=ACF+Free&utm_medium=insideplugin&utm_campaign=docs&utm_content=validation-nonce",
+        );
         let data = serde_json::json!({"valid": 0, "errors": [{"input": false, "message": message, "action": {"label": tr("Learn more"), "url": url}}]});
         return Ok(rustpress_core::native::AjaxAnswer::json(200, encode(data)));
     }
@@ -497,14 +763,24 @@ pub async fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::
         for (k, v) in &items {
             let key = key_text(k);
             if let Some(field) = field_by_key(groups, &key) {
-                validate_value(site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+                validate_value(
+                    site,
+                    v,
+                    field,
+                    truthy(field.get("required")),
+                    &format!("acf[{key}]"),
+                    &mut errors,
+                );
             }
         }
     }
     let data = if errors.is_empty() {
         serde_json::json!({"valid": 1, "errors": 0})
     } else {
-        let list: Vec<serde_json::Value> = errors.into_iter().map(|(input, message)| serde_json::json!({"input": input, "message": message})).collect();
+        let list: Vec<serde_json::Value> = errors
+            .into_iter()
+            .map(|(input, message)| serde_json::json!({"input": input, "message": message}))
+            .collect();
         serde_json::json!({"valid": 0, "errors": list})
     };
     Ok(rustpress_core::native::AjaxAnswer::json(200, encode(data)))
@@ -512,13 +788,24 @@ pub async fn ajax_validate(groups: &[FieldGroup], ctx: &rustpress_core::native::
 
 /// `ACF_Form_Post::allow_save_post()`: not ACF's own posts or revisions, and only the post the form is about.
 fn allow_save_post(post: &rustpress_db::Post, form: &[(String, String)]) -> bool {
-    let field = |name: &str| form.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
-    let mut allow = !matches!(post.post_type.as_str(), "auto-draft" | "revision" | "acf-field" | "acf-field-group");
+    let field = |name: &str| {
+        form.iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
+    let mut allow = !matches!(
+        post.post_type.as_str(),
+        "auto-draft" | "revision" | "acf-field" | "acf-field-group"
+    );
     let form_post_id = super::php::intval(field("post_ID").map(string).as_ref());
     if form_post_id != 0 && form_post_id != post.id as i64 {
         allow = false;
     }
-    if post.post_type == "revision" && field("wp-preview") == Some("dopreview") && form_post_id == post.post_parent as i64 {
+    if post.post_type == "revision"
+        && field("wp-preview") == Some("dopreview")
+        && form_post_id == post.post_parent as i64
+    {
         allow = true;
     }
     allow
@@ -527,12 +814,20 @@ fn allow_save_post(post: &rustpress_db::Post, form: &[(String, String)]) -> bool
 /// What `ACF_Form_Post::save_post()` hands to `acf_save_post()`: `None` when it returns before (not allowed, no valid
 /// nonce, a published post that fails `acf_validate_save_post()`, nothing sent), else the values of known fields as
 /// they are stored. During the block editor's meta box request `ACF_Form_Gutenberg` drops the validation errors.
-fn post_values<'g>(groups: &'g [FieldGroup], ctx: &PostSaved<'_>) -> Option<Vec<(&'g Field, Value)>> {
+fn post_values<'g>(
+    groups: &'g [FieldGroup],
+    ctx: &PostSaved<'_>,
+) -> Option<Vec<(&'g Field, Value)>> {
     let form = ctx.ctx.form;
     if !allow_save_post(ctx.post, form) {
         return None;
     }
-    let nonce = form.iter().rev().find(|(k, _)| k == "_acf_nonce").map(|(_, v)| v.as_str()).unwrap_or_default();
+    let nonce = form
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "_acf_nonce")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_default();
     if nonce.is_empty() || nonce == "0" || !(ctx.ctx.verify_nonce)(nonce, "post") {
         return None;
     }
@@ -546,7 +841,14 @@ fn post_values<'g>(groups: &'g [FieldGroup], ctx: &PostSaved<'_>) -> Option<Vec<
         for (k, v) in &items {
             let key = key_text(k);
             if let Some(field) = field_by_key(groups, &key) {
-                validate_value(ctx.ctx.site, v, field, truthy(field.get("required")), &format!("acf[{key}]"), &mut errors);
+                validate_value(
+                    ctx.ctx.site,
+                    v,
+                    field,
+                    truthy(field.get("required")),
+                    &format!("acf[{key}]"),
+                    &mut errors,
+                );
             }
         }
         if !errors.is_empty() {
@@ -572,9 +874,18 @@ fn post_values<'g>(groups: &'g [FieldGroup], ctx: &PostSaved<'_>) -> Option<Vec<
 ///
 /// Differs from the plugin: `acf_get_field()` also finds a field by its name or ID; only keys are looked up.
 pub async fn save_post(groups: &[FieldGroup], ctx: &PostSaved<'_>) -> Result<()> {
-    let Some(values) = post_values(groups, ctx) else { return Ok(()) };
+    let Some(values) = post_values(groups, ctx) else {
+        return Ok(());
+    };
     for (field, value) in values {
-        update_value(ctx.writer, (MetaKind::Post, ctx.post.id), value, field, &field.name).await?;
+        update_value(
+            ctx.writer,
+            (MetaKind::Post, ctx.post.id),
+            value,
+            field,
+            &field.name,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -582,37 +893,72 @@ pub async fn save_post(groups: &[FieldGroup], ctx: &PostSaved<'_>) -> Result<()>
 /// `ACF_Revisions::check_acf_fields_have_changed()` (`wp_save_post_revision_post_has_changed`, priority 9): during the
 /// block editor's meta box request the fields go to the latest revision; a classic form with changed fields makes a
 /// revision.
-pub async fn revision_post_has_changed(groups: &[FieldGroup], ctx: &PostSaved<'_>, latest_revision: u64, changed: bool) -> Result<bool> {
-    if ctx.ctx.get("meta-box-loader").is_some_and(|v| truthy(Some(&string(v)))) {
+pub async fn revision_post_has_changed(
+    groups: &[FieldGroup],
+    ctx: &PostSaved<'_>,
+    latest_revision: u64,
+    changed: bool,
+) -> Result<bool> {
+    if ctx
+        .ctx
+        .get("meta-box-loader")
+        .is_some_and(|v| truthy(Some(&string(v))))
+    {
         maybe_save_revision(groups, ctx, latest_revision).await?;
         return Ok(changed);
     }
-    if ctx.ctx.post_field("_acf_changed").is_some_and(|v| truthy(Some(&string(v)))) {
+    if ctx
+        .ctx
+        .post_field("_acf_changed")
+        .is_some_and(|v| truthy(Some(&string(v))))
+    {
         return Ok(true);
     }
     Ok(changed)
 }
 
 /// `ACF_Revisions::maybe_save_revision()` (`_wp_put_post_revision`).
-pub async fn maybe_save_revision(groups: &[FieldGroup], ctx: &PostSaved<'_>, revision_id: u64) -> Result<()> {
+pub async fn maybe_save_revision(
+    groups: &[FieldGroup],
+    ctx: &PostSaved<'_>,
+    revision_id: u64,
+) -> Result<()> {
     let db = &ctx.ctx.site.db;
     // `did_action( 'acf/save_post' )`.
     if post_values(groups, ctx).is_none() {
-        ctx.writer.delete_metadata(MetaKind::Post, ctx.post.id, "_acf_changed").await?;
-        ctx.writer.delete_metadata(MetaKind::Post, revision_id, "_acf_changed").await?;
+        ctx.writer
+            .delete_metadata(MetaKind::Post, ctx.post.id, "_acf_changed")
+            .await?;
+        ctx.writer
+            .delete_metadata(MetaKind::Post, revision_id, "_acf_changed")
+            .await?;
         return Ok(());
     }
-    if ctx.ctx.post_field("_acf_changed").is_some_and(|v| truthy(Some(&string(v))))
+    if ctx
+        .ctx
+        .post_field("_acf_changed")
+        .is_some_and(|v| truthy(Some(&string(v))))
         && let Some(revision) = db.post(revision_id).await?
-        && revision.post_name.contains(&format!("{}-autosave", revision.post_parent))
+        && revision
+            .post_name
+            .contains(&format!("{}-autosave", revision.post_parent))
     {
         return Ok(());
     }
     // `acf_save_post_revision()`: `acf_copy_metadata()` to the newest revision.
-    let query = rustpress_db::PostQuery { post_types: vec!["revision".into()], statuses: vec!["inherit".into()], parent: Some(ctx.post.id), order_by: rustpress_db::OrderBy::Date, order: rustpress_db::Order::Desc, ..Default::default() };
+    let query = rustpress_db::PostQuery {
+        post_types: vec!["revision".into()],
+        statuses: vec!["inherit".into()],
+        parent: Some(ctx.post.id),
+        order_by: rustpress_db::OrderBy::Date,
+        order: rustpress_db::Order::Desc,
+        ..Default::default()
+    };
     let mut revisions = db.posts(&query).await?;
     revisions.sort_by(|a, b| b.post_date.cmp(&a.post_date).then(b.id.cmp(&a.id)));
-    let Some(latest) = revisions.first() else { return Ok(()) };
+    let Some(latest) = revisions.first() else {
+        return Ok(());
+    };
     // `ACF_Meta_Location::get_meta()`: the values that have a reference, each followed by it.
     let mut all: Vec<(String, String)> = Vec::new();
     for row in db.post_meta(ctx.post.id).await? {
@@ -633,7 +979,9 @@ pub async fn maybe_save_revision(groups: &[FieldGroup], ctx: &PostSaved<'_>, rev
         }
     }
     for (k, v) in meta {
-        ctx.writer.update_metadata(MetaKind::Post, latest.id, &k, &v).await?;
+        ctx.writer
+            .update_metadata(MetaKind::Post, latest.id, &k, &v)
+            .await?;
     }
     Ok(())
 }
