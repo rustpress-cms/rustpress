@@ -104,6 +104,7 @@ wp_root      = "/var/www/html"   # contains wp-content/ and wp-includes/
 listen       = "127.0.0.1:3000"
 reload_secs  = 60                # options and theme are re-read this often
 allow_writes = false             # true: sign-in, comments and wp-admin
+branding     = true              # false: WordPress' texts and logo in wp-admin
 ```
 
 | Variable | Meaning |
@@ -114,6 +115,7 @@ allow_writes = false             # true: sign-in, comments and wp-admin
 | `RUSTPRESS_WP_CONFIG` | `wp-config.php` with the keys and salts (default: the one in `wp_root`) |
 | `RUSTPRESS_LISTEN` | address to listen on |
 | `RUSTPRESS_ALLOW_WRITES` | `1` enables writing (sign-in, admin, comments) |
+| `RUSTPRESS_BRANDING` | `0` shows WordPress' texts and logo in the administration instead of RustPress' (for comparisons) |
 | `RUSTPRESS_TRUSTED_PROXIES` | reverse proxies whose `X-Forwarded-*` headers are trusted |
 | `RUSTPRESS_SMTP_URL`, `RUSTPRESS_MAIL_FROM` | outgoing mail; without an SMTP server it goes to the host's `sendmail` like PHP's `mail()` (`RUSTPRESS_SENDMAIL` names another program, `off` sends nothing) |
 

@@ -80,7 +80,7 @@ helper menus
 server=
 start() {
 	[ -n "$server" ] && kill "$server" 2>/dev/null && wait "$server" 2>/dev/null || true
-	RUSTPRESS_DATABASE_URL=$db RUSTPRESS_WP_ROOT=$root RUSTPRESS_LISTEN=127.0.0.1:3001 RUSTPRESS_ALLOW_WRITES=1 target/debug/rustpress-server >/dev/null 2>&1 &
+	RUSTPRESS_DATABASE_URL=$db RUSTPRESS_WP_ROOT=$root RUSTPRESS_LISTEN=127.0.0.1:3001 RUSTPRESS_ALLOW_WRITES=1 RUSTPRESS_BRANDING=0 target/debug/rustpress-server >/dev/null 2>&1 &
 	server=$!
 	for _ in $(seq 50); do curl -s -o /dev/null http://127.0.0.1:3001/ && return; sleep 0.2; done
 }

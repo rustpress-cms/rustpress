@@ -5,6 +5,7 @@
 //! [`hierarchy::template_candidates`] turns into a list of template names.
 
 mod accents_table;
+pub mod brand;
 pub mod canonical;
 pub mod customize;
 pub mod datetime;
