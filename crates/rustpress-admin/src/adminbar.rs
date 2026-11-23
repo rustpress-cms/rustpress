@@ -599,7 +599,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
                     "hide-if-customize",
                     &link(
                         &admin("themes.php?page=custom-background"),
-                        &tr("Background"),
+                        &site.trx("Background", "custom background"),
                         false,
                     ),
                 ));
@@ -610,7 +610,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
                     "hide-if-customize",
                     &link(
                         &admin("themes.php?page=custom-header"),
-                        &tr("Header"),
+                        &site.trx("Header", "custom image header"),
                         false,
                     ),
                 ));

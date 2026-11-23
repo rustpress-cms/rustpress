@@ -82,15 +82,13 @@ fn update_message(ctx: &Ctx<'_>, code: &str) -> Option<(String, bool)> {
         "add" => (tr("New user created."), false),
         "promote" => (tr("Changed roles."), false),
         "err_admin_role" => (
-            tr("The current user&#8217;s role must have user editing capabilities."),
+            tr(
+                "You cannot change your own role to one that does not allow managing other users. Your role was not changed.",
+            ),
             true,
         ),
         "err_admin_del" => (tr("You cannot delete the current user."), true),
         "remove" => (tr("User removed from this site."), false),
-        "newuseremail" => (
-            tr("A confirmation email has been sent to the new email address."),
-            false,
-        ),
         "resetpassword" => {
             let reset = ctx
                 .request

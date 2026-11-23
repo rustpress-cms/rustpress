@@ -1584,7 +1584,8 @@ pub(super) fn list_columns(
     if info.name == "wp_block" {
         columns.push(Column::new(
             "taxonomy-wp_pattern_category",
-            &tr("Pattern Categories"),
+            &ctx.site()
+                .trx("Pattern Categories", "taxonomy general name"),
         ));
     }
     if site.post_type_supports(&info.name, "comments")

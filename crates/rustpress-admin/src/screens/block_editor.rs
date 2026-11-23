@@ -1399,15 +1399,8 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
         })
         .collect();
     let is_new = post.post_status == "auto-draft";
-    let heading = if is_new {
-        if info.hierarchical {
-            tr("Add Page")
-        } else {
-            tr("Add Post")
-        }
-    } else {
-        sprintf(&tr("Edit %s"), &[&info.singular])
-    };
+    let (edit_title, add_title) = super::post_edit::labels(ctx, info);
+    let heading = if is_new { add_title } else { edit_title };
 
     let mut assets = Assets {
         scripts: ["heartbeat", "wp-edit-post", "media-editor", "media-audiovideo", "mce-view", "image-edit", "imgareaselect", "quicktags", "wplink", "jquery-ui-autocomplete", "thickbox", "media-upload", "wp-block-styles", "wp-block-directory", "wp-format-library"].iter().map(|s| (*s).to_owned()).collect(),
@@ -1592,21 +1585,26 @@ pub async fn render_editor(ctx: &Ctx<'_>, post: &Post, info: &TypeInfo) -> Admin
             &[&classic_link]
         ),
     );
-    let title = if is_new {
-        heading.clone()
-    } else {
-        sprintf(
-            &tr("Edit %s &#8220;%s&#8221;"),
-            &[&info.singular, &esc_html(&post.post_title)],
-        )
+    // `admin-header.php` names the post in the window title.
+    let title = match rustpress_blocks::content::the_title_in_admin(site, post) {
+        post_title if !is_new && !post_title.is_empty() => {
+            sprintf(&tr("%1$s &#8220;%2$s&#8221;"), &[&heading, &post_title])
+        }
+        _ => heading.clone(),
     };
     let view = if post.post_status == "auto-draft" {
         None
     } else {
-        site.permalink(post)
-            .await
-            .ok()
-            .map(|url| (sprintf(&tr("View %s"), &[&info.singular]), url))
+        site.permalink(post).await.ok().map(|url| {
+            (
+                if info.name == "page" {
+                    tr("View Page")
+                } else {
+                    tr("View Post")
+                },
+                url,
+            )
+        })
     };
     // `wp_admin_bar_edit_menu()`: a draft has its preview instead.
     let view_preview = (view.is_some() && post.post_status == "draft").then_some(post.id);

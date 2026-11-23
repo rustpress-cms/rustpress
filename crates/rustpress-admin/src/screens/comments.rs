@@ -2052,14 +2052,12 @@ async fn edit_form(ctx: &Ctx<'_>, comment: &Comment) -> AdminResponse {
         &tr("Submitted on: %s"),
         &[&format!(
             "<b>{}</b>",
-            site.date(
-                &format!(
-                    "{} {}",
-                    ctx.site().trx("M j, Y", "publish box date format"),
-                    tr("\\a\\t H:i")
-                )
-                .replace("\\a\\t", "\\a\\t"),
-                comment_time
+            sprintf(
+                &tr("%1$s at %2$s"),
+                &[
+                    &site.date(&site.trx("M j, Y", "publish box date format"), comment_time),
+                    &site.date(&site.trx("H:i", "publish box time format"), comment_time),
+                ]
             )
         )],
     );
