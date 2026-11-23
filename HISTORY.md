@@ -1511,6 +1511,33 @@ with the default style (415 files, the Rust code grows from about 167,000 to 260
 `.git-blame-ignore-revs` names it so that `git blame` looks through it, and the CI job `Clippy` runs
 `cargo fmt --all --check`.
 
+### RustPress branding in the administration (2026-11-23)
+
+The administration looked exactly like WordPress, logo, "Thank you for creating with WordPress" and links to the
+WordPress support forums included. To avoid trouble with the WordPress trademark and to make clear what runs, the
+administration, `wp-login.php` and the toolbar now name RustPress:
+
+- `rustpress_core::brand` rebrands the texts of WordPress' text domain that `Site::tr()`, `trx()`, `trn()` and
+  `trnx()` return while a request runs in `brand::scope()`. The server scopes `wp-admin`, `wp-login.php` and the
+  toolbar on the site; the switch `branding = false` (`RUSTPRESS_BRANDING=0`) turns it off. Since it works on the
+  translated text, every language is covered (checked against all 389 strings of `de_DE.po` and `admin-de_DE.po`
+  that contain WordPress, in English and German). Where `WordPress` names the software it becomes `RustPress`; it
+  stays in WordPress.org, the plugin and theme directories, events, news, the community, Learn WordPress, the mobile
+  apps, the constants, versions (`WordPress 7.1.5`, the release whose files RustPress uses) and the default tagline
+  (Site Health compares it with the stored one).
+- The home, support, feedback and documentation links of wordpress.org (also of the localized sites such as
+  de.wordpress.org) lead to RustPress' website and its GitHub issues and README. The documentation articles about the
+  individual screens stay (yoshi's decision: they describe the same screens).
+- The logo menu of the toolbar: About RustPress (website), Get Involved (repository), Documentation, Support,
+  Feedback; the icon is the RustPress gear as a CSS mask, so it takes the colors of the toolbar. `wp-login.php` shows
+  the RustPress logo; "Powered by RustPress" links to the website. The installer uses the same logo
+  (`install/brand.rs` now takes it from `rustpress_core::brand`).
+- Comparisons with WordPress turn branding off: the role matrix (`crates/rustpress-server/tests/roles.rs`),
+  `dev/serve-admin.ps1` (the server of the admin compare scripts) and the compare scripts of Twenty Twenty and Twenty
+  Twenty-One. The compat runs are not affected (read-only, no administration).
+- Not rebranded: the pages baked from WordPress (`about.php`, `credits.php`, `freedoms.php`, `contribute.php`, which
+  are about WordPress itself), the texts and logos inside scripts (the block editor), plugins' texts and the content.
+
 ### Untranslated admin texts (2026-11-23)
 
 On a German site, Plugins > Add New showed its introduction and the error about WordPress.org in English. Both texts

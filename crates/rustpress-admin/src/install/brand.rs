@@ -1,17 +1,8 @@
 //! The installer speaks of RustPress: its pages are those of WordPress with the name and the logo exchanged.
 
-/// A gear around an R (the R of Liberation Serif Bold, SIL Open Font License), grey like the logo of WordPress.
-const LOGO: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g fill="#3c434a"><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(0.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(20.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(40.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(60.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(80.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(100.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(120.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(140.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(160.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(180.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(200.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(220.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(240.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(260.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(280.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(300.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(320.0 50 50)"/><rect x="45.5" y="1" width="9" height="10" rx="1.5" transform="rotate(340.0 50 50)"/><circle cx="50" cy="50" r="41"/></g><circle cx="50" cy="50" r="36" fill="#fff"/><path fill="#3c434a" d="M40.94 53.82V71.27L47.35 72.28V75H23.23V72.28L29.16 71.27V28.69L22.74 27.72V25H46.64Q57.68 25 63.12 28.39Q68.57 31.79 68.57 38.98Q68.57 49.72 58.5 52.78L71.85 71.27L77.26 72.28V75H61.07L47.13 53.82ZM56.94 39.06Q56.94 33.46 54.62 31.28Q52.31 29.1 46.16 29.1H40.94V49.72H46.35Q52.09 49.72 54.51 47.33Q56.94 44.95 56.94 39.06Z"/></svg>"##;
-
 /// The logo as a `url()` for CSS.
 pub fn logo_url() -> String {
-    let svg = LOGO
-        .trim()
-        .replace('"', "'")
-        .replace('#', "%23")
-        .replace('<', "%3C")
-        .replace('>', "%3E");
-    format!("url(\"data:image/svg+xml,{svg}\")")
+    rustpress_core::brand::logo_url()
 }
 
 /// Whether the `WordPress` at `rest` names the software (not WordPress.org, its forums or a path).

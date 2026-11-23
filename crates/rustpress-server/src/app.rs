@@ -602,17 +602,20 @@ async fn admin_route(
     };
     if let Some(file) = admin_file {
         let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
-        let response = crate::admin::admin_page(
-            &loaded,
+        let response = branded(
             &app.config,
-            app.writer.as_ref(),
-            &file,
-            post,
-            &request_uri,
-            &query,
-            &bytes,
-            &parts.headers,
-            &client,
+            crate::admin::admin_page(
+                &loaded,
+                &app.config,
+                app.writer.as_ref(),
+                &file,
+                post,
+                &request_uri,
+                &query,
+                &bytes,
+                &parts.headers,
+                &client,
+            ),
         )
         .await;
         // A visitor's POST reaches no screen that writes (it is sent to the sign-in).
@@ -623,16 +626,19 @@ async fn admin_route(
     }
     let body_text = String::from_utf8_lossy(&bytes).into_owned();
     let client = crate::client::Client::of(&app.config, &parts, &loaded.site.settings.siteurl);
-    let response = crate::admin::login_page(
-        &loaded,
-        app.writer.as_ref(),
-        post,
-        &path,
-        &request_uri,
-        &query,
-        &body_text,
-        &parts.headers,
-        &client,
+    let response = branded(
+        &app.config,
+        crate::admin::login_page(
+            &loaded,
+            app.writer.as_ref(),
+            post,
+            &path,
+            &request_uri,
+            &query,
+            &body_text,
+            &parts.headers,
+            &client,
+        ),
     )
     .await;
     // The sign-in forms that change something (a sign-in, a new password, a registration) answer with a redirect.
@@ -640,6 +646,16 @@ async fn admin_route(
         app.reload_now().await;
     }
     Ok(response)
+}
+
+/// Runs `future` with the RustPress branding of the administration (`rustpress_core::brand`), unless the
+/// configuration turns it off.
+pub(crate) async fn branded<F: std::future::Future>(config: &Config, future: F) -> F::Output {
+    if config.branding {
+        rustpress_core::brand::scope(future).await
+    } else {
+        future.await
+    }
 }
 
 /// `admin-ajax.php` of a read-only site: the plugins' actions for visitors, with a visitor's form as the body.
@@ -809,6 +825,7 @@ async fn page(
             user,
             token,
             preview.as_ref().map(|p| p.uuid.clone()),
+            app.config.branding,
         )
         .await
     {

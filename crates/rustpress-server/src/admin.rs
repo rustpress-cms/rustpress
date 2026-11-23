@@ -431,6 +431,7 @@ pub async fn front_toolbar(
     user: &std::sync::Arc<rustpress_auth::CurrentUser>,
     token: &str,
     changeset: Option<String>,
+    branding: bool,
 ) -> Option<rustpress_theme::Extras> {
     let parts = loaded.admin.as_ref()?;
     let at = now();
@@ -462,124 +463,133 @@ pub async fn front_toolbar(
     let (loaded, user) = (loaded.clone(), user.clone());
     let toolbar: std::sync::Arc<rustpress_theme::ToolbarFn> =
         std::sync::Arc::new(move |info: &rustpress_theme::ToolbarInfo<'_>| {
-            // The previewed site title and theme of the Customizer.
-            let site = info.site;
-            let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
-            let mut context = rustpress_admin::adminbar::FrontContext {
-                updates,
-                pending_comments: pending,
-                logout_nonce: logout_nonce.clone(),
-                site_icon: site_icon.clone(),
-                ..Default::default()
-            };
-            if [&site.settings.stylesheet, &site.settings.template]
-                .iter()
-                .any(|t| {
-                    loaded
-                        .theme
-                        .wp_root
-                        .join("wp-content")
-                        .join("themes")
-                        .join(t.as_str())
-                        .join("templates")
-                        .join("index.html")
-                        .is_file()
-                })
-                && user.can("edit_theme_options")
-            {
-                context.site_editor_url = Some(format!(
-                    "{}?postType=wp_template&postId={}//{}&canvas=edit",
-                    admin("site-editor.php"),
-                    site.settings.stylesheet,
-                    info.template_slug
-                ));
-            }
-            context.classic_theme = !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
-            context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme)
-                || rustpress_theme::classic::is_twentytwenty(&loaded.theme);
-            let home = site.home_url("");
-            let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
-            let host = info.query.http_host.as_deref().unwrap_or_else(|| {
-                home.split_once("://")
-                    .map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default())
-            });
-            let query = if info.query.raw_query.is_empty() {
-                String::new()
-            } else {
-                format!("?{}", info.query.raw_query)
-            };
-            context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
-            context.customize_changeset = changeset.clone();
-            let tr = |s: &str| site.tr(s);
-            context.edit = match &info.query.queried {
-                // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
-                // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
-                rustpress_core::Queried::Post(post) if changeset.is_none() => {
-                    let can = user.can(match post.post_type.as_str() {
-                        "page" => {
-                            if post.post_author == user.id {
-                                "edit_pages"
-                            } else {
-                                "edit_others_pages"
-                            }
-                        }
-                        _ => {
-                            if post.post_author == user.id {
-                                "edit_posts"
-                            } else {
-                                "edit_others_posts"
-                            }
-                        }
-                    });
-                    let label = match post.post_type.as_str() {
-                        "page" => tr("Edit Page"),
-                        "attachment" => tr("Edit Media"),
-                        _ => tr("Edit Post"),
-                    };
-                    can.then(|| {
-                        (
-                            label,
-                            admin(&format!("post.php?post={}&action=edit", post.id)),
-                        )
+            let render = || {
+                // The previewed site title and theme of the Customizer.
+                let site = info.site;
+                let admin = |path: &str| site.site_url(&format!("wp-admin/{path}"));
+                let mut context = rustpress_admin::adminbar::FrontContext {
+                    updates,
+                    pending_comments: pending,
+                    logout_nonce: logout_nonce.clone(),
+                    site_icon: site_icon.clone(),
+                    ..Default::default()
+                };
+                if [&site.settings.stylesheet, &site.settings.template]
+                    .iter()
+                    .any(|t| {
+                        loaded
+                            .theme
+                            .wp_root
+                            .join("wp-content")
+                            .join("themes")
+                            .join(t.as_str())
+                            .join("templates")
+                            .join("index.html")
+                            .is_file()
                     })
+                    && user.can("edit_theme_options")
+                {
+                    context.site_editor_url = Some(format!(
+                        "{}?postType=wp_template&postId={}//{}&canvas=edit",
+                        admin("site-editor.php"),
+                        site.settings.stylesheet,
+                        info.template_slug
+                    ));
                 }
-                rustpress_core::Queried::Term(term) if user.can("manage_categories") => {
-                    let label = if term.taxonomy == "category"
-                        || site
+                context.classic_theme =
+                    !rustpress_blocks::ThemeAccess::is_block_theme(&loaded.theme);
+                context.custom_background = rustpress_theme::classic::is_twentyone(&loaded.theme)
+                    || rustpress_theme::classic::is_twentytwenty(&loaded.theme);
+                let home = site.home_url("");
+                let scheme = home.split_once("://").map_or("http", |(scheme, _)| scheme);
+                let host = info.query.http_host.as_deref().unwrap_or_else(|| {
+                    home.split_once("://")
+                        .map_or("", |(_, rest)| rest.split('/').next().unwrap_or_default())
+                });
+                let query = if info.query.raw_query.is_empty() {
+                    String::new()
+                } else {
+                    format!("?{}", info.query.raw_query)
+                };
+                context.current_url = format!("{scheme}://{host}{}{query}", info.query.url_path);
+                context.customize_changeset = changeset.clone();
+                let tr = |s: &str| site.tr(s);
+                context.edit = match &info.query.queried {
+                    // `get_edit_post_link()` is empty in the preview of the Customizer. Any queried post counts, also the page
+                    // for posts (`wp_admin_bar_edit_menu()` does not ask for `is_singular()`).
+                    rustpress_core::Queried::Post(post) if changeset.is_none() => {
+                        let can = user.can(match post.post_type.as_str() {
+                            "page" => {
+                                if post.post_author == user.id {
+                                    "edit_pages"
+                                } else {
+                                    "edit_others_pages"
+                                }
+                            }
+                            _ => {
+                                if post.post_author == user.id {
+                                    "edit_posts"
+                                } else {
+                                    "edit_others_posts"
+                                }
+                            }
+                        });
+                        let label = match post.post_type.as_str() {
+                            "page" => tr("Edit Page"),
+                            "attachment" => tr("Edit Media"),
+                            _ => tr("Edit Post"),
+                        };
+                        can.then(|| {
+                            (
+                                label,
+                                admin(&format!("post.php?post={}&action=edit", post.id)),
+                            )
+                        })
+                    }
+                    rustpress_core::Queried::Term(term) if user.can("manage_categories") => {
+                        let label = if term.taxonomy == "category"
+                            || site
+                                .types
+                                .taxonomy(&term.taxonomy)
+                                .is_some_and(|t| t.hierarchical)
+                        {
+                            tr("Edit Category")
+                        } else {
+                            tr("Edit Tag")
+                        };
+                        let post_type = site
                             .types
                             .taxonomy(&term.taxonomy)
-                            .is_some_and(|t| t.hierarchical)
+                            .and_then(|t| t.object_types.first().cloned())
+                            .unwrap_or_else(|| "post".to_owned());
+                        Some((
+                            label,
+                            admin(&format!(
+                                "term.php?taxonomy={}&tag_ID={}&post_type={post_type}",
+                                term.taxonomy, term.term_id
+                            )),
+                        ))
+                    }
+                    rustpress_core::Queried::User(author)
+                        if user.can("edit_users") || author.id == user.id =>
                     {
-                        tr("Edit Category")
-                    } else {
-                        tr("Edit Tag")
-                    };
-                    let post_type = site
-                        .types
-                        .taxonomy(&term.taxonomy)
-                        .and_then(|t| t.object_types.first().cloned())
-                        .unwrap_or_else(|| "post".to_owned());
-                    Some((
-                        label,
-                        admin(&format!(
-                            "term.php?taxonomy={}&tag_ID={}&post_type={post_type}",
-                            term.taxonomy, term.term_id
-                        )),
-                    ))
-                }
-                rustpress_core::Queried::User(author)
-                    if user.can("edit_users") || author.id == user.id =>
-                {
-                    let url = if author.id == user.id {
-                        admin("profile.php")
-                    } else {
-                        admin(&format!("user-edit.php?user_id={}", author.id))
-                    };
-                    Some((tr("Edit User"), url))
-                }
-                _ => None,
+                        let url = if author.id == user.id {
+                            admin("profile.php")
+                        } else {
+                            admin(&format!("user-edit.php?user_id={}", author.id))
+                        };
+                        Some((tr("Edit User"), url))
+                    }
+                    _ => None,
+                };
+                rustpress_admin::adminbar::render_front(site, &user, &context)
             };
-            rustpress_admin::adminbar::render_front(site, &user, &context)
+            // The toolbar belongs to the administration: it names RustPress like it.
+            if branding {
+                rustpress_core::brand::sync_scope(render)
+            } else {
+                render()
+            }
         });
     Some(rustpress_theme::Extras {
         toolbar: Some(toolbar),
