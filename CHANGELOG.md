@@ -2,7 +2,9 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
-## Unreleased
+## 0.4.1 (2026-11-23)
+
+Follows WordPress 7.1.5.
 
 - **Hardening** after a second code review:
   a request path with raw UTF-8 no longer makes a site in a subdirectory panic; a panic answers 500 instead of

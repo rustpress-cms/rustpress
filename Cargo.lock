@@ -1956,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-admin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1985,7 +1985,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-auth"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.22.1",
  "bcrypt",
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-blocks"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "futures",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-compat"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "axum",
  "chrono",
@@ -2044,7 +2044,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-content"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "futures",
@@ -2065,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-db"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "sqlx",
  "thiserror",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-mail"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "lettre",
  "tokio",
@@ -2103,14 +2103,14 @@ dependencies = [
 
 [[package]]
 name = "rustpress-phpser"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "rustpress-plugins"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-rest"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2159,7 +2159,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2191,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "rustpress-theme"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "futures",
