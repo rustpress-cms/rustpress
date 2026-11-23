@@ -679,11 +679,7 @@ fn notice(ctx: &Ctx<'_>) -> String {
             tr("Media file attached.")
         } else {
             sprintf(
-                &site.trn(
-                    "%s media file attached.",
-                    "%s media files attached.",
-                    n,
-                ),
+                &site.trn("%s media file attached.", "%s media files attached.", n),
                 &[&site.number_i18n(n as u64)],
             )
         };
@@ -693,11 +689,7 @@ fn notice(ctx: &Ctx<'_>) -> String {
             tr("Media file detached.")
         } else {
             sprintf(
-                &site.trn(
-                    "%s media file detached.",
-                    "%s media files detached.",
-                    n,
-                ),
+                &site.trn("%s media file detached.", "%s media files detached.", n),
                 &[&site.number_i18n(n as u64)],
             )
         };
