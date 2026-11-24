@@ -2209,6 +2209,68 @@ pub fn registered() -> &'static [&'static dyn NativePlugin] {
     REGISTERED.get().map_or(&[], Vec::as_slice)
 }
 
+/// A plugin of the directory RustPress shows on `plugin-install.php` in place of the one of WordPress.org
+/// (`plugins_api()`): a plugin with a native module, with the package of the release the module follows. The
+/// package is the plugin's own archive from WordPress.org, since its files (assets, headers, language packs) are
+/// needed; it is installed only if its SHA-256 matches.
+#[derive(Debug, Clone, Copy)]
+pub struct Listing {
+    /// The directory slug, also the folder in `wp-content/plugins`.
+    pub slug: &'static str,
+    /// The plugin file of the module ([NativePlugin::file]).
+    pub file: &'static str,
+    /// The release of the module ([NativePlugin::version]) and of the package.
+    pub version: &'static str,
+    /// The name as the directory of WordPress.org gives it.
+    pub name: &'static str,
+    pub author: &'static str,
+    /// The author's profile, empty if there is none.
+    pub author_profile: &'static str,
+    /// The short description in English.
+    pub description: &'static str,
+    /// The short description in other languages, by locale (`de_DE`).
+    pub translations: &'static [(&'static str, &'static str)],
+    /// The URL of the archive.
+    pub package: &'static str,
+    /// The SHA-256 of the archive, in hex.
+    pub sha256: &'static str,
+    /// The size of the archive in bytes.
+    pub size: u64,
+}
+
+impl Listing {
+    /// The plugin's page in the directory of WordPress.org.
+    pub fn directory_url(&self) -> String {
+        format!("https://wordpress.org/plugins/{}/", self.slug)
+    }
+
+    /// The short description for `locale`: its own, the one of its language (`de_DE` for `de_AT`), or English.
+    pub fn description(&self, locale: &str) -> &'static str {
+        let language = locale.split('_').next().unwrap_or_default();
+        self.translations
+            .iter()
+            .find(|(l, _)| *l == locale)
+            .or_else(|| {
+                self.translations
+                    .iter()
+                    .find(|(l, _)| l.split('_').next() == Some(language))
+            })
+            .map_or(self.description, |(_, text)| text)
+    }
+}
+
+static CATALOG: OnceLock<&'static [Listing]> = OnceLock::new();
+
+/// Makes the directory known; the first call wins.
+pub fn register_catalog(listings: &'static [Listing]) {
+    let _ = CATALOG.set(listings);
+}
+
+/// The directory of the plugins with a native module, in the order of their names.
+pub fn catalog() -> &'static [Listing] {
+    CATALOG.get().copied().unwrap_or(&[])
+}
+
 /// The native modules of the active plugins, in the order of `active_plugins` (the order WordPress loads them in).
 #[derive(Default, Clone)]
 pub struct Plugins {

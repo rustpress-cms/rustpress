@@ -185,7 +185,7 @@ pub(super) async fn assets(
     }
     if ctx.can("install_themes") || ctx.can("update_themes") || ctx.can("delete_themes") {
         push(&mut a.scripts, &["updates"]);
-        let updates = crate::updates::counts(env.site).await;
+        let updates = crate::updates::counts(env.site, env.loader.includes.parent()).await;
         a.localize.push((
             "updates".into(),
             "_wpUpdatesItemCounts".into(),

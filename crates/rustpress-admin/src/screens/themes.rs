@@ -645,7 +645,10 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "themeViewed": tr("Theme details: %s"),
         },
     });
-    let totals = crate::updates::update_data(ctx.site(), crate::updates::counts(ctx.site()).await);
+    let totals = crate::updates::update_data(
+        ctx.site(),
+        crate::updates::counts(ctx.site(), ctx.env.loader.includes.parent()).await,
+    );
     let localize = vec![
         ("theme".into(), "_wpThemeSettings".into(), settings),
         (

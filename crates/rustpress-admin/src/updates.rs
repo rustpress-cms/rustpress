@@ -49,8 +49,9 @@ async fn transient(site: &Site, name: &str) -> Option<Value> {
     rustpress_phpser::unserialize(raw.as_bytes()).ok()
 }
 
-/// Updates of core (`response => upgrade`), plugins, themes and translations.
-pub async fn counts(site: &Site) -> UpdateCounts {
+/// Updates of core (`response => upgrade`), plugins, themes and translations. With `wp_root`, the plugins count those
+/// of [plugin_update_list].
+pub async fn counts(site: &Site, wp_root: Option<&std::path::Path>) -> UpdateCounts {
     let mut counts = UpdateCounts::default();
     let mut translations = 0;
     if let Some(core) = transient(site, "update_core").await {
@@ -66,6 +67,11 @@ pub async fn counts(site: &Site) -> UpdateCounts {
     if let Some(plugins) = transient(site, "update_plugins").await {
         counts.plugins = entries(field(&plugins, "response")) as u64;
         translations += entries(field(&plugins, "translations"));
+    }
+    if let Some(root) = wp_root
+        && !rustpress_core::native::catalog().is_empty()
+    {
+        counts.plugins = plugin_update_list(site, Some(root)).await.len() as u64;
     }
     if let Some(themes) = transient(site, "update_themes").await {
         counts.themes = entries(field(&themes, "response")) as u64;
@@ -170,8 +176,23 @@ pub struct PluginUpdate {
     pub package: String,
 }
 
-/// The updates of the transient `update_plugins`, by plugin file.
-pub async fn plugin_update_list(site: &Site) -> Vec<(String, PluginUpdate)> {
+/// The updates of the transient `update_plugins`, by plugin file. With `wp_root`, the plugins of the plugin directory of
+/// RustPress get the update [directory_updates] offers instead of the one of WordPress.org (whose release no module
+/// follows), or none: a deliberate difference from WordPress.
+pub async fn plugin_update_list(
+    site: &Site,
+    wp_root: Option<&std::path::Path>,
+) -> Vec<(String, PluginUpdate)> {
+    let mut list = transient_plugin_updates(site).await;
+    if let Some(root) = wp_root {
+        let catalog = rustpress_core::native::catalog();
+        list.retain(|(file, _)| !catalog.iter().any(|l| l.file == file));
+        list.extend(directory_updates(root));
+    }
+    list
+}
+
+async fn transient_plugin_updates(site: &Site) -> Vec<(String, PluginUpdate)> {
     let Some(plugins) = transient(site, "update_plugins").await else {
         return Vec::new();
     };
@@ -257,4 +278,160 @@ pub async fn theme_updates(site: &Site) -> std::collections::HashMap<String, The
         );
     }
     out
+}
+
+/// PHP's `version_compare()` of two versions (without an operator).
+pub fn version_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    /// `php_canonicalize_version()`.
+    fn canonical(version: &str) -> String {
+        let bytes = version.as_bytes();
+        let Some(&first) = bytes.first() else {
+            return String::new();
+        };
+        let not_digit = |c: u8| !c.is_ascii_digit() && c != b'.';
+        let mut out = vec![first];
+        let mut last = first;
+        for &c in &bytes[1..] {
+            if matches!(c, b'-' | b'_' | b'+') {
+                if out.last() != Some(&b'.') {
+                    out.push(b'.');
+                }
+            } else if (not_digit(last) && c.is_ascii_digit())
+                || (last.is_ascii_digit() && not_digit(c))
+            {
+                if out.last() != Some(&b'.') {
+                    out.push(b'.');
+                }
+                out.push(c);
+            } else if !c.is_ascii_alphanumeric() {
+                if out.last() != Some(&b'.') {
+                    out.push(b'.');
+                }
+            } else {
+                out.push(c);
+            }
+            last = c;
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+    /// `compare_special_version_forms()`.
+    fn special(a: &str, b: &str) -> Ordering {
+        const FORMS: &[(&str, i32)] = &[
+            ("dev", 0),
+            ("alpha", 1),
+            ("a", 1),
+            ("beta", 2),
+            ("b", 2),
+            ("RC", 3),
+            ("rc", 3),
+            ("#", 4),
+            ("pl", 5),
+            ("p", 5),
+        ];
+        let order = |s: &str| {
+            FORMS
+                .iter()
+                .find(|(name, _)| s.starts_with(name))
+                .map_or(-6, |(_, n)| *n)
+        };
+        order(a).cmp(&order(b))
+    }
+    fn number(s: &str) -> i64 {
+        s.bytes().take_while(u8::is_ascii_digit).fold(0i64, |n, d| {
+            n.saturating_mul(10).saturating_add(i64::from(d - b'0'))
+        })
+    }
+    let digit = |s: &str| s.as_bytes().first().is_some_and(u8::is_ascii_digit);
+    let (a, b) = (canonical(a), canonical(b));
+    if a.is_empty() || b.is_empty() {
+        return match (a.is_empty(), b.is_empty()) {
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Less,
+            _ => Ordering::Greater,
+        };
+    }
+    let (pa, pb): (Vec<&str>, Vec<&str>) = (a.split('.').collect(), b.split('.').collect());
+    for (x, y) in pa.iter().zip(&pb) {
+        let order = match (digit(x), digit(y)) {
+            (true, true) => number(x).cmp(&number(y)),
+            (false, false) => special(x, y),
+            (true, false) => special("#N#", y),
+            (false, true) => special(x, "#N#"),
+        };
+        if order != Ordering::Equal {
+            return order;
+        }
+    }
+    match pa.len().cmp(&pb.len()) {
+        Ordering::Greater => {
+            let rest = pa[pb.len()..].join(".");
+            if digit(&rest) {
+                Ordering::Greater
+            } else {
+                version_compare(&rest, "#N#")
+            }
+        }
+        Ordering::Less => {
+            let rest = pb[pa.len()..].join(".");
+            if digit(&rest) {
+                Ordering::Less
+            } else {
+                version_compare("#N#", &rest)
+            }
+        }
+        Ordering::Equal => Ordering::Equal,
+    }
+}
+
+/// The updates the plugin directory of RustPress offers (`rustpress_core::native::catalog()`): an installed plugin with
+/// a native module that is older than the release its module follows, `version_compare( $installed, $module, '<' )`.
+/// Only the main files of the listed plugins are read.
+pub fn directory_updates(wp_root: &std::path::Path) -> Vec<(String, PluginUpdate)> {
+    let plugins = wp_root.join("wp-content").join("plugins");
+    rustpress_core::native::catalog()
+        .iter()
+        .filter_map(|listing| {
+            let text = std::fs::read(plugins.join(listing.file)).ok()?;
+            let head = &text[..text.len().min(8192)];
+            let version =
+                rustpress_core::plugins::file_header(&String::from_utf8_lossy(head), "Version");
+            (version_compare(&version, listing.version) == std::cmp::Ordering::Less).then(|| {
+                (
+                    listing.file.to_owned(),
+                    PluginUpdate {
+                        slug: listing.slug.to_owned(),
+                        new_version: listing.version.to_owned(),
+                        package: listing.package.to_owned(),
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::version_compare;
+    use std::cmp::Ordering::*;
+
+    /// The answers of PHP 8's `version_compare()`.
+    #[test]
+    fn versions_compare_like_php() {
+        for (a, b, order) in [
+            ("2.6.1", "2.6.4", Less),
+            ("6.2.4.1", "6.2.4", Greater),
+            ("1.0", "1.0.0", Less),
+            ("1.0rc1", "1.0", Less),
+            ("1.0", "1.0pl1", Less),
+            ("1.0-beta", "1.0-alpha", Greater),
+            ("28.8", "28.10", Less),
+            ("1.191.0", "1.191.0", Equal),
+            ("", "1.0", Less),
+            ("1.0.0", "1.0", Greater),
+            ("1.0a", "1.0", Less),
+        ] {
+            assert_eq!(version_compare(a, b), order, "{a} {b}");
+        }
+    }
 }

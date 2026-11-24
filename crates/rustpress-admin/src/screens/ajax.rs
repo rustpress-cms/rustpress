@@ -260,8 +260,12 @@ async fn autosave(
     }
 }
 
-/// Whether `admin-ajax.php` knows the action for this request: the name is in the list for the method it was sent with.
-fn registered(request: &AdminRequest, _action: &str) -> bool {
+/// Whether `admin-ajax.php` knows the action for this request: the name is in the list for the method it was sent with,
+/// or one `admin-ajax.php` hooks for every method (`check_plugin_dependencies`).
+fn registered(request: &AdminRequest, action: &str) -> bool {
+    if action == "check_plugin_dependencies" {
+        return true;
+    }
     const GET: &[&str] = &[
         "fetch-list",
         "ajax-tag-search",
@@ -906,7 +910,8 @@ pub async fn handle(env: &AdminEnv<'_>, request: &AdminRequest) -> AdminResponse
         | "update-theme"
         | "update-plugin"
         | "search-plugins"
-        | "search-install-plugins" => {
+        | "search-install-plugins"
+        | "check_plugin_dependencies" => {
             super::ajax_misc::handle(env, request, &user, &session.token, &action).await
         }
         "wp-privacy-export-personal-data" => {

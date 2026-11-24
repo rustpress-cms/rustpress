@@ -435,7 +435,9 @@ pub async fn front_toolbar(
 ) -> Option<rustpress_theme::Extras> {
     let parts = loaded.admin.as_ref()?;
     let at = now();
-    let updates = rustpress_admin::updates::counts(&loaded.site).await.total();
+    let updates = rustpress_admin::updates::counts(&loaded.site, parts.loader.includes.parent())
+        .await
+        .total();
     let pending = loaded
         .site
         .db

@@ -22,8 +22,11 @@ compared and what deliberately differs.
   that nobody takes a RustPress site for WordPress and no WordPress trademark is used for RustPress
   (`rustpress_core::brand`, the switch `branding`). Everything else stays byte-identical; the comparisons of the
   administration run with `branding = false` (`RUSTPRESS_BRANDING=0`).
-- **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, directories,
-  remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
+- **Plugin directory:** Add Plugins lists the plugins with a native module (built into the binary) instead of
+  WordPress.org's directory, and installs the archive of the release a module follows, checked against its SHA-256
+  (decision of 2026-11-23); older installed versions of these plugins are updated to that release (2026-11-24).
+- **Not planned:** a PHP interpreter, Multisite, outgoing HTTP to WordPress.org or other services (updates, the theme
+  directory and the other plugins of the plugin directory, remote oEmbed), caching and security plugins (architecture), WooCommerce, Elementor.
 
 ## Architecture
 
@@ -135,7 +138,7 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 - `users.php?action=delete` still shows the confirmation form of older releases (one choice for all users, not one per
   user with `%1$s (ID #%2$s): ...`); its three texts are listed in `OWN_MESSAGES` of `i18n_coverage.rs` until it is ported.
 - Not equal on the copy of the real site: `credits.php` (what `wp_credits()` gets from api.wordpress.org depends on the
-  language, the bake is the English answer), `plugin-install.php` (RustPress asks api.wordpress.org nothing), the tests of
+  language, the bake is the English answer), `plugin-install.php` (the plugin directory of RustPress in place of api.wordpress.org), the tests of
   `site-health.php` that are about PHP (RustPress has none) and the `Info` tab, which reports its own environment.
 
 **Sign-in, administration, REST**
@@ -206,7 +209,13 @@ The reference stack, the tools and the working rules are in [AGENTS.md](AGENTS.m
 
 Differences of the compat runs are in [`compat/known.toml`](compat/known.toml). Everything else:
 
-- **Environment:** RustPress makes no outgoing requests: the directories and updates of WordPress.org,
+- **Plugin directory:** the browse tabs of `plugin-install.php` list the plugins with a native module
+  (`rustpress_plugins::catalog`) in the cards of WordPress, without ratings, installation counts and the details
+  modal; "Install Now" (`install-plugin` in `admin-ajax.php` and `update.php`) downloads only the archive of a listing
+  and only installs it if its SHA-256 matches. An installed plugin of the directory that is older than its module's
+  release is offered that release as its update (plugins.php, update-core.php, the menu counts), in place of the
+  update the transient `update_plugins` stores. The only outgoing requests of the administration.
+- **Environment:** RustPress makes no other outgoing requests: the directories and updates of WordPress.org,
   `credits.php`, font collections, remote oEmbed, loopback and the Site Health tests that need them, Akismet and the
   services of Contact Form 7 (reCAPTCHA, Turnstile, Stripe), the e-mail opt-in of ACF. Without `RUSTPRESS_SMTP_URL`
   mail goes to the host's `sendmail` as PHP's `mail()` sends it, and fails as `wp_mail()` does on a host without

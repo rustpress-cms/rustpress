@@ -32,6 +32,7 @@ pub mod common;
 mod custom_header;
 mod customize;
 pub mod dashboard;
+mod directory;
 pub mod editor;
 pub mod export;
 mod file_editor;
@@ -1123,7 +1124,7 @@ fn first_media_button_id(body: String) -> String {
 
 /// The menu of the signed-in user.
 async fn admin_menu(ctx: &Ctx<'_>) -> AdminMenu {
-    let updates = crate::updates::counts(ctx.env.site).await;
+    let updates = crate::updates::counts(ctx.env.site, ctx.env.loader.includes.parent()).await;
     let pending = ctx
         .env
         .db
@@ -1155,7 +1156,7 @@ pub async fn render(
     assets: &Assets,
 ) -> AdminResponse {
     let env = ctx.env;
-    let updates = crate::updates::counts(env.site).await;
+    let updates = crate::updates::counts(env.site, env.loader.includes.parent()).await;
     let pending = env.db.count_comments_with_status("0").await.unwrap_or(0);
     let menu = menu_with(ctx, &updates, pending);
     // `admin_enqueue_scripts` and `admin_notices` of the plugins.

@@ -2,6 +2,7 @@
 //! plugin and is compared against the real plugin in the reference WordPress.
 
 pub mod acf;
+pub mod catalog;
 pub mod classic_editor;
 pub mod complianz;
 pub mod contact_form_7;
@@ -32,4 +33,5 @@ pub fn register() {
         &wpcode::Wpcode,
         &wpforms::WpForms,
     ]);
+    rustpress_core::native::register_catalog(catalog::CATALOG);
 }
