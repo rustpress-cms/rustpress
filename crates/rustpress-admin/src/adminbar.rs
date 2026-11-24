@@ -125,16 +125,13 @@ fn comments_off_everywhere(site: &Site, user: &CurrentUser) -> bool {
     ))
 }
 
-pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String {
-    let tr = |s: &str| site.tr(s);
-    let admin = |path: &str| esc_url(&site.site_url(&format!("wp-admin/{path}")));
-    let number = |n: u64| site.number_i18n(n);
-    let blog_name = site.options.string("blogname", "");
-
-    let mut top: Vec<String> = Vec::new();
-    top.push(item("menu-toggle", "", &link("#", &format!("<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{}</span>", tr("Menu")), false)));
-
-    // WordPress logo
+/// `wp_admin_bar_wp_menu()`: the logo and its menu. With the RustPress branding (`rustpress_core::brand`) it shows
+/// the logo of RustPress, and its links lead to RustPress (its site, repository, documentation and issues) instead of
+/// the pages about WordPress and wordpress.org.
+fn logo_menu(tr: &dyn Fn(&str) -> String, admin: &dyn Fn(&str) -> String) -> String {
+    if rustpress_core::brand::active() {
+        return branded_logo_menu(tr);
+    }
     let about = tr("About WordPress");
     let logo_primary = vec![
         item("about", "", &link(&admin("about.php"), &about, false)),
@@ -187,16 +184,116 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
             ),
         ),
     ];
-    top.push(item(
+    item(
         "wp-logo",
         "menupop",
         &format!(
             "{}<div class=\"ab-sub-wrapper\">{}{}</div>",
-            link(&admin("about.php"), &format!("<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{about}</span>"), true),
+            link(
+                &admin("about.php"),
+                &format!(
+                    "<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{about}</span>"
+                ),
+                true
+            ),
             submenu(&about, "wp-logo-default", "ab-submenu", &logo_primary),
-            submenu(&about, "wp-logo-external", "ab-sub-secondary ab-submenu", &logo_secondary)
+            submenu(
+                &about,
+                "wp-logo-external",
+                "ab-sub-secondary ab-submenu",
+                &logo_secondary
+            )
         ),
-    ));
+    )
+}
+
+/// The menu of the logo with the RustPress branding, in the shape of `wp_admin_bar_wp_menu()`.
+fn branded_logo_menu(tr: &dyn Fn(&str) -> String) -> String {
+    use rustpress_core::brand;
+    let about = tr("About WordPress");
+    let home = esc_url(&tr("https://wordpress.org/"));
+    let primary = vec![
+        item("about", "", &link(&home, &about, false)),
+        item(
+            "contribute",
+            "",
+            &link(&esc_url(brand::REPOSITORY_URL), &tr("Get Involved"), false),
+        ),
+    ];
+    let secondary = vec![
+        item(
+            "documentation",
+            "",
+            &link(
+                &esc_url(&tr("https://wordpress.org/documentation/")),
+                &tr("Documentation"),
+                false,
+            ),
+        ),
+        item(
+            "support-forums",
+            "",
+            &link(
+                &esc_url(&tr("https://wordpress.org/support/forums/")),
+                &tr("Support"),
+                false,
+            ),
+        ),
+        item(
+            "feedback",
+            "",
+            &link(
+                &esc_url(&tr(
+                    "https://wordpress.org/support/forum/requests-and-feedback",
+                )),
+                &tr("Feedback"),
+                false,
+            ),
+        ),
+    ];
+    item(
+        "wp-logo",
+        "menupop",
+        &format!(
+            "{}<div class=\"ab-sub-wrapper\">{}{}</div>",
+            link(
+                &home,
+                &format!(
+                    "<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{about}</span>"
+                ),
+                true
+            ),
+            submenu(&about, "wp-logo-default", "ab-submenu", &primary),
+            submenu(
+                &about,
+                "wp-logo-external",
+                "ab-sub-secondary ab-submenu",
+                &secondary
+            )
+        ),
+    )
+}
+
+/// The style of the RustPress logo, printed before the toolbar when the branding is on.
+fn brand_style() -> String {
+    if rustpress_core::brand::active() {
+        rustpress_core::brand::admin_bar_style()
+    } else {
+        String::new()
+    }
+}
+
+pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String {
+    let tr = |s: &str| site.tr(s);
+    let admin = |path: &str| esc_url(&site.site_url(&format!("wp-admin/{path}")));
+    let number = |n: u64| site.number_i18n(n);
+    let blog_name = site.options.string("blogname", "");
+
+    let mut top: Vec<String> = Vec::new();
+    top.push(item("menu-toggle", "", &link("#", &format!("<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{}</span>", tr("Menu")), false)));
+
+    // WordPress logo
+    top.push(logo_menu(&tr, &admin));
 
     // Site name
     let site_title = if blog_name.is_empty() {
@@ -408,7 +505,8 @@ pub fn render_admin(site: &Site, user: &CurrentUser, ctx: &BarContext) -> String
     );
 
     format!(
-        "\n\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
+        "{}\n\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
+        brand_style(),
         esc_attr(&tr("Toolbar")),
         top.concat(),
         account
@@ -449,68 +547,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
     let mut top: Vec<String> = Vec::new();
 
     // WordPress logo
-    let about = tr("About WordPress");
-    let logo_primary = vec![
-        item("about", "", &link(&admin("about.php"), &about, false)),
-        item(
-            "contribute",
-            "",
-            &link(&admin("contribute.php"), &tr("Get Involved"), false),
-        ),
-    ];
-    let logo_secondary = vec![
-        item(
-            "wporg",
-            "",
-            &link(&tr("https://wordpress.org/"), &tr("WordPress.org"), false),
-        ),
-        item(
-            "documentation",
-            "",
-            &link(
-                &tr("https://wordpress.org/documentation/"),
-                &tr("Documentation"),
-                false,
-            ),
-        ),
-        item(
-            "learn",
-            "",
-            &link(
-                &tr("https://learn.wordpress.org/"),
-                &tr("Learn WordPress"),
-                false,
-            ),
-        ),
-        item(
-            "support-forums",
-            "",
-            &link(
-                &tr("https://wordpress.org/support/forums/"),
-                &tr("Support"),
-                false,
-            ),
-        ),
-        item(
-            "feedback",
-            "",
-            &link(
-                &tr("https://wordpress.org/support/forum/requests-and-feedback"),
-                &tr("Feedback"),
-                false,
-            ),
-        ),
-    ];
-    top.push(item(
-        "wp-logo",
-        "menupop",
-        &format!(
-            "{}<div class=\"ab-sub-wrapper\">{}{}</div>",
-            link(&admin("about.php"), &format!("<span class=\"ab-icon\" aria-hidden=\"true\"></span><span class=\"screen-reader-text\">{about}</span>"), true),
-            submenu(&about, "wp-logo-default", "ab-submenu", &logo_primary),
-            submenu(&about, "wp-logo-external", "ab-sub-secondary ab-submenu", &logo_secondary)
-        ),
-    ));
+    top.push(logo_menu(&tr, &admin));
 
     // Site name: the dashboard, plugins and themes
     let site_title = if blog_name.is_empty() {
@@ -562,7 +599,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
                     "hide-if-customize",
                     &link(
                         &admin("themes.php?page=custom-background"),
-                        &tr("Background"),
+                        &site.trx("Background", "custom background"),
                         false,
                     ),
                 ));
@@ -573,7 +610,7 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
                     "hide-if-customize",
                     &link(
                         &admin("themes.php?page=custom-header"),
-                        &tr("Header"),
+                        &site.trx("Header", "custom image header"),
                         false,
                     ),
                 ));
@@ -808,7 +845,8 @@ pub fn render_front(site: &Site, user: &CurrentUser, ctx: &FrontContext) -> Stri
         ""
     };
     format!(
-        "{script}\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{account}{search}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
+        "{script}{}\t\t<div id=\"wpadminbar\" class=\"nojq nojs\">\n\t\t\t\t\t\t<div class=\"quicklinks\" id=\"wp-toolbar\" role=\"navigation\" aria-label=\"{}\">\n\t\t\t\t<ul role='menu' id='wp-admin-bar-root-default' class=\"ab-top-menu\">{}</ul><ul role='menu' id='wp-admin-bar-top-secondary' class=\"ab-top-secondary ab-top-menu\">{account}{search}</ul>\t\t\t</div>\n\t\t</div>\n\n\t\t",
+        brand_style(),
         esc_attr(&tr("Toolbar")),
         top.concat()
     )

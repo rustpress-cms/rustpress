@@ -452,7 +452,8 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
         ),
     ];
     let failed = |mut lines: Vec<String>, reason: String| {
-        // `WP_Upgrader_Skin::error()`: the message, then the error data.
+        // `WP_Upgrader_Skin::error()`: the message, then the error data, `esc_html( strip_tags() )`ed.
+        let reason = esc_html(&rustpress_core::formatting::strip_tags(&reason));
         lines.push(format!(
             "<p>{} {reason}</p>",
             ctx.tr("The package could not be installed.")
@@ -528,19 +529,43 @@ async fn upload(ctx: &Ctx<'_>, plugin: bool) -> AdminResponse {
                 submenu,
                 &title,
                 &heading,
-                &failed(lines, tr("The theme is missing the style.css stylesheet.")),
+                &failed(
+                    lines,
+                    rustpress_core::i18n::sprintf(
+                        &tr("The theme is missing the %s stylesheet."),
+                        &["<code>style.css</code>"],
+                    ),
+                ),
             )
             .await;
         };
         if header(&style, "Theme Name").is_empty() {
-            return feedback(ctx, parent, submenu, &title, &heading, &failed(lines, tr("The style.css stylesheet doesn&#8217;t contain a valid theme header. Missing theme name."))).await;
+            return feedback(
+                ctx,
+                parent,
+                submenu,
+                &title,
+                &heading,
+                &failed(
+                    lines,
+                    rustpress_core::i18n::sprintf(
+                        &tr("The %s stylesheet does not contain a valid theme header."),
+                        &["<code>style.css</code>"],
+                    ),
+                ),
+            )
+            .await;
         }
         let template = header(&style, "Template");
         let has_template = files.iter().any(|(n, d)| {
-            d.is_some() && matches!(n.as_str(), "templates/index.html" | "index.php")
+            d.is_some()
+                && matches!(
+                    n.as_str(),
+                    "templates/index.html" | "block-templates/index.html" | "index.php"
+                )
         });
         if template.is_empty() && !has_template {
-            return feedback(ctx, parent, submenu, &title, &heading, &failed(lines, tr("Template is missing. Standalone themes need to have a templates/index.html or index.php template file. Child themes need to have a Template header in the style.css stylesheet."))).await;
+            return feedback(ctx, parent, submenu, &title, &heading, &failed(lines, rustpress_core::i18n::sprintf(&tr("Template is missing. Standalone themes need to have a %1$s or %2$s template file. <a href=\"%3$s\">Child themes</a> need to have a %4$s header in the %5$s stylesheet."), &["<code>templates/index.html</code>", "<code>index.php</code>", &tr("https://developer.wordpress.org/themes/advanced-topics/child-themes/"), "<code>Template</code>", "<code>style.css</code>"]))).await;
         }
     }
     let base = root

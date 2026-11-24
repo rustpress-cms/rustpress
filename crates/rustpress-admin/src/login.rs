@@ -515,6 +515,10 @@ impl LoginEnv<'_> {
             out.push_str(&scripts.print_head_scripts(true));
         }
         out.push_str(&admin_styles);
+        // The RustPress logo above the form (`rustpress_core::brand`).
+        if rustpress_core::brand::active() {
+            out.push_str(&rustpress_core::brand::login_style());
+        }
         // `login_head` of the plugins at priority 10, before `wp_strict_cross_origin_referrer()` (also 10, hooked later).
         out.push_str(&self.site.plugins.login_head(self.site));
         out.push_str("\t<meta name='referrer' content='strict-origin-when-cross-origin' />\n\t");

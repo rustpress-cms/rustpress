@@ -1511,6 +1511,56 @@ with the default style (415 files, the Rust code grows from about 167,000 to 260
 `.git-blame-ignore-revs` names it so that `git blame` looks through it, and the CI job `Clippy` runs
 `cargo fmt --all --check`.
 
+### RustPress branding in the administration (2026-11-23)
+
+The administration looked exactly like WordPress, logo, "Thank you for creating with WordPress" and links to the
+WordPress support forums included. To avoid trouble with the WordPress trademark and to make clear what runs, the
+administration, `wp-login.php` and the toolbar now name RustPress:
+
+- `rustpress_core::brand` rebrands the texts of WordPress' text domain that `Site::tr()`, `trx()`, `trn()` and
+  `trnx()` return while a request runs in `brand::scope()`. The server scopes `wp-admin`, `wp-login.php` and the
+  toolbar on the site; the switch `branding = false` (`RUSTPRESS_BRANDING=0`) turns it off. Since it works on the
+  translated text, every language is covered (checked against all 389 strings of `de_DE.po` and `admin-de_DE.po`
+  that contain WordPress, in English and German). Where `WordPress` names the software it becomes `RustPress`; it
+  stays in WordPress.org, the plugin and theme directories, events, news, the community, Learn WordPress, the mobile
+  apps, the constants, versions (`WordPress 7.1.5`, the release whose files RustPress uses) and the default tagline
+  (Site Health compares it with the stored one).
+- The home, support, feedback and documentation links of wordpress.org (also of the localized sites such as
+  de.wordpress.org) lead to RustPress' website and its GitHub issues and README. The documentation articles about the
+  individual screens stay (yoshi's decision: they describe the same screens).
+- The logo menu of the toolbar: About RustPress (website), Get Involved (repository), Documentation, Support,
+  Feedback; the icon is the RustPress gear as a CSS mask, so it takes the colors of the toolbar. `wp-login.php` shows
+  the RustPress logo; "Powered by RustPress" links to the website. The installer uses the same logo
+  (`install/brand.rs` now takes it from `rustpress_core::brand`).
+- Comparisons with WordPress turn branding off: the role matrix (`crates/rustpress-server/tests/roles.rs`),
+  `dev/serve-admin.ps1` (the server of the admin compare scripts) and the compare scripts of Twenty Twenty and Twenty
+  Twenty-One. The compat runs are not affected (read-only, no administration).
+- Not rebranded: the pages baked from WordPress (`about.php`, `credits.php`, `freedoms.php`, `contribute.php`, which
+  are about WordPress itself), the texts and logos inside scripts (the block editor), plugins' texts and the content.
+
+### Untranslated admin texts (2026-11-23)
+
+On a German site, Plugins > Add New showed its introduction and the error about WordPress.org in English. Both texts
+were written with the URL already filled in, while WordPress translates them with a `%s` placeholder
+(`'... <a href="%s">WordPress Plugin Directory</a> ...'`, `'... <a href="%s">support forums</a>.'`) and fills in the
+translated URL, so no language pack had the message id. The guard `i18n_coverage.rs` should have caught this, but it
+only matched calls with a receiver (`ctx.tr("...")`), not the `let tr = |s| ctx.tr(s)` closures most screens use. It
+now matches both (also for `trx` and `trn`), which brought up 25 more texts:
+
+- Message ids that need a context or a plural form: the admin bar's Background and Header, Most Used in the term boxes
+  (`labels->most_used`), Unattached and Mine in the media filter, the counts of attached, detached and deleted media,
+  Pattern Categories.
+- Texts WordPress builds with `sprintf()`: Detach from / View &#8220;%s&#8221; in the media list, the comment date
+  (`'%1$s at %2$s'` with the publish box formats), the window title and labels of the block editor (now
+  `labels->edit_item` and `'%1$s &#8220;%2$s&#8221;'` like the classic editor, and the post type only when the post
+  has a title).
+- Texts that changed in WordPress: the reasons a theme upload is refused (`The %s stylesheet does not contain a valid
+  theme header.`, the longer Template text, shown `esc_html( strip_tags() )`ed like `WP_Upgrader_Skin::error()`;
+  `block-templates/index.html` counts as an index file), `err_admin_role` on users.php; `newuseremail` is no message
+  of users.php anymore.
+- RustPress' own texts (database failures, read-only sites, the delete form of users.php, see PLAN.md) are listed in
+  `OWN_MESSAGES`.
+
 ### The plugin directory of RustPress (2026-11-23)
 
 Add Plugins showed WordPress' error for an unreachable WordPress.org, since RustPress asks it nothing and its plugins

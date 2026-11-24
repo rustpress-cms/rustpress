@@ -49,7 +49,7 @@ fn sticky_ids(ctx: &Ctx<'_>) -> Vec<u64> {
 
 /// `labels->edit_item` and `labels->add_new_item`: those of the registration, else the defaults of posts or, for a
 /// hierarchical type, pages (`_get_custom_object_labels()`).
-fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
+pub(super) fn labels(ctx: &Ctx<'_>, info: &TypeInfo) -> (String, String) {
     let tr = |s: &str| ctx.tr(s);
     let (edit, add) = match info.name.as_str() {
         "post" => return (tr("Edit Post"), tr("Add Post")),
@@ -905,7 +905,6 @@ async fn comments_box(ctx: &Ctx<'_>, post: &Post) -> String {
 
 /// `wp_terms_checklist()`: the category boxes.
 async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
-    let tr = |s: &str| ctx.tr(s);
     let db = ctx.env.db;
     let name = tax.name.as_str();
     let terms = db.terms(name).await.unwrap_or_default();
@@ -1060,7 +1059,20 @@ async fn category_box(ctx: &Ctx<'_>, post: &Post, tax: &TaxBox) -> String {
     let inner = format!(
         "\t<div id=\"taxonomy-{name}\" class=\"categorydiv\">\n\t\t<ul id=\"{name}-tabs\" class=\"category-tabs\" role=\"tablist\">\n\t\t\t<li class=\"tabs\"><a href=\"#{name}-all\" role=\"tab\" aria-selected=\"true\" aria-controls=\"{name}-all\">{}</a></li>\n\t\t\t<li class=\"hide-if-no-js\"><a href=\"#{name}-pop\" role=\"tab\" aria-controls=\"{name}-pop\">{}</a></li>\n\t\t</ul>\n\n\t\t<div id=\"{name}-pop\" class=\"tabs-panel\" style=\"display: none;\" role=\"tabpanel\">\n\t\t\t<ul id=\"{name}checklist-pop\" class=\"categorychecklist form-no-clear\" >\n\t\t\t\t{pop}\t\t\t</ul>\n\t\t</div>\n\n\t\t<div id=\"{name}-all\" class=\"tabs-panel\" role=\"tabpanel\">\n\t\t\t<input type='hidden' name='{input}[]' value='0' />\t\t\t<ul id=\"{name}checklist\" data-wp-lists=\"list:{name}\" class=\"categorychecklist form-no-clear\">\n\t\t\t\t{list}\t\t\t</ul>\n\t\t</div>\n\t{adder}\t</div>\n\t",
         tax.label(ctx, "all_items", "All Categories", "All Tags"),
-        tr("Most Used"),
+        // `labels->most_used`: `_x( 'Most Used', 'categories' )` or `_x( 'Most Used', 'tags' )`.
+        tax.labels
+            .iter()
+            .find(|(n, _)| n == "most_used")
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| ctx.site().trx(
+                "Most Used",
+                if tax.hierarchical {
+                    "categories"
+                } else {
+                    "tags"
+                }
+            )),
         input = tax.input_name()
     );
     inner

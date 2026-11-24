@@ -74,7 +74,7 @@ listen       = "127.0.0.1:3000"
 reload_secs  = 60                # Optionen und Theme werden so oft neu gelesen
 ```
 
-`RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Ohne `allow_writes = true` (`RUSTPRESS_ALLOW_WRITES=1`) läuft die Datenbankverbindung in einer `READ ONLY`-Session, und Anmeldung und Verwaltung bleiben geschlossen; Kontaktformulare (Contact Form 7, WPForms Lite) lassen sich trotzdem absenden, sie verschicken nur E-Mails. TLS übernimmt ein vorgeschalteter Proxy.
+`RUSTPRESS_DATABASE_URL`, `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS` überschreiben die Datei. Ohne `allow_writes = true` (`RUSTPRESS_ALLOW_WRITES=1`) läuft die Datenbankverbindung in einer `READ ONLY`-Session, und Anmeldung und Verwaltung bleiben geschlossen; Kontaktformulare (Contact Form 7, WPForms Lite) lassen sich trotzdem absenden, sie verschicken nur E-Mails. TLS übernimmt ein vorgeschalteter Proxy. Verwaltung, Anmeldung und Werkzeugleiste zeigen RustPress statt WordPress (Name, Logo, Hilfe-Links); `branding = false` (`RUSTPRESS_BRANDING=0`) stellt die Texte von WordPress wieder her.
 
 ## Mit Docker betreiben
 

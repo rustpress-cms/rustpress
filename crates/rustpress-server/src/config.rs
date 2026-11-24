@@ -6,11 +6,12 @@
 //! wp_root      = "/var/www/html"
 //! listen       = "127.0.0.1:3000"
 //! reload_secs  = 60
+//! branding     = true
 //! trusted_proxies = ["127.0.0.1"]
 //! ```
 //!
 //! Environment: `RUSTPRESS_CONFIG` (path of the TOML file), `RUSTPRESS_DATABASE_URL`, `RUSTPRESS_ALLOW_WRITES`,
-//! `RUSTPRESS_WP_CONFIG`,
+//! `RUSTPRESS_WP_CONFIG`, `RUSTPRESS_BRANDING`,
 //! `RUSTPRESS_TABLE_PREFIX`, `RUSTPRESS_WP_ROOT`, `RUSTPRESS_LISTEN`, `RUSTPRESS_RELOAD_SECS`,
 //! `RUSTPRESS_TRUSTED_PROXIES` (addresses separated by commas). The administration reads
 //! `RUSTPRESS_MAX_UPLOAD_SIZE` (bytes, `wp_max_upload_size()`, 64 MiB by default) itself.
@@ -36,6 +37,9 @@ pub struct Config {
     pub wp_config: Option<PathBuf>,
     /// The addresses of reverse proxies whose `X-Forwarded-For`/`X-Forwarded-Proto` are believed.
     pub trusted_proxies: Vec<String>,
+    /// The administration, the sign-in and the toolbar name RustPress instead of WordPress and show its logo
+    /// (`rustpress_core::brand`). `false` keeps WordPress' texts, for comparing the administration with WordPress.
+    pub branding: bool,
     /// The one request of a CGI run came in over HTTPS (`is_ssl()`): like `home_url()` and `site_url()` in
     /// WordPress, the links then use `https` whatever scheme the `home` and `siteurl` options name.
     #[serde(skip)]
@@ -53,6 +57,7 @@ impl Default for Config {
             allow_writes: false,
             wp_config: None,
             trusted_proxies: Vec::new(),
+            branding: true,
             request_https: false,
         }
     }
@@ -135,6 +140,9 @@ impl Config {
         }
         if let Ok(v) = std::env::var("RUSTPRESS_ALLOW_WRITES") {
             config.allow_writes = matches!(v.as_str(), "1" | "true" | "yes" | "on");
+        }
+        if let Ok(v) = std::env::var("RUSTPRESS_BRANDING") {
+            config.branding = !matches!(v.as_str(), "0" | "false" | "no" | "off");
         }
         if let Ok(v) = std::env::var("RUSTPRESS_WP_CONFIG") {
             config.wp_config = Some(v.into());
