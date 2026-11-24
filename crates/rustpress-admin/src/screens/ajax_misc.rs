@@ -910,6 +910,16 @@ pub async fn handle(
             {
                 return json(200, &result);
             }
+            if action == "update-plugin"
+                && let Some(result) = super::directory::ajax_update(
+                    &ctx,
+                    &param("plugin"),
+                    &sanitize_key(&param("slug")),
+                )
+                .await
+            {
+                return json(200, &result);
+            }
             if action == "search-install-plugins" {
                 return json(200, &super::directory::ajax_search(&ctx, &param("s")));
             }

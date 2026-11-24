@@ -180,9 +180,21 @@ fn update_row(
     let tr = |s: &str| ctx.tr(s);
     let name = plugins::kses_description(&plugin.name);
     let slug = &update.slug;
-    let details = ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=600&height=800"));
+    // The plugin directory of RustPress has no details modal: its updates link to the plugin's page on WordPress.org.
+    let listing = rustpress_core::native::catalog()
+        .iter()
+        .find(|l| l.file == plugin.file);
+    let details = match listing {
+        Some(listing) => listing.directory_url(),
+        None => ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=600&height=800")),
+    };
     let details_attributes = format!(
-        "class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\"",
+        "{} aria-label=\"{}\"",
+        if listing.is_some() {
+            "target=\"_blank\" rel=\"noopener\""
+        } else {
+            "class=\"thickbox open-plugin-details-modal\""
+        },
         esc_attr(&sprintf(
             &tr("View %1$s version %2$s details"),
             &[&name, &update.new_version]
@@ -952,7 +964,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
     let is_active = |p: &PluginInfo| active.contains(&p.file);
     // `$plugins['upgrade']`: for those who may update.
     let upgrades = if ctx.can("update_plugins") {
-        crate::updates::plugin_update_list(ctx.site()).await
+        crate::updates::plugin_update_list(ctx.site(), Some(&root)).await
     } else {
         Vec::new()
     };
@@ -1415,7 +1427,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
             "auto-update-enabled": files(&|p| auto.contains(&p.file)),
             "auto-update-disabled": files(&|p| !auto.contains(&p.file)),
         },
-        "totals": crate::updates::update_data(site, crate::updates::counts(site).await),
+        "totals": crate::updates::update_data(site, crate::updates::counts(site, ctx.env.loader.includes.parent()).await),
     });
     let assets = Assets {
         scripts: vec!["updates".into(), "plugin-install".into()],

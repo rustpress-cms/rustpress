@@ -341,6 +341,7 @@ pub async fn update_php(ctx: &Ctx<'_>) -> AdminResponse {
     match action.as_str() {
         "upload-plugin" => upload(ctx, true).await,
         "install-plugin" => directory::install_page(ctx).await,
+        "upgrade-plugin" => directory::update_page(ctx).await,
         "upload-theme" => upload(ctx, false).await,
         _ => die(
             ctx.env,

@@ -6,6 +6,7 @@ use rustpress_core::formatting::{esc_attr, esc_html, esc_url};
 use rustpress_core::i18n::sprintf;
 use rustpress_phpser::{Key, Value};
 
+use super::directory;
 use super::{AdminResponse, Ctx, die, render};
 use crate::chrome::{Assets, Screen};
 
@@ -349,26 +350,31 @@ fn auto_update_status(ctx: &Ctx<'_>) -> String {
 /// `list_plugin_updates()`.
 async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
     let tr = |s: &str| ctx.tr(s);
-    let Some(transient) = transient(ctx, "update_plugins").await else {
-        return format!(
-            "<h2>{}</h2><p>{}</p>",
-            tr("Plugins"),
-            tr("Your plugins are all up to date.")
-        );
-    };
-    let entries: Vec<(String, &Value)> = match field(&transient, "response") {
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter_map(|(k, v)| {
-                if let Key::Str(name) = k {
-                    Some((String::from_utf8_lossy(name).into_owned(), v))
-                } else {
-                    None
-                }
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
+    let root = wp_root(ctx);
+    // The plugins of the plugin directory of RustPress get the update of their module's release instead of the one
+    // of WordPress.org (`crate::updates::plugin_update_list`).
+    let catalog = rustpress_core::native::catalog();
+    let transient = transient(ctx, "update_plugins").await;
+    let mut entries: Vec<(String, Option<&Value>, Option<crate::updates::PluginUpdate>)> =
+        match transient.as_ref().and_then(|t| field(t, "response")) {
+            Some(Value::Array(items)) => items
+                .iter()
+                .filter_map(|(k, v)| {
+                    if let Key::Str(name) = k {
+                        Some((String::from_utf8_lossy(name).into_owned(), Some(v), None))
+                    } else {
+                        None
+                    }
+                })
+                .filter(|(file, _, _)| !catalog.iter().any(|l| l.file == file))
+                .collect(),
+            _ => Vec::new(),
+        };
+    entries.extend(
+        crate::updates::directory_updates(&root)
+            .into_iter()
+            .map(|(file, update)| (file, None, Some(update))),
+    );
     if entries.is_empty() {
         return format!(
             "<h2>{}</h2><p>{}</p>",
@@ -376,19 +382,24 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
             tr("Your plugins are all up to date.")
         );
     }
-    let root = wp_root(ctx);
     let installed: Vec<_> = crate::plugins::installed(&root)
         .iter()
         .map(|p| super::plugins::translated(ctx, &root, p))
         .collect();
     let current_version = version.split('-').next().unwrap_or(version).to_owned();
     let mut rows = String::new();
-    for (file, update) in &entries {
+    let empty = Value::Array(Vec::new());
+    for (file, stored, directory) in &entries {
+        let update = stored.unwrap_or(&empty);
         let info = installed.iter().find(|p| &p.file == file);
         let name = info.map_or(file.clone(), |p| p.name.clone());
         let installed_version = info.map(|p| p.version.clone()).unwrap_or_default();
-        let new_version = text(update, "new_version");
-        let slug = text(update, "slug");
+        let new_version = directory
+            .as_ref()
+            .map_or_else(|| text(update, "new_version"), |d| d.new_version.clone());
+        let slug = directory
+            .as_ref()
+            .map_or_else(|| text(update, "slug"), |d| d.slug.clone());
         let icon = ["svg", "2x", "1x", "default"]
             .iter()
             .find_map(|k| {
@@ -407,7 +418,12 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
                 "<span class=\"dashicons dashicons-admin-plugins\"></span>".to_owned()
             });
         let tested = text(update, "tested");
-        let compat = if !tested.is_empty() && tested >= current_version {
+        let compat = if directory.is_some() {
+            directory::own(
+                &ctx.site().i18n().locale,
+                "<strong>Native module</strong> in RustPress",
+            )
+        } else if !tested.is_empty() && tested >= current_version {
             sprintf(
                 &tr("Compatibility with WordPress %s: Yes (according to its author)"),
                 &[&current_version],
@@ -418,9 +434,19 @@ async fn plugin_section(ctx: &Ctx<'_>, version: &str) -> String {
                 &[&current_version],
             )
         };
-        let details_url = ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=640&height=662"));
+        let (details_url, details_attributes) = if directory.is_some() {
+            (
+                format!("https://wordpress.org/plugins/{slug}/"),
+                "target=\"_blank\" rel=\"noopener\"",
+            )
+        } else {
+            (
+                ctx.admin_url(&format!("plugin-install.php?tab=plugin-information&plugin={slug}&section=changelog&TB_iframe=true&width=640&height=662")),
+                "class=\"thickbox open-plugin-details-modal\"",
+            )
+        };
         let details = format!(
-            "<a href=\"{}\" class=\"thickbox open-plugin-details-modal\" aria-label=\"{}\">{}</a>",
+            "<a href=\"{}\" {details_attributes} aria-label=\"{}\">{}</a>",
             esc_url(&details_url),
             esc_attr(&sprintf(
                 &tr("View %1$s version %2$s details"),
@@ -677,6 +703,9 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         if capability == "update_core" {
             return do_core_upgrade(ctx).await;
         }
+        if capability == "update_plugins" {
+            return directory::bulk_update_page(ctx).await;
+        }
     }
     let site = ctx.site();
     let version = ctx.env.loader.version.clone();
@@ -738,7 +767,7 @@ pub async fn page(ctx: &Ctx<'_>) -> AdminResponse {
         help: Some(help),
         ..Default::default()
     };
-    let counts = crate::updates::counts(site).await;
+    let counts = crate::updates::counts(site, ctx.env.loader.includes.parent()).await;
     let totals = crate::updates::update_data(ctx.site(), counts);
     let assets = Assets {
         scripts: vec!["plugin-install".into(), "updates".into(), "thickbox".into()],

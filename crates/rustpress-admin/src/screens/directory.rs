@@ -115,6 +115,24 @@ fn action_button(
             esc_attr(name),
             ctx.site().trx("Install Now", "plugin")
         ),
+        Some(plugin)
+            if ctx.can("update_plugins")
+                && crate::updates::version_compare(&plugin.version, listing.version)
+                    == std::cmp::Ordering::Less =>
+        {
+            format!(
+                "<a class=\"update-now button button-compact aria-button-if-js\" data-plugin=\"{}\" data-slug=\"{}\" href=\"{}\" aria-label=\"{}\" data-name=\"{}\" role=\"button\">{}</a>",
+                esc_attr(&plugin.file),
+                esc_attr(listing.slug),
+                esc_url(&update_url(ctx, &plugin.file)),
+                esc_attr(&rustpress_core::i18n::sprintf(
+                    &ctx.site().trx("Update %s now", "plugin"),
+                    &[name]
+                )),
+                esc_attr(name),
+                ctx.site().trx("Update Now", "plugin")
+            )
+        }
         Some(plugin) if active.contains(&plugin.file) => format!(
             "<button type=\"button\" class=\"button button-compact button-disabled\" disabled=\"disabled\">{}</button>",
             ctx.site().trx("Active", "plugin")
@@ -145,6 +163,16 @@ fn activate_url(ctx: &Ctx<'_>, file: &str) -> String {
         ctx.admin_url("plugins.php"),
         ctx.create_nonce(&format!("activate-plugin_{file}")),
         super::install::urlencode(file)
+    )
+}
+
+/// `wp_nonce_url( self_admin_url( 'update.php?action=upgrade-plugin&plugin=' . $file ), 'upgrade-plugin_' . $file )`.
+pub fn update_url(ctx: &Ctx<'_>, file: &str) -> String {
+    format!(
+        "{}?action=upgrade-plugin&plugin={}&_wpnonce={}",
+        ctx.admin_url("update.php"),
+        file,
+        ctx.create_nonce(&format!("upgrade-plugin_{file}"))
     )
 }
 
@@ -236,13 +264,33 @@ pub fn cards(ctx: &Ctx<'_>, listings: &[&Listing]) -> String {
 /// Downloads the package of `listing`, checks it and unpacks it into `wp-content/plugins`: the work of
 /// `Plugin_Upgrader::install()`. Returns the feedback lines of the skin so far and, on failure, the error.
 pub async fn install(ctx: &Ctx<'_>, listing: &'static Listing) -> Result<Vec<String>, String> {
+    put(ctx, listing, false).await
+}
+
+/// [install] for a plugin that is installed in an older version: `Plugin_Upgrader::upgrade()`. The new release is
+/// unpacked beside the old one and swapped in, so that a failure leaves the old one in place. The plugin stays in
+/// `active_plugins`: WordPress deactivates it while it updates and activates it again, a module needs neither.
+pub async fn update(ctx: &Ctx<'_>, listing: &'static Listing) -> Result<Vec<String>, String> {
+    put(ctx, listing, true).await
+}
+
+async fn put(
+    ctx: &Ctx<'_>,
+    listing: &'static Listing,
+    update: bool,
+) -> Result<Vec<String>, String> {
     let tr = |s: &str| ctx.tr(s);
     let locale = locale(ctx);
     let Some(root) = wp_root(ctx) else {
         return Err("The WordPress files are not available.".to_owned());
     };
-    let destination = root.join("wp-content").join("plugins").join(listing.slug);
-    if destination.exists() {
+    let plugins_dir = root.join("wp-content").join("plugins");
+    let destination = plugins_dir.join(listing.slug);
+    if update {
+        if !plugins_dir.join(listing.file).is_file() {
+            return Err(tr("The plugin is not installed."));
+        }
+    } else if destination.exists() {
         return Err(format!(
             "{} {}/",
             tr("Destination folder already exists."),
@@ -253,7 +301,11 @@ pub async fn install(ctx: &Ctx<'_>, listing: &'static Listing) -> Result<Vec<Str
         "<p>{}</p>",
         rustpress_core::i18n::sprintf(
             &rustpress_core::i18n::sprintf(
-                &tr("Downloading installation package from %s&#8230;"),
+                &tr(if update {
+                    "Downloading update from %s&#8230;"
+                } else {
+                    "Downloading installation package from %s&#8230;"
+                }),
                 &["<span class=\"code pre\">%s</span>"]
             ),
             &[&esc_html(listing.package)]
@@ -262,48 +314,106 @@ pub async fn install(ctx: &Ctx<'_>, listing: &'static Listing) -> Result<Vec<Str
     let package = listing.package;
     let size = listing.size;
     let downloaded = rustpress_content::media::blocking(move || download(package, size + 1)).await;
-    let bytes = match downloaded {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return Err(rustpress_core::i18n::sprintf(
-                &own(
-                    &locale,
-                    "The package could not be downloaded. If this server cannot reach WordPress.org, download it yourself from <a href=\"%1$s\">%1$s</a> and upload it here.",
-                ),
-                &[&esc_url(listing.package)],
-            ));
-        }
+    let Ok(bytes) = downloaded else {
+        return Err(rustpress_core::i18n::sprintf(
+            &own(
+                &locale,
+                "The package could not be downloaded. If this server cannot reach WordPress.org, download it yourself from <a href=\"%1$s\">%1$s</a> and upload it here.",
+            ),
+            &[&esc_url(listing.package)],
+        ));
     };
-    let sha = {
-        use sha2::Digest;
-        let digest = sha2::Sha256::digest(&bytes);
-        digest
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-    };
-    if sha != listing.sha256 {
+    if sha256_hex(&bytes) != listing.sha256 {
         return Err(own(&locale, "The package does not match its checksum."));
     }
-    lines.push(format!("<p>{}</p>", tr("Unpacking the package&#8230;")));
+    lines.push(format!(
+        "<p>{}</p>",
+        tr(if update {
+            "Unpacking the update&#8230;"
+        } else {
+            "Unpacking the package&#8230;"
+        })
+    ));
     let entries = rustpress_content::media::blocking(move || super::install::read_zip(&bytes))
         .await
         .map_err(|reason| tr(&reason))?;
-    lines.push(format!("<p>{}</p>", tr("Installing the plugin&#8230;")));
+    lines.push(format!(
+        "<p>{}</p>",
+        tr(if update {
+            "Installing the latest version&#8230;"
+        } else {
+            "Installing the plugin&#8230;"
+        })
+    ));
     let (folder, files) = super::install::layout(&entries, &format!("{}.zip", listing.slug));
     if folder != listing.slug {
         return Err(tr("No valid plugins were found."));
     }
-    let written = {
-        let destination = destination.clone();
-        rustpress_content::media::blocking(move || super::install::write_tree(&destination, &files))
+    if !update {
+        let written = {
+            let destination = destination.clone();
+            rustpress_content::media::blocking(move || {
+                super::install::write_tree(&destination, &files)
+            })
             .await
-    };
-    if written.is_err() {
-        let _ = std::fs::remove_dir_all(&destination);
-        return Err(tr("Could not create directory."));
+        };
+        if written.is_err() {
+            let _ = std::fs::remove_dir_all(&destination);
+            return Err(tr("Could not create directory."));
+        }
+        return Ok(lines);
     }
-    Ok(lines)
+    let staged = plugins_dir.join(format!(".rustpress-update-{}", listing.slug));
+    let old = plugins_dir.join(format!(".rustpress-old-{}", listing.slug));
+    let swapped = {
+        let (staged, old, destination) = (staged.clone(), old.clone(), destination.clone());
+        rustpress_content::media::blocking(move || swap(&staged, &old, &destination, &files)).await
+    };
+    match swapped {
+        Ok(()) => {
+            lines.push(format!(
+                "<p>{}</p>",
+                tr("Removing the old version of the plugin&#8230;")
+            ));
+            let _ = std::fs::remove_dir_all(&old);
+            Ok(lines)
+        }
+        Err(()) => Err(tr("Could not create directory.")),
+    }
+}
+
+/// Writes `files` to `staged`, then moves `destination` to `old` and `staged` to `destination`; on a failure the old
+/// version stays (or is moved back).
+fn swap(
+    staged: &Path,
+    old: &Path,
+    destination: &Path,
+    files: &[(String, Option<Vec<u8>>)],
+) -> Result<(), ()> {
+    let _ = std::fs::remove_dir_all(staged);
+    let _ = std::fs::remove_dir_all(old);
+    if super::install::write_tree(staged, files).is_err() {
+        let _ = std::fs::remove_dir_all(staged);
+        return Err(());
+    }
+    if std::fs::rename(destination, old).is_err() {
+        let _ = std::fs::remove_dir_all(staged);
+        return Err(());
+    }
+    if std::fs::rename(staged, destination).is_err() {
+        let _ = std::fs::rename(old, destination);
+        let _ = std::fs::remove_dir_all(staged);
+        return Err(());
+    }
+    Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {
@@ -498,6 +608,238 @@ pub fn check_dependencies(ctx: &Ctx<'_>, slug: &str) -> serde_json::Value {
     }
     status["message"] = ctx.tr("The plugin has no required plugins.").into();
     serde_json::json!({"success": true, "data": status})
+}
+
+/// The listing of an installed plugin file, if the plugin directory has one.
+fn listing_of_file(file: &str) -> Option<&'static Listing> {
+    rustpress_core::native::catalog()
+        .iter()
+        .find(|l| l.file == file)
+}
+
+/// `update.php?action=upgrade-plugin` for a plugin of the directory: the page of `Plugin_Upgrader_Skin`.
+pub async fn update_page(ctx: &Ctx<'_>) -> super::AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    if !ctx.can("update_plugins") {
+        return super::common::die_plain(
+            ctx,
+            "Sorry, you are not allowed to update plugins for this site.",
+        );
+    }
+    let file = ctx.request.get("plugin").unwrap_or_default().to_owned();
+    if !ctx.verify_nonce(&format!("upgrade-plugin_{file}")) {
+        return super::die(
+            ctx.env,
+            403,
+            &tr("An error occurred."),
+            &tr("The link you followed has expired."),
+        );
+    }
+    let Some(listing) = listing_of_file(&file) else {
+        return super::die(
+            ctx.env,
+            501,
+            "WordPress &rsaquo; Error",
+            &format!(
+                "<p>{}</p>",
+                own(&locale(ctx), "RustPress has no module for this plugin.")
+            ),
+        );
+    };
+    if ctx.env.writer.is_none() {
+        return super::common::read_only(ctx);
+    }
+    let all = wp_root(ctx)
+        .map(|root| plugins::installed(&root))
+        .unwrap_or_default();
+    let current = all.iter().find(|p| p.file == file);
+    let lines = match current {
+        Some(plugin)
+            if crate::updates::version_compare(&plugin.version, listing.version)
+                != std::cmp::Ordering::Less =>
+        {
+            vec![format!(
+                "<p>{}</p>",
+                tr("The plugin is at the latest version.")
+            )]
+        }
+        _ => match update(ctx, listing).await {
+            Ok(mut lines) => {
+                lines.push(format!("<p>{}</p>", tr("Plugin updated successfully.")));
+                let mut actions = Vec::new();
+                if !super::plugins::active_plugins(ctx).contains(&file)
+                    && ctx.can("activate_plugins")
+                {
+                    actions.push(format!(
+                        "<a href=\"{}\" target=\"_parent\">{}</a>",
+                        esc_url(&activate_url(ctx, &file)),
+                        tr("Activate Plugin")
+                    ));
+                }
+                actions.push(format!(
+                    "<a href=\"{}\" target=\"_parent\">{}</a>",
+                    ctx.admin_url("plugins.php"),
+                    tr("Go to Plugins page")
+                ));
+                lines.push(format!("<p>{}</p>", actions.join(" | ")));
+                lines
+            }
+            Err(reason) => vec![
+                format!("<p>{reason}</p>"),
+                format!("<p>{}</p>", tr("Plugin update failed.")),
+            ],
+        },
+    };
+    super::install::feedback(
+        ctx,
+        "plugins.php",
+        "plugins.php",
+        &tr("Update Plugin"),
+        &tr("Update Plugin"),
+        &lines,
+    )
+    .await
+}
+
+/// `wp_ajax_update_plugin()` for a plugin of the directory; `None` for any other plugin.
+pub async fn ajax_update(ctx: &Ctx<'_>, file: &str, slug: &str) -> Option<serde_json::Value> {
+    let listing = listing_of_file(file)?;
+    let failed =
+        |status: serde_json::Value| Some(serde_json::json!({"success": false, "data": status}));
+    let mut status =
+        serde_json::json!({"update": "plugin", "slug": slug, "oldVersion": "", "newVersion": ""});
+    if !ctx.can("update_plugins") {
+        status["errorMessage"] = ctx
+            .tr("Sorry, you are not allowed to update plugins for this site.")
+            .into();
+        return failed(status);
+    }
+    let all = wp_root(ctx)
+        .map(|root| plugins::installed(&root))
+        .unwrap_or_default();
+    let plugin = all.iter().find(|p| p.file == file);
+    status["plugin"] = file.into();
+    status["pluginName"] = plugin.map(|p| p.name.clone()).unwrap_or_default().into();
+    if let Some(plugin) = plugin.filter(|p| !p.version.is_empty()) {
+        status["oldVersion"] =
+            rustpress_core::i18n::sprintf(&ctx.tr("Version %s"), &[&plugin.version]).into();
+    }
+    if plugin.is_some_and(|p| {
+        crate::updates::version_compare(&p.version, listing.version) != std::cmp::Ordering::Less
+    }) {
+        status["errorMessage"] = ctx.tr("The plugin is at the latest version.").into();
+        return failed(status);
+    }
+    if ctx.env.writer.is_none() {
+        status["errorCode"] = "fs_unavailable".into();
+        status["errorMessage"] = ctx.tr("Could not access filesystem.").into();
+        return failed(status);
+    }
+    match update(ctx, listing).await {
+        Ok(_) => {
+            status["newVersion"] =
+                rustpress_core::i18n::sprintf(&ctx.tr("Version %s"), &[listing.version]).into();
+            Some(serde_json::json!({"success": true, "data": status}))
+        }
+        Err(reason) => {
+            status["errorCode"] = "update_failed".into();
+            status["errorMessage"] = reason.into();
+            failed(status)
+        }
+    }
+}
+
+/// `update-core.php?action=do-plugin-upgrade` (after the capability and nonce checks): the update of the checked
+/// plugins. WordPress loads `update.php?action=update-selected` into an iframe that prints `Bulk_Plugin_Upgrader_Skin`;
+/// RustPress prints the same steps in the page. Only plugins of the plugin directory can be updated; for the others
+/// the package is not available.
+pub async fn bulk_update_page(ctx: &Ctx<'_>) -> super::AdminResponse {
+    let tr = |s: &str| ctx.tr(s);
+    if ctx.env.writer.is_none() {
+        return super::common::read_only(ctx);
+    }
+    let files: Vec<String> = match ctx.request.get("plugins") {
+        Some(list) => list.split(',').map(str::to_owned).collect(),
+        None => ctx
+            .request
+            .form
+            .iter()
+            .filter(|(k, _)| k == "checked" || k.starts_with("checked["))
+            .map(|(_, v)| v.clone())
+            .collect(),
+    };
+    let all = wp_root(ctx)
+        .map(|root| plugins::installed(&root))
+        .unwrap_or_default();
+    let mut lines = vec![format!(
+        "<p>{}</p>",
+        tr(
+            "The update process is starting. This process may take a while on some hosts, so please be patient."
+        )
+    )];
+    for (index, file) in files.iter().enumerate() {
+        let current = all.iter().find(|p| &p.file == file);
+        let name = current.map_or_else(|| file.clone(), |p| p.name.clone());
+        lines.push(format!(
+            "<h2>{}</h2>",
+            rustpress_core::i18n::sprintf(
+                &tr("Updating Plugin %1$s (%2$d/%3$d)"),
+                &[
+                    &esc_html(&name),
+                    &(index + 1).to_string(),
+                    &files.len().to_string()
+                ]
+            )
+        ));
+        let outcome = match listing_of_file(file) {
+            None => Err(tr("Update package not available.")),
+            Some(listing)
+                if current.is_some_and(|p| {
+                    crate::updates::version_compare(&p.version, listing.version)
+                        != std::cmp::Ordering::Less
+                }) =>
+            {
+                Err(tr("The plugin is at the latest version."))
+            }
+            Some(listing) => update(ctx, listing).await,
+        };
+        match outcome {
+            Ok(steps) => {
+                lines.extend(steps);
+                lines.push(format!(
+                    "<div class=\"updated inline\"><p>{}</p></div>",
+                    rustpress_core::i18n::sprintf(
+                        &tr("%s updated successfully."),
+                        &[&format!("<strong>{}</strong>", esc_html(&name))]
+                    )
+                ));
+            }
+            Err(reason) => lines.push(format!(
+                "<div class=\"error inline\"><p>{}</p></div>",
+                rustpress_core::i18n::sprintf(
+                    &tr("An error occurred while updating %1$s: %2$s"),
+                    &[&format!("<strong>{}</strong>", esc_html(&name)), &reason]
+                )
+            )),
+        }
+    }
+    lines.push(format!("<p>{}</p>", tr("All updates have been completed.")));
+    lines.push(format!(
+        "<p><a href=\"{}\" target=\"_parent\">{}</a> | <a href=\"{}\" target=\"_parent\">{}</a></p>",
+        ctx.admin_url("plugins.php"),
+        tr("Go to Plugins page"),
+        ctx.admin_url("update-core.php"),
+        tr("Go to WordPress Updates page")
+    ));
+    super::install::feedback(
+        ctx,
+        "index.php",
+        "update-core.php",
+        &tr("Update Plugins"),
+        &tr("Update Plugins"),
+        &lines,
+    )
+    .await
 }
 
 #[cfg(test)]

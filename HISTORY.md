@@ -1585,5 +1585,15 @@ release. `dev/plugin-catalog.sh SLUG VERSION` prints the package lines for a new
 - **Own texts:** the introduction, the tab, the notes and the errors are RustPress' own, in English and German.
 - Checked in the browser against the reference database: the list, the search, install and activate through
   `updates.js` (SVG Support), install without JavaScript (Classic Editor), an expired nonce.
-- Not done: updating an installed plugin to the release of its module (the card says when the versions differ), a
-  directory for themes.
+- **Updating** (2026-11-24): an installed plugin of the directory that is older than the release its module follows
+  (`version_compare()`, ported to `updates::version_compare`) gets that release as its update, in place of whatever
+  the stored transient `update_plugins` says about WordPress.org (no module follows those releases): the update row
+  on plugins.php, the count in the menu and the toolbar, the plugin table of update-core.php, and "Update Now" on its
+  card. `update-plugin` in `admin-ajax.php` (`wp_ajax_update_plugin()`), `update.php?action=upgrade-plugin` (the page
+  of `Plugin_Upgrader_Skin`) and the plugin form of update-core.php (`do-plugin-upgrade`; WordPress loads
+  `update.php?action=update-selected` into an iframe, RustPress prints the steps of `Bulk_Plugin_Upgrader_Skin` in the
+  page) download and check the archive like an installation, unpack it beside the old version and swap it in, so a
+  failure leaves the old one in place. An active plugin stays active (WordPress deactivates and reactivates it; a
+  module needs neither). Checked in the browser with SVG Support 2.5.14 and Classic Editor 1.6.7: plugins.php through
+  `updates.js` and without JavaScript, the card, update-core.php for both at once.
+- Not done: a directory for themes; plugins without a module are still not updated (their links say so).

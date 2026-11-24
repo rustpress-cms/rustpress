@@ -416,7 +416,7 @@ fn search_engine_visibility(ctx: &Ctx<'_>) -> Test {
 }
 
 async fn direct_tests(ctx: &Ctx<'_>) -> Vec<Json> {
-    let counts = crate::updates::counts(ctx.site()).await;
+    let counts = crate::updates::counts(ctx.site(), ctx.env.loader.includes.parent()).await;
     let upgrade = super::update_core::core_upgrade_version(ctx).await;
     let tests = vec![
         wordpress_version(ctx, upgrade),
