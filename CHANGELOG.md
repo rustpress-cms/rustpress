@@ -2,6 +2,20 @@
 
 All notable changes to RustPress. Each release names the WordPress release it follows.
 
+## 0.4.2 (2026-11-25)
+
+Follows WordPress 7.1.5.
+
+- **Plugin directory of RustPress:** Plugins › Add Plugin lists the plugins RustPress has a native module for, in
+  WordPress' plugin cards with search, instead of WordPress.org's directory (whose plugins need PHP). Install Now
+  downloads the archive of exactly the release the module follows from WordPress.org and installs it only if its
+  SHA-256 matches; the list is built into the binary and works without a connection. An installed plugin older than
+  its module's release is offered that release as its update (plugin list, menu count, Dashboard › Updates, the card),
+  and the update swaps the new version in only once it is unpacked.
+- **RustPress branding:** the administration, the sign-in and the toolbar name RustPress and show its logo; links to
+  WordPress' home, support and feedback lead to RustPress. `branding = false` (`RUSTPRESS_BRANDING=0`) turns it off.
+- **Translations:** the texts of Add Plugins and 25 more admin texts are translated like in WordPress.
+
 ## 0.4.1 (2026-11-23)
 
 Follows WordPress 7.1.5.
